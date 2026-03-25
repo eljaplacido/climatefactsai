@@ -1,0 +1,353 @@
+# Docker Compose configuration for Climate News MAS
+#
+# PORT MAPPING STRATEGY:
+# All host ports use the 5xxx range to avoid conflicts with other projects
+# See PORT_MAPPINGS.md for complete port reference
+# See PORT_MIGRATION_GUIDE.md for migration details
+#
+# Quick Reference:
+# - Frontend: http://localhost:5300
+# - API: http://localhost:5200 (docs at /docs)
+# - PostgreSQL: localhost:5433
+# - Redis: localhost:5379
+# - Kafka: localhost:5092
+# - Grafana: http://localhost:3001
+# - Prometheus: http://localhost:5090
+# - Jaeger UI: http://localhost:5686
+
+services:
+  # =============================================================================
+  # INFRASTRUCTURE SERVICES
+  # =============================================================================
+  
+  # Apache Kafka + Zookeeper
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: climatenews-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "5181:2181"  # Changed from 2181 to avoid conflict
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-logs:/var/lib/zookeeper/log
+    networks:
+      - climatenews-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: climatenews-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "5092:9092"  # Changed from 9092 to avoid conflict
+      - "5093:9093"  # Changed from 9093 to avoid conflict
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9093,PLAINTEXT_HOST://localhost:5092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - climatenews-network
+
+  # Kafka Schema Registry
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.5.0
+    container_name: climatenews-schema-registry
+    depends_on:
+      - kafka
+    ports:
+      - "5081:8081"  # Changed from 8081 to avoid conflict
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:9093
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    networks:
+      - climatenews-network
+
+  # Redis (Short-term memory)
+  redis:
+    image: redis:7-alpine
+    container_name: climatenews-redis
+    ports:
+      - "5379:6379"  # Changed from 6379 to avoid conflict
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - climatenews-network
+
+  # PostgreSQL (Long-term memory)
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: climatenews-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: climatenews
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infrastructure/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - climatenews-network
+
+  # =============================================================================
+  # MICROSERVICES (Backend Services)
+  # =============================================================================
+
+  orchestration-service:
+    build:
+      context: .
+      dockerfile: src/backend/services/orchestration_service/Dockerfile
+    container_name: clilens-orchestration-service
+    depends_on:
+      - kafka
+      - redis
+      - postgres
+    environment:
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app/src/backend
+    env_file:
+      - .env
+    volumes:
+      - ./src/backend:/app/src/backend
+      - ./schemas:/app/schemas
+    networks:
+      - climatenews-network
+    restart: unless-stopped
+
+  ingestion-service:
+    build:
+      context: .
+      dockerfile: src/backend/services/ingestion_service/Dockerfile
+    container_name: clilens-ingestion-service
+    depends_on:
+      - kafka
+      - redis
+      - postgres
+    environment:
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app/src/backend
+    env_file:
+      - .env
+    volumes:
+      - ./src/backend:/app/src/backend
+      - ./schemas:/app/schemas
+      - ./data/scraped:/data/scraped
+    networks:
+      - climatenews-network
+    restart: unless-stopped
+
+  verification-service:
+    build:
+      context: .
+      dockerfile: src/backend/services/verification_service/Dockerfile
+    container_name: clilens-verification-service
+    depends_on:
+      - kafka
+      - redis
+      - postgres
+    environment:
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app/src/backend
+    env_file:
+      - .env
+    volumes:
+      - ./src/backend:/app/src/backend
+      - ./schemas:/app/schemas
+    networks:
+      - climatenews-network
+    restart: unless-stopped
+
+  content-creation-service:
+    build:
+      context: .
+      dockerfile: src/backend/services/content_creation_service/Dockerfile
+    container_name: clilens-content-creation-service
+    depends_on:
+      - kafka
+      - redis
+      - postgres
+    environment:
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app/src/backend
+    env_file:
+      - .env
+    volumes:
+      - ./src/backend:/app/src/backend
+      - ./schemas:/app/schemas
+    networks:
+      - climatenews-network
+    restart: unless-stopped
+
+  video-production-service:
+    build:
+      context: .
+      dockerfile: src/backend/services/video_production_service/Dockerfile
+    container_name: clilens-video-production-service
+    depends_on:
+      - kafka
+      - redis
+    environment:
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app/src/backend
+    env_file:
+      - .env
+    volumes:
+      - ./src/backend:/app/src/backend
+      - ./schemas:/app/schemas
+      - ./media:/media
+    networks:
+      - climatenews-network
+    restart: unless-stopped
+
+  # =============================================================================
+  # WEB APPLICATION
+  # =============================================================================
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    container_name: clilens-api
+    depends_on:
+      - postgres
+      - redis
+      # kafka removed - not operational (see docker-compose.override.yml)
+    ports:
+      - "5400:8000"  # Standardized to 5400 (matches docker-compose.simple.yml)
+    environment:
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app/src/backend
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_SERVICE_NAME=clilens-api
+    env_file:
+      - .env
+    volumes:
+      - ./api:/app/api
+      - ./src/backend:/app/src/backend
+      - ./schemas:/app/schemas
+    networks:
+      - climatenews-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:5200
+    container_name: clilens-frontend
+    depends_on:
+      - api
+    ports:
+      - "5300:3000"  # Frontend runtime (Next.js on port 3000)
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:5200  # Browser-facing API URL
+      - API_INTERNAL_URL=http://api:8000  # Internal Docker network URL for SSR
+    networks:
+      - climatenews-network
+    restart: unless-stopped
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    container_name: clilens-celery-worker
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app/src/backend
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_SERVICE_NAME=clilens-celery
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/climatenews
+    env_file:
+      - .env
+    volumes:
+      - ./src/backend:/app/src/backend
+      - ./schemas:/app/schemas
+    command: ["celery", "-A", "app.core.celery_app", "worker", "--loglevel=INFO"]
+    networks:
+      - climatenews-network
+    restart: unless-stopped
+
+  # =============================================================================
+  # OBSERVABILITY & MONITORING
+  # =============================================================================
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: climatenews-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infrastructure/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./infrastructure/monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - climatenews-network
+
+  # Prometheus (optional - for metrics collection)
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: climatenews-prometheus
+    ports:
+      - "5090:9090"  # Changed from 9090 to avoid conflict with rs-mcp
+    volumes:
+      - ./infrastructure/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - climatenews-network
+
+  # Jaeger (optional - for distributed tracing)
+  jaeger:
+    image: jaegertracing/all-in-one:1.51
+    container_name: climatenews-jaeger
+    ports:
+      - "5775:5775/udp"  # OK - not in conflict list
+      - "5831:6831/udp"  # Changed from 6831 to be consistent with 5xxx range
+      - "5832:6832/udp"  # Changed from 6832 to be consistent with 5xxx range
+      - "5778:5778"      # OK - not in conflict list
+      - "5686:16686"     # Changed Jaeger UI from 16686 to 5xxx range
+      - "5268:14268"     # Changed from 14268 to 5xxx range
+      - "5250:14250"     # Changed from 14250 to 5xxx range
+      - "5411:9411"      # Changed from 9411 to 5xxx range
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - climatenews-network
+
+networks:
+  climatenews-network:
+    driver: bridge
+
+volumes:
+  zookeeper-data:
+  zookeeper-logs:
+  kafka-data:
+  redis-data:
+  postgres-data:
+  grafana-data:
+  prometheus-data:
+

@@ -1,0 +1,317 @@
+"""
+Deep Search Routes — User-facing Perplexity-type research search.
+
+Provides deep search, comparative analysis, and weather context enrichment.
+Deep search and comparison are gated to Professional+ tiers.
+Weather context is available to Standard+ tiers.
+"""
+
+from typing import Any, List, Optional
+
+from fastapi import APIRouter, HTTPException, Depends, Query
+from pydantic import BaseModel, Field
+
+from api.auth_routes import get_current_user, get_optional_user
+from api.rate_limiter import check_premium_feature, UsageTracker
+from shared.database import get_postgres
+from shared.logger import setup_logging
+
+logger = setup_logging("deep-search-api")
+router = APIRouter(prefix="/api/deep-search", tags=["Deep Search"])
+
+
+# =============================================================================
+# REQUEST/RESPONSE MODELS
+# =============================================================================
+
+class DeepSearchRequest(BaseModel):
+    """Deep search request."""
+    query: str = Field(..., min_length=3, max_length=1000)
+    country: Optional[str] = Field(None, max_length=2)
+    category: Optional[str] = None
+    include_weather: bool = Field(default=True)
+    limit: int = Field(default=10, ge=1, le=30)
+
+
+class CompareRequest(BaseModel):
+    """Comparative analysis request."""
+    query_a: str = Field(..., min_length=3, max_length=500)
+    query_b: str = Field(..., min_length=3, max_length=500)
+    country: Optional[str] = Field(None, max_length=2)
+
+
+class CitationResponse(BaseModel):
+    type: str  # internal_article, external_web
+    article_id: Optional[str] = None
+    title: Optional[str] = None
+    source_name: Optional[str] = None
+    source_url: Optional[str] = None
+    published_date: Optional[str] = None
+    credibility: Optional[str] = None
+    reliability_score: Optional[float] = None
+    relevance_score: Optional[float] = None
+    excerpt: Optional[str] = None
+
+
+class WeatherDataPoint(BaseModel):
+    source: str
+    content: str
+    reliability: Optional[str] = None
+    retrieval_method: Optional[str] = None
+
+
+class WeatherContextResponse(BaseModel):
+    country_code: str
+    data_points: List[WeatherDataPoint]
+
+
+class DeepSearchResponse(BaseModel):
+    query: str
+    answer: str
+    citations: List[CitationResponse]
+    internal_articles_count: int
+    external_sources_count: int
+    weather_context: Optional[WeatherContextResponse] = None
+    filters: dict = {}
+    searched_at: str
+
+
+class CompareResponse(BaseModel):
+    query_a: str
+    query_b: str
+    result_a: DeepSearchResponse
+    result_b: DeepSearchResponse
+    comparative_analysis: str
+    compared_at: str
+
+
+class LocationWeather(BaseModel):
+    location_name: str
+    coordinates: dict
+    current_weather: Optional[dict] = None
+    forecast_7day: Optional[dict] = None
+    historical_normals: Optional[dict] = None
+    anomaly: Optional[dict] = None
+
+
+class ArticleWeatherContext(BaseModel):
+    article_id: str
+    locations_found: int
+    locations_analyzed: int
+    weather_contexts: List[LocationWeather]
+
+
+# =============================================================================
+# DEEP SEARCH (Professional+ only)
+# =============================================================================
+
+@router.post("/", response_model=DeepSearchResponse)
+async def deep_search(
+    request: DeepSearchRequest,
+    current_user: Any = Depends(get_current_user),
+):
+    """
+    Perform a deep research search combining internal corpus + external sources.
+
+    Requires Professional or Enterprise subscription.
+    Uses Perplexity AI for external search and pgvector for internal corpus.
+    Synthesizes a unified answer with citations and credibility indicators.
+    """
+    user_tier = (
+        current_user.get("subscription_tier")
+        if isinstance(current_user, dict)
+        else getattr(current_user, "subscription_tier", "freemium")
+    )
+    user_id = (
+        current_user.get("user_id")
+        if isinstance(current_user, dict)
+        else getattr(current_user, "user_id", None)
+    )
+
+    if not check_premium_feature(user_tier, "deep_search"):
+        raise HTTPException(
+            status_code=403,
+            detail="Deep search requires Professional or Enterprise subscription."
+        )
+
+    # Check discovery query quota
+    if user_id:
+        allowed, current, limit = UsageTracker.check_limit(
+            str(user_id), user_tier, "discovery_query", "day"
+        )
+        if not allowed:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Daily deep search limit exceeded ({current}/{limit})."
+            )
+
+    db = get_postgres()
+
+    from app.domains.intelligence.deep_search_service import DeepSearchService
+    service = DeepSearchService(db)
+
+    try:
+        result = await service.search(
+            query=request.query,
+            country=request.country,
+            category=request.category,
+            include_weather=request.include_weather,
+            limit=request.limit,
+        )
+
+        # Log usage
+        if user_id:
+            UsageTracker.log_usage(
+                user_id=str(user_id),
+                usage_type="discovery_query",
+                resource_url=f"deep_search:{request.query[:100]}",
+            )
+
+        logger.info(
+            "Deep search executed",
+            user_id=user_id,
+            query=request.query[:100],
+            internal_count=result.get("internal_articles_count", 0),
+            external_count=result.get("external_sources_count", 0),
+        )
+
+        return DeepSearchResponse(**result)
+
+    except Exception as e:
+        logger.error(f"Deep search failed: {e}", query=request.query[:100])
+        raise HTTPException(status_code=500, detail="Deep search failed. Please try again.")
+
+
+# =============================================================================
+# COMPARATIVE ANALYSIS (Professional+ only)
+# =============================================================================
+
+@router.post("/compare", response_model=CompareResponse)
+async def compare_topics(
+    request: CompareRequest,
+    current_user: Any = Depends(get_current_user),
+):
+    """
+    Compare two climate topics side by side.
+
+    Performs deep search on both topics and generates a comparative analysis.
+    Requires Professional or Enterprise subscription. Counts as 2 discovery queries.
+    """
+    user_tier = (
+        current_user.get("subscription_tier")
+        if isinstance(current_user, dict)
+        else getattr(current_user, "subscription_tier", "freemium")
+    )
+    user_id = (
+        current_user.get("user_id")
+        if isinstance(current_user, dict)
+        else getattr(current_user, "user_id", None)
+    )
+
+    if not check_premium_feature(user_tier, "deep_search"):
+        raise HTTPException(
+            status_code=403,
+            detail="Comparative analysis requires Professional or Enterprise subscription."
+        )
+
+    db = get_postgres()
+
+    from app.domains.intelligence.deep_search_service import DeepSearchService
+    service = DeepSearchService(db)
+
+    try:
+        result = await service.compare(
+            query_a=request.query_a,
+            query_b=request.query_b,
+            country=request.country,
+        )
+
+        # Log usage (counts as 2 queries)
+        if user_id:
+            UsageTracker.log_usage(str(user_id), "discovery_query", resource_url=f"compare:{request.query_a[:50]}")
+            UsageTracker.log_usage(str(user_id), "discovery_query", resource_url=f"compare:{request.query_b[:50]}")
+
+        return CompareResponse(**result)
+
+    except Exception as e:
+        logger.error(f"Comparison failed: {e}")
+        raise HTTPException(status_code=500, detail="Comparison failed. Please try again.")
+
+
+# =============================================================================
+# WEATHER CONTEXT (Standard+ for articles, open for location lookup)
+# =============================================================================
+
+@router.get("/weather-context/{article_id}", response_model=ArticleWeatherContext)
+async def get_article_weather_context(
+    article_id: str,
+    current_user: Any = Depends(get_current_user),
+):
+    """
+    Get localized weather context for an article.
+
+    Extracts geographic locations mentioned in the article, fetches current
+    weather conditions, historical normals, and anomaly detection for each.
+
+    Available to Standard+ tiers.
+    """
+    user_tier = (
+        current_user.get("subscription_tier")
+        if isinstance(current_user, dict)
+        else getattr(current_user, "subscription_tier", "freemium")
+    )
+
+    if not check_premium_feature(user_tier, "weather_context"):
+        raise HTTPException(
+            status_code=403,
+            detail="Weather context requires Standard or higher subscription."
+        )
+
+    db = get_postgres()
+
+    from app.domains.content.weather_context_service import WeatherContextService
+    service = WeatherContextService(db)
+
+    try:
+        result = await service.get_article_weather_context(article_id)
+        if not result:
+            raise HTTPException(
+                status_code=404,
+                detail="No weather context available for this article."
+            )
+        return ArticleWeatherContext(**result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Weather context failed for {article_id}: {e}")
+        raise HTTPException(status_code=500, detail="Weather context unavailable.")
+
+
+@router.get("/weather-location")
+async def get_location_weather(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    name: Optional[str] = Query(None, max_length=100),
+    current_user: Optional[Any] = Depends(get_optional_user),
+):
+    """
+    Get weather context for a specific location.
+
+    Available to all users (uses free Open-Meteo API).
+    Returns current conditions, 7-day forecast, historical normals, and anomaly detection.
+    """
+    db = get_postgres()
+
+    from app.domains.content.weather_context_service import WeatherContextService
+    service = WeatherContextService(db)
+
+    try:
+        result = await service.get_location_weather(lat, lon, name)
+        if not result:
+            raise HTTPException(status_code=404, detail="Weather data unavailable for this location.")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Location weather failed for ({lat}, {lon}): {e}")
+        raise HTTPException(status_code=500, detail="Weather data unavailable.")

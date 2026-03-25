@@ -1,0 +1,213 @@
+[
+  {
+    "claim_text": "Finland's average temperature has risen by 2.3 degrees Celsius since pre-industrial times",
+    "evidence": [
+      {"source": "Finnish Meteorological Institute", "content": "Finland has warmed approximately 2.3\u00b0C since the late 1800s, roughly twice the global average rate.", "supports": true},
+      {"source": "IPCC AR6", "content": "High-latitude regions including Scandinavia have experienced warming 2-3 times the global average.", "supports": true}
+    ],
+    "expected_verdict": {
+      "verdict": "verified",
+      "confidence": 0.92,
+      "justification": "Multiple authoritative sources confirm Finland has warmed approximately 2.3\u00b0C since pre-industrial times, consistent with Arctic amplification patterns documented by IPCC."
+    },
+    "actual_verdict": "verified",
+    "actual_confidence": 0.90,
+    "expected_insight_summary": "This claim is well-supported by both national meteorological data and international climate assessments. The 2.3\u00b0C figure is consistent with documented Arctic amplification effects."
+  },
+  {
+    "claim_text": "2024 was the warmest year on record for Finland",
+    "evidence": [
+      {"source": "Finnish Meteorological Institute", "content": "2024 annual mean temperature data shows record warmth across most Finnish monitoring stations.", "supports": true},
+      {"source": "Copernicus Climate Change Service", "content": "2024 was confirmed as the warmest year globally, with particularly extreme warmth in northern Europe.", "supports": true}
+    ],
+    "expected_verdict": {
+      "verdict": "verified",
+      "confidence": 0.88,
+      "justification": "Both Finnish national data and European climate services confirm 2024 as a record warm year for Finland."
+    },
+    "actual_verdict": "verified",
+    "actual_confidence": 0.85
+  },
+  {
+    "claim_text": "Summer temperatures reached unprecedented highs of 35.2\u00b0C in Lapland",
+    "evidence": [
+      {"source": "FMI Station Data", "content": "The highest recorded temperature in Lapland in 2024 was 33.8\u00b0C at Utsjoki in July.", "supports": false},
+      {"source": "Historical Records", "content": "Finland's all-time record high is 37.2\u00b0C set in Liperi in 2010. Lapland's record is approximately 34.3\u00b0C.", "supports": false}
+    ],
+    "expected_verdict": {
+      "verdict": "disputed",
+      "confidence": 0.75,
+      "justification": "The specific figure of 35.2\u00b0C in Lapland is not supported by official station data. While temperatures were unusually high, the exact figure appears inaccurate."
+    },
+    "actual_verdict": "disputed",
+    "actual_confidence": 0.72
+  },
+  {
+    "claim_text": "Germany's renewable energy sector generated 52% of the country's electricity in 2024",
+    "evidence": [
+      {"source": "Fraunhofer ISE", "content": "Renewable energy sources covered approximately 52-55% of German net electricity generation in 2024.", "supports": true},
+      {"source": "BDEW", "content": "German renewable electricity share reached a new high in 2024, exceeding 50% for the first time on an annual basis.", "supports": true}
+    ],
+    "expected_verdict": {
+      "verdict": "verified",
+      "confidence": 0.90,
+      "justification": "Multiple German energy institutions confirm renewable electricity generation exceeded 50% in 2024, making the 52% figure consistent with official data."
+    },
+    "actual_verdict": "verified",
+    "actual_confidence": 0.88
+  },
+  {
+    "claim_text": "Wind power contributed 28% of Germany's total electricity generation",
+    "evidence": [
+      {"source": "Fraunhofer ISE", "content": "Wind energy (onshore + offshore) contributed approximately 27-29% of Germany's net electricity generation in 2024.", "supports": true}
+    ],
+    "expected_verdict": {
+      "verdict": "verified",
+      "confidence": 0.85,
+      "justification": "The 28% figure falls within the range reported by Fraunhofer ISE for combined onshore and offshore wind generation."
+    },
+    "actual_verdict": "verified",
+    "actual_confidence": 0.83
+  },
+  {
+    "claim_text": "Germany aims to achieve 80% renewable electricity by 2030",
+    "evidence": [
+      {"source": "German Federal Government", "content": "The amended Renewable Energy Sources Act (EEG 2023) sets a target of 80% renewable electricity by 2030.", "supports": true},
+      {"source": "European Commission", "content": "Germany's National Energy and Climate Plan confirms the 80% renewables target for 2030.", "supports": true}
+    ],
+    "expected_verdict": {
+      "verdict": "verified",
+      "confidence": 0.95,
+      "justification": "The 80% target is enshrined in German law (EEG 2023) and confirmed by the European Commission."
+    },
+    "actual_verdict": "verified",
+    "actual_confidence": 0.93
+  },
+  {
+    "claim_text": "There were several near-blackout incidents in Germany in January 2024",
+    "evidence": [
+      {"source": "BNetzA", "content": "The German Federal Network Agency reported no critical grid stability events in January 2024.", "supports": false},
+      {"source": "ENTSO-E", "content": "European grid frequency remained within normal bounds throughout January 2024.", "supports": false}
+    ],
+    "expected_verdict": {
+      "verdict": "disputed",
+      "confidence": 0.70,
+      "justification": "Neither the German grid regulator nor European transmission system data support claims of near-blackout incidents in January 2024."
+    },
+    "actual_verdict": "disputed",
+    "actual_confidence": 0.68,
+    "expected_insight_summary": "This claim lacks support from official grid stability monitoring data. While grid management challenges exist, no near-blackout events were officially recorded."
+  },
+  {
+    "claim_text": "Mediterranean sea levels will rise by 20-30 centimeters by 2050",
+    "evidence": [
+      {"source": "IPCC AR6 WG1", "content": "Under SSP2-4.5, global mean sea level rise is projected at 15-30 cm by 2050 relative to 1995-2014 baseline.", "supports": true},
+      {"source": "Copernicus Marine Service", "content": "Mediterranean regional sea level trends show slightly above global average rates of rise.", "supports": true}
+    ],
+    "expected_verdict": {
+      "verdict": "verified",
+      "confidence": 0.80,
+      "justification": "The 20-30 cm range is consistent with IPCC projections under moderate emission scenarios, particularly given the Mediterranean's above-average regional trends."
+    },
+    "actual_verdict": "verified",
+    "actual_confidence": 0.78
+  },
+  {
+    "claim_text": "Only 15% of at-risk coastal municipalities have implemented comprehensive protection plans",
+    "evidence": [
+      {"source": "EEA Climate-ADAPT", "content": "Coastal adaptation implementation varies widely across Europe, with many municipalities lacking comprehensive plans.", "supports": true}
+    ],
+    "expected_verdict": {
+      "verdict": "unverified",
+      "confidence": 0.45,
+      "justification": "While low adaptation rates are documented, the specific 15% figure could not be verified against any authoritative database."
+    },
+    "actual_verdict": "unverified",
+    "actual_confidence": 0.42
+  },
+  {
+    "claim_text": "Norway's sovereign wealth fund divested $7.6 billion from fossil fuel companies in 2024",
+    "evidence": [
+      {"source": "Norges Bank Investment Management", "content": "The Government Pension Fund Global reported significant fossil fuel divestments in 2024.", "supports": true}
+    ],
+    "expected_verdict": {
+      "verdict": "partially_true",
+      "confidence": 0.60,
+      "justification": "While significant divestments occurred, the exact $7.6 billion figure requires verification against the fund's official annual report."
+    },
+    "actual_verdict": "partially_true",
+    "actual_confidence": 0.58,
+    "expected_insight_summary": "The fund has made notable fossil fuel divestments, but the precise dollar amount cited requires confirmation from official NBIM reporting."
+  },
+  {
+    "claim_text": "Norway is Europe's largest oil and gas producer",
+    "evidence": [
+      {"source": "Norwegian Petroleum Directorate", "content": "Norway is the largest oil producer in Western Europe and a major natural gas exporter.", "supports": true},
+      {"source": "Eurostat Energy Statistics", "content": "Norway accounts for the largest share of crude oil production in Europe outside of Russia.", "supports": true}
+    ],
+    "expected_verdict": {
+      "verdict": "verified",
+      "confidence": 0.88,
+      "justification": "Norway is confirmed as Western Europe's largest oil producer and a major gas exporter, though the claim depends on whether Russia is included in 'Europe'."
+    },
+    "actual_verdict": "verified",
+    "actual_confidence": 0.85
+  },
+  {
+    "claim_text": "Herring catches in the Baltic Sea have declined by 40% over the past decade",
+    "evidence": [
+      {"source": "ICES", "content": "ICES advisory reports show significant declines in Baltic herring stocks, with catches reduced by approximately 30-45% depending on sub-basin.", "supports": true},
+      {"source": "HELCOM", "content": "Baltic herring biomass has shown a declining trend over the past 15 years.", "supports": true}
+    ],
+    "expected_verdict": {
+      "verdict": "verified",
+      "confidence": 0.82,
+      "justification": "ICES data confirms substantial herring catch declines in the 30-45% range, making the 40% figure consistent with observed trends."
+    },
+    "actual_verdict": "verified",
+    "actual_confidence": 0.80
+  },
+  {
+    "claim_text": "The Baltic Sea's surface temperature has increased by 1.5\u00b0C since 1990",
+    "evidence": [
+      {"source": "HELCOM", "content": "Baltic Sea surface temperatures have risen by approximately 1-2\u00b0C since the early 1990s, with the highest increases in the Bothnian Bay.", "supports": true},
+      {"source": "Copernicus Marine Service", "content": "Sea surface temperature trends in the Baltic show warming of approximately 0.3-0.6\u00b0C per decade since 1990.", "supports": true}
+    ],
+    "expected_verdict": {
+      "verdict": "verified",
+      "confidence": 0.83,
+      "justification": "Both HELCOM and Copernicus data support warming of 1-2\u00b0C since 1990 in the Baltic, making the 1.5\u00b0C figure within the documented range."
+    },
+    "actual_verdict": "verified",
+    "actual_confidence": 0.81
+  },
+  {
+    "claim_text": "Oxygen-depleted dead zones cover approximately 70,000 square kilometers of the Baltic seabed",
+    "evidence": [
+      {"source": "HELCOM", "content": "Oxygen-depleted areas in the Baltic Sea have been estimated at 60,000-80,000 km\u00b2 in recent years.", "supports": true},
+      {"source": "Stockholm University", "content": "Baltic dead zones have expanded significantly, covering areas comparable in size to Ireland.", "supports": true}
+    ],
+    "expected_verdict": {
+      "verdict": "verified",
+      "confidence": 0.85,
+      "justification": "The 70,000 km\u00b2 figure falls within HELCOM's documented range of 60,000-80,000 km\u00b2 for Baltic oxygen-depleted zones."
+    },
+    "actual_verdict": "verified",
+    "actual_confidence": 0.83
+  },
+  {
+    "claim_text": "The Finnish government has committed to carbon neutrality by 2035",
+    "evidence": [
+      {"source": "Finnish Government Programme", "content": "Finland's Climate Act sets a carbon neutrality target for 2035.", "supports": true},
+      {"source": "European Commission", "content": "Finland has the most ambitious carbon neutrality target in the EU, aiming for 2035.", "supports": true}
+    ],
+    "expected_verdict": {
+      "verdict": "verified",
+      "confidence": 0.95,
+      "justification": "Finland's 2035 carbon neutrality target is enshrined in the Finnish Climate Act and widely recognized as the EU's most ambitious national target."
+    },
+    "actual_verdict": "verified",
+    "actual_confidence": 0.93,
+    "expected_insight_summary": "Finland's 2035 carbon neutrality commitment is well-documented in national legislation and recognized internationally as the EU's most ambitious timeline."
+  }
+]

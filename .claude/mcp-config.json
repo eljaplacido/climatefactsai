@@ -1,0 +1,34 @@
+{
+  "$schema": "https://github.com/modelcontextprotocol/specification/blob/main/schema/schema.json",
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "C:/Users/35845/Desktop/DIGICISU/climatenews"
+      ],
+      "description": "Access project files, schemas, configs, and logs"
+    },
+    "postgres": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres"
+      ],
+      "env": {
+        "POSTGRES_CONNECTION_STRING": "postgresql://postgres:postgres@localhost:5433/climatenews"
+      },
+      "description": "Query PostgreSQL database for articles, claims, and credibility data"
+    },
+    "docker": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-docker"
+      ],
+      "description": "Manage Docker containers, view logs, check service health"
+    }
+  },
+  "globalShortcut": "Ctrl+Shift+Space"
+}

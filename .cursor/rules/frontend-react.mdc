@@ -1,0 +1,412 @@
+# Frontend React Rules (MDC)
+
+## React 19 Best Practices
+
+### Component Structure
+```typescript
+// ✅ GOOD: Function component with proper types
+import { FC } from 'react';
+
+interface ArticleCardProps {
+  article: Article;
+  onVerify?: (id: number) => void;
+}
+
+export const ArticleCard: FC<ArticleCardProps> = ({ article, onVerify }) => {
+  return (
+    <div className="rounded-lg border p-4 shadow-sm">
+      <h3 className="text-lg font-semibold">{article.title}</h3>
+      {/* ... */}
+    </div>
+  );
+};
+
+// ❌ BAD: Class component, inline styles
+class ArticleCard extends React.Component {
+  render() {
+    return <div style={{padding: '10px'}}>...</div>;
+  }
+}
+```
+
+### Hooks Usage
+```typescript
+// ✅ GOOD: Custom hook for data fetching
+import { useQuery } from '@tanstack/react-query';
+
+export function useArticle(id: number) {
+  return useQuery({
+    queryKey: ['article', id],
+    queryFn: () => fetch(`/api/articles/${id}`).then(r => r.json()),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
+// Usage in component
+function ArticleDetail({ id }: { id: number }) {
+  const { data: article, isLoading, error } = useArticle(id);
+  
+  if (isLoading) return <ArticleSkeleton />;
+  if (error) return <ErrorMessage error={error} />;
+  
+  return <ArticleContent article={article} />;
+}
+```
+
+### React 19 Actions (for forms)
+```typescript
+// ✅ GOOD: Using React 19 useActionState
+import { useActionState } from 'react';
+
+async function submitArticleVerification(
+  prevState: any,
+  formData: FormData
+) {
+  const url = formData.get('url') as string;
+  
+  try {
+    const response = await fetch('/api/analyze-url', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    
+    if (!response.ok) throw new Error('Verification failed');
+    
+    const result = await response.json();
+    return { success: true, data: result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+export function UrlAnalyzer() {
+  const [state, submitAction, isPending] = useActionState(
+    submitArticleVerification,
+    null
+  );
+  
+  return (
+    <form action={submitAction}>
+      <input name="url" type="url" required />
+      <button type="submit" disabled={isPending}>
+        {isPending ? 'Analyzing...' : 'Verify URL'}
+      </button>
+      {state?.success && <SuccessMessage data={state.data} />}
+      {state?.error && <ErrorMessage message={state.error} />}
+    </form>
+  );
+}
+```
+
+### Tailwind CSS Standards
+```typescript
+// ✅ GOOD: Consistent Tailwind classes
+<div className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
+  <h2 className="text-xl font-bold text-gray-900">
+    Article Title
+  </h2>
+  <p className="text-sm text-gray-600">
+    Published on {formatDate(date)}
+  </p>
+</div>
+
+// ❌ BAD: Inline styles, inconsistent spacing
+<div style={{padding: '24px', border: '1px solid gray'}}>
+  <h2 style={{fontSize: '20px', fontWeight: 'bold'}}>...</h2>
+</div>
+```
+
+## Project-Specific Patterns
+
+### API Client Structure
+```typescript
+// lib/api/client.ts
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5200';
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public data?: any
+  ) {
+    super(message);
+  }
+}
+
+async function fetchAPI<T>(
+  endpoint: string,
+  options?: RequestInit
+): Promise<T> {
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+    },
+  });
+  
+  if (!response.ok) {
+    throw new ApiError(
+      `API error: ${response.statusText}`,
+      response.status,
+      await response.json().catch(() => null)
+    );
+  }
+  
+  return response.json();
+}
+
+// Domain-specific API modules
+export const articlesAPI = {
+  list: (params?: ArticleSearchParams) =>
+    fetchAPI<Article[]>('/api/articles', {
+      method: 'GET',
+      // Add query params
+    }),
+  
+  getById: (id: number) =>
+    fetchAPI<ArticleDetail>(`/api/articles/${id}`),
+  
+  search: (query: string) =>
+    fetchAPI<Article[]>('/api/search', {
+      method: 'POST',
+      body: JSON.stringify({ query }),
+    }),
+};
+```
+
+### Component Organization
+```
+src/
+├── components/
+│   ├── ui/              # Shadcn/UI components
+│   │   ├── button.tsx
+│   │   ├── card.tsx
+│   │   └── input.tsx
+│   ├── articles/        # Domain components
+│   │   ├── ArticleCard.tsx
+│   │   ├── ArticleList.tsx
+│   │   └── ArticleDetail.tsx
+│   ├── verification/
+│   │   ├── ClaimBadge.tsx
+│   │   ├── EvidencePanel.tsx
+│   │   └── CredibilityScore.tsx
+│   └── layout/
+│       ├── Header.tsx
+│       ├── Footer.tsx
+│       └── Sidebar.tsx
+├── hooks/
+│   ├── useArticles.ts
+│   ├── useSearch.ts
+│   └── useAuth.ts
+├── lib/
+│   ├── api/
+│   ├── utils/
+│   └── constants.ts
+└── types/
+    ├── article.ts
+    ├── claim.ts
+    └── user.ts
+```
+
+### Type Definitions
+```typescript
+// types/article.ts
+export interface Article {
+  id: number;
+  title: string;
+  url: string;
+  source: string;
+  published_at: string | null;
+  excerpt: string | null;
+  credibility_score: number | null;
+  credibility_level: 'high' | 'medium' | 'low' | null;
+  country: string | null;
+  tags: string[];
+  created_at: string;
+}
+
+export interface ArticleDetail extends Article {
+  full_text: string | null;
+  claims: Claim[];
+}
+
+export interface Claim {
+  id: string;
+  claim_text: string;
+  claim_type: string | null;
+  verification_status: 'verified' | 'disputed' | 'unverified';
+  confidence_score: number;
+  evidence: Evidence[];
+}
+
+export interface Evidence {
+  source: string;
+  url: string;
+  relevance_score: number;
+  excerpt: string;
+}
+```
+
+### State Management Patterns
+```typescript
+// ✅ GOOD: React Query for server state
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+export function useArticleFeedback(articleId: number) {
+  const queryClient = useQueryClient();
+  
+  const { data: feedback } = useQuery({
+    queryKey: ['feedback', articleId],
+    queryFn: () => articlesAPI.getFeedback(articleId),
+  });
+  
+  const submitFeedback = useMutation({
+    mutationFn: (data: FeedbackData) =>
+      articlesAPI.submitFeedback(articleId, data),
+    onSuccess: () => {
+      // Invalidate and refetch
+      queryClient.invalidateQueries({ queryKey: ['feedback', articleId] });
+    },
+  });
+  
+  return { feedback, submitFeedback };
+}
+
+// ✅ GOOD: useState for local UI state
+function ArticleFilters() {
+  const [country, setCountry] = useState<string | null>(null);
+  const [dateRange, setDateRange] = useState<DateRange | null>(null);
+  
+  // Local UI state only
+}
+```
+
+## Anti-Patterns to Avoid
+
+### ❌ Don't: Prop drilling (use context or composition)
+```typescript
+// BAD
+<App>
+  <Header user={user} />
+  <Content user={user}>
+    <Article user={user} />
+  </Content>
+</App>
+
+// GOOD
+import { UserProvider, useUser } from '@/contexts/UserContext';
+
+<UserProvider>
+  <App>
+    <Header />
+    <Content />
+  </App>
+</UserProvider>
+
+// In child components
+function Header() {
+  const user = useUser();
+  // ...
+}
+```
+
+### ❌ Don't: Fetch data in useEffect
+```typescript
+// BAD
+function Articles() {
+  const [articles, setArticles] = useState([]);
+  
+  useEffect(() => {
+    fetch('/api/articles')
+      .then(r => r.json())
+      .then(setArticles);
+  }, []);
+}
+
+// GOOD - use React Query
+function Articles() {
+  const { data: articles } = useQuery({
+    queryKey: ['articles'],
+    queryFn: () => articlesAPI.list(),
+  });
+}
+```
+
+### ❌ Don't: Mutate props
+```typescript
+// BAD
+function ArticleCard({ article }: { article: Article }) {
+  article.title = article.title.toUpperCase(); // Mutation!
+  return <div>{article.title}</div>;
+}
+
+// GOOD
+function ArticleCard({ article }: { article: Article }) {
+  const displayTitle = article.title.toUpperCase();
+  return <div>{displayTitle}</div>;
+}
+```
+
+## Testing
+
+### Component Test Example
+```typescript
+// __tests__/ArticleCard.test.tsx
+import { render, screen } from '@testing-library/react';
+import { ArticleCard } from '@/components/articles/ArticleCard';
+
+describe('ArticleCard', () => {
+  const mockArticle: Article = {
+    id: 1,
+    title: 'Climate Change Impact',
+    source: 'BBC',
+    credibility_level: 'high',
+    // ...
+  };
+  
+  it('renders article title and source', () => {
+    render(<ArticleCard article={mockArticle} />);
+    
+    expect(screen.getByText('Climate Change Impact')).toBeInTheDocument();
+    expect(screen.getByText('BBC')).toBeInTheDocument();
+  });
+  
+  it('displays high credibility badge', () => {
+    render(<ArticleCard article={mockArticle} />);
+    
+    expect(screen.getByText(/high credibility/i)).toBeInTheDocument();
+  });
+});
+```
+
+### Hook Test Example
+```typescript
+// __tests__/hooks/useArticles.test.ts
+import { renderHook, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useArticles } from '@/hooks/useArticles';
+
+const createWrapper = () => {
+  const queryClient = new QueryClient();
+  return ({ children }) => (
+    <QueryClientProvider client={queryClient}>
+      {children}
+    </QueryClientProvider>
+  );
+};
+
+describe('useArticles', () => {
+  it('fetches articles successfully', async () => {
+    const { result } = renderHook(() => useArticles(), {
+      wrapper: createWrapper(),
+    });
+    
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    
+    expect(result.current.data).toBeDefined();
+    expect(Array.isArray(result.current.data)).toBe(true);
+  });
+});
+```

@@ -1,0 +1,93 @@
+# CliLens.AI Project Rules
+# This file serves as the "constitution" for AI-assisted development
+
+## Tech Stack Constraints
+
+- **Python**: 3.11+ required. Use modern syntax (type hints, async/await, pattern matching).
+- **FastAPI**: Always async route handlers. Use dependency injection for DB/config/services.
+- **PostgreSQL**: Version 17 with pgvector extension. All queries must be parameterized.
+- **React**: Target React 19 stable. Use function components + hooks exclusively.
+- **Kafka**: KRaft mode (no ZooKeeper). Define strict schemas for all events.
+
+## Architecture Principles
+
+### Domain-Driven Design (DDD)
+- Business logic MUST reside in `src/backend/app/domains/*/services.py`
+- FastAPI routers are thin adapters - NO business logic in route handlers
+- Database access MUST go through repository layer (`domains/*/repository.py`)
+- Each domain is a cohesive module: models + services + repository + router
+
+### Separation of Concerns
+- `src/backend/app/core/` contains shared infrastructure (DB, Kafka, logging, config)
+- `src/backend/app/domains/` contains business domains (intelligence, content, identity)
+- `api/` is the legacy FastAPI gateway - gradually migrate to domain routers
+
+### Testing Requirements
+- **Every new feature requires tests**: pytest for backend, component tests for frontend
+- Test file naming: `test_<module>.py` in corresponding `tests/` subdirectory
+- Integration tests must use test database fixtures
+- No untested code in production domains
+
+### Documentation Standards
+- When domain logic changes, update corresponding `docs/domain/*.md`
+- API contracts must be documented in `docs/api/`
+- Architecture decisions must be recorded in `docs/architecture/`
+- Use Mermaid diagrams for flow visualizations
+
+## Code Quality Standards
+
+### Python (Backend)
+- Use Pydantic v2 for all data models and validation
+- Type hints are mandatory for all functions
+- Use `async def` for I/O operations (DB, HTTP, Kafka)
+- Follow PEP 8 with Black formatter (120 char line length)
+- Use dependency injection via FastAPI `Depends()` for services
+- No raw SQL string formatting - always use parameterized queries
+
+### React (Frontend)
+- Function components only - no class components
+- Use custom hooks for shared logic
+- Tailwind CSS for styling - no inline styles or CSS modules
+- Shadcn/UI components for consistent design system
+- React Query / SWR for server state management
+- Co-locate component state - lift only when necessary
+
+### Database
+- All migrations must be versioned and reversible
+- Use pgvector for semantic search features
+- Index strategy: analyze query patterns before adding indexes
+- Never expose raw database errors to API consumers
+
+## Security & Privacy
+- Never commit secrets, API keys, or credentials
+- Use environment variables for all configuration
+- Implement rate limiting on all public endpoints
+- Sanitize user inputs in domain services, not just routers
+- GDPR compliance: user data export and deletion workflows
+
+## Development Workflow
+- Feature branches: `feature/<domain>-<description>`
+- Commit messages: Conventional Commits format
+- Before merge: run linters, tests, and type checkers
+- Use feature flags for gradual rollout of new capabilities
+
+## AI Agent Instructions
+When implementing features:
+1. Analyze the affected domain in `docs/domain/`
+2. Update or create domain models in `domains/*/models.py`
+3. Implement business logic in `domains/*/services.py`
+4. Create repository functions in `domains/*/repository.py`
+5. Add thin router in `domains/*/router.py`
+6. Write pytest tests in `tests/domains/*/`
+7. Update domain documentation in `docs/domain/`
+
+## Exclusions (Deferred to Phase 3)
+- Video generation features (InVideo, Remotion)
+- Mobile app development
+- Advanced personalization engine
+
+## References
+- Primary plan: `restructuring_plan.md`
+- Architecture overview: `docs/architecture/ARCHITECTURE.md`
+- Domain definitions: `docs/domain/*.md`
+

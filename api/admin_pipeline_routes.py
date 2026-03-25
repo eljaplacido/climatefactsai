@@ -1,0 +1,540 @@
+"""
+Admin Pipeline Routes - Trigger article processing pipeline
+
+Endpoints to manually trigger:
+- Claim extraction for pending articles
+- Fact-checking for extracted claims
+- Full pipeline processing
+"""
+
+import asyncio
+import os
+from typing import List, Optional
+from datetime import datetime
+
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
+from pydantic import BaseModel
+
+import sys
+from pathlib import Path
+
+# Add src/backend to path
+SRC_BACKEND = Path(__file__).resolve().parents[1] / "src" / "backend"
+if str(SRC_BACKEND) not in sys.path:
+    sys.path.insert(0, str(SRC_BACKEND))
+
+from shared.database import get_postgres
+from shared.logger import setup_logging
+from app.domains.intelligence.services import ClaimExtractor, VerificationService, VerdictAdjudicator, EvidenceRetriever
+from api.auth_routes import get_current_user
+
+logger = setup_logging("admin-pipeline")
+router = APIRouter(prefix="/api/admin/pipeline", tags=["Admin Pipeline"])
+
+# Admin email allowlist — users with these emails always get admin access
+ADMIN_EMAILS = set(filter(None, os.environ.get("ADMIN_EMAILS", "").split(",")))
+
+
+def require_admin(current_user: dict) -> dict:
+    """Verify the authenticated user has admin privileges.
+
+    Admin access is granted if the user's subscription_tier is 'enterprise'
+    or the user's email is in the ADMIN_EMAILS allowlist.
+    """
+    tier = current_user.get("subscription_tier", "")
+    email = current_user.get("email", "")
+
+    if tier != "enterprise" and email not in ADMIN_EMAILS:
+        raise HTTPException(
+            status_code=403,
+            detail="Admin access required. Enterprise subscription or admin privileges needed."
+        )
+    return current_user
+
+# =============================================================================
+# REQUEST/RESPONSE MODELS
+# =============================================================================
+
+class PipelineResponse(BaseModel):
+    """Response from pipeline trigger"""
+    status: str
+    message: str
+    articles_processed: int = 0
+    claims_extracted: int = 0
+    claims_verified: int = 0
+    errors: List[str] = []
+
+
+class ProcessArticlesRequest(BaseModel):
+    """Request to process specific articles"""
+    article_ids: Optional[List[str]] = None
+    limit: int = 10
+    extract_claims: bool = True
+    verify_claims: bool = True
+
+
+# =============================================================================
+# BACKGROUND PROCESSING FUNCTIONS
+# =============================================================================
+
+async def extract_claims_for_article(article_id: str, article_text: str) -> tuple[int, Optional[str]]:
+    """
+    Extract claims from article text.
+    Returns (claims_count, error_message)
+    """
+    try:
+        extractor = ClaimExtractor()
+        claims = await extractor.decompose_claims(article_text, max_claims=10)
+
+        if not claims:
+            return 0, None
+
+        # Store claims in database
+        db = get_postgres()
+        claims_inserted = 0
+
+        for claim in claims:
+            try:
+                db.execute_update(
+                    """
+                    INSERT INTO claims (
+                        article_id, claim_text, claim_type, claim_context, created_at
+                    ) VALUES (
+                        :article_id, :claim_text, :claim_type, :context, NOW()
+                    )
+                    ON CONFLICT DO NOTHING
+                    """,
+                    {
+                        "article_id": article_id,
+                        "claim_text": claim.claim_text,
+                        "claim_type": claim.claim_type,
+                        "context": claim.claim_context
+                    }
+                )
+                claims_inserted += 1
+            except Exception as e:
+                logger.error(f"Error inserting claim: {e}")
+
+        # Update article claims count and status
+        db.execute_update(
+            """
+            UPDATE articles
+            SET claims_count = :count,
+                claims_status = 'completed',
+                claims_processed_at = NOW(),
+                updated_at = NOW()
+            WHERE article_id = :article_id
+            """,
+            {"count": claims_inserted, "article_id": article_id}
+        )
+
+        return claims_inserted, None
+
+    except HTTPException as e:
+        error_msg = e.detail
+        logger.error(f"Claim extraction failed for {article_id}: {error_msg}")
+
+        # Update article with failed status
+        db = get_postgres()
+        db.execute_update(
+            """
+            UPDATE articles
+            SET claims_status = 'failed',
+                claims_error_message = :error,
+                updated_at = NOW()
+            WHERE article_id = :article_id
+            """,
+            {"error": error_msg, "article_id": article_id}
+        )
+
+        return 0, error_msg
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Unexpected error extracting claims for {article_id}: {e}", exc_info=True)
+        return 0, error_msg
+
+
+async def verify_claims_for_article(article_id: str) -> tuple[int, Optional[str]]:
+    """
+    Verify claims for an article.
+    Returns (verified_count, error_message)
+    """
+    try:
+        db = get_postgres()
+
+        # Get unverified claims for this article
+        claims = db.execute_query(
+            """
+            SELECT claim_id, claim_text, claim_type
+            FROM claims
+            WHERE article_id = :article_id
+              AND NOT EXISTS (
+                  SELECT 1 FROM fact_checks WHERE fact_checks.claim_id = claims.claim_id
+              )
+            LIMIT 10
+            """,
+            {"article_id": article_id}
+        )
+
+        if not claims:
+            return 0, None
+
+        adjudicator = VerdictAdjudicator()
+        retriever = EvidenceRetriever()
+        verified_count = 0
+
+        for claim in claims:
+            try:
+                # Create AtomicClaim object
+                from app.domains.intelligence.schemas import AtomicClaim
+                atomic_claim = AtomicClaim(
+                    claim_text=claim["claim_text"],
+                    claim_type=claim.get("claim_type", "factual"),
+                    claim_context=claim.get("claim_context", "") or None
+                    # importance_score defaults to 1.0
+                )
+
+                # Retrieve evidence
+                evidence = await retriever.fetch_evidence(atomic_claim)
+
+                # Adjudicate verdict
+                verdict = await adjudicator.adjudicate(atomic_claim, evidence)
+
+                # Store fact-check result
+                import json
+                evidence_json = json.dumps([])
+                db.execute_update(
+                    """
+                    INSERT INTO fact_checks (
+                        claim_id, verification_status, confidence_score,
+                        justification, evidence, verified_at
+                    ) VALUES (
+                        :claim_id, :status, :confidence,
+                        :justification, CAST(:evidence AS jsonb), NOW()
+                    )
+                    """,
+                    {
+                        "claim_id": claim["claim_id"],
+                        "status": verdict.verdict,
+                        "confidence": verdict.confidence_score,
+                        "justification": verdict.justification,
+                        "evidence": evidence_json
+                    }
+                )
+                verified_count += 1
+
+            except Exception as e:
+                logger.error(f"Error verifying claim {claim['claim_id']}: {e}")
+
+        # Update article verified claims count
+        db.execute_update(
+            """
+            UPDATE articles
+            SET verified_claims_count = (
+                SELECT COUNT(*) FROM claims c
+                JOIN fact_checks fc ON fc.claim_id = c.claim_id
+                WHERE c.article_id = :article_id
+            ),
+            updated_at = NOW()
+            WHERE article_id = :article_id
+            """,
+            {"article_id": article_id}
+        )
+
+        return verified_count, None
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error verifying claims for {article_id}: {e}", exc_info=True)
+        return 0, error_msg
+
+
+async def process_article_pipeline(article_id: str, article_text: str, extract: bool, verify: bool) -> dict:
+    """Process a single article through the pipeline"""
+    result = {
+        "article_id": article_id,
+        "claims_extracted": 0,
+        "claims_verified": 0,
+        "errors": []
+    }
+
+    # Step 1: Extract claims
+    if extract:
+        claims_count, error = await extract_claims_for_article(article_id, article_text)
+        result["claims_extracted"] = claims_count
+        if error:
+            result["errors"].append(f"Claim extraction: {error}")
+            return result  # Stop if extraction failed
+
+    # Step 2: Verify claims
+    if verify:
+        verified_count, error = await verify_claims_for_article(article_id)
+        result["claims_verified"] = verified_count
+        if error:
+            result["errors"].append(f"Claim verification: {error}")
+
+    return result
+
+
+# =============================================================================
+# API ENDPOINTS
+# =============================================================================
+
+@router.post("/extract-claims", response_model=PipelineResponse)
+async def trigger_claim_extraction(
+    request: ProcessArticlesRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Trigger claim extraction for articles with pending status.
+
+    This processes articles that have text but no claims extracted yet.
+    """
+    require_admin(current_user)
+    db = get_postgres()
+
+    # Get articles needing claim extraction
+    query = """
+        SELECT article_id, title, excerpt, extracted_text
+        FROM articles
+        WHERE (claims_status IS NULL OR claims_status = 'pending' OR claims_status = 'failed')
+          AND (excerpt IS NOT NULL OR extracted_text IS NOT NULL)
+    """
+
+    params = {}
+    if request.article_ids:
+        query += " AND article_id = ANY(:ids)"
+        params["ids"] = request.article_ids
+
+    query += " LIMIT :limit"
+    params["limit"] = request.limit
+
+    articles = db.execute_query(query, params)
+
+    if not articles:
+        return PipelineResponse(
+            status="success",
+            message="No articles need claim extraction",
+            articles_processed=0
+        )
+
+    # Process in background
+    total_claims = 0
+    errors = []
+
+    for article in articles:
+        article_text = article.get("extracted_text") or article.get("excerpt") or ""
+        if len(article_text) < 50:
+            continue
+
+        try:
+            claims_count, error = await extract_claims_for_article(
+                article["article_id"],
+                article_text
+            )
+            total_claims += claims_count
+            if error:
+                errors.append(f"{article['title']}: {error}")
+        except Exception as e:
+            errors.append(f"{article['title']}: {str(e)}")
+
+    return PipelineResponse(
+        status="completed" if not errors else "partial",
+        message=f"Processed {len(articles)} articles",
+        articles_processed=len(articles),
+        claims_extracted=total_claims,
+        errors=errors[:10]  # Limit error list
+    )
+
+
+@router.post("/verify-claims", response_model=PipelineResponse)
+async def trigger_claim_verification(
+    request: ProcessArticlesRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Trigger fact-checking for extracted claims.
+
+    This verifies claims that have been extracted but not yet fact-checked.
+    """
+    require_admin(current_user)
+    db = get_postgres()
+
+    # Get articles with unverified claims
+    query = """
+        SELECT DISTINCT a.article_id, a.title
+        FROM articles a
+        JOIN claims c ON c.article_id = a.article_id
+        LEFT JOIN fact_checks fc ON fc.claim_id = c.claim_id
+        WHERE fc.fact_check_id IS NULL
+    """
+
+    params = {}
+    if request.article_ids:
+        query += " AND a.article_id = ANY(:ids)"
+        params["ids"] = request.article_ids
+
+    query += " LIMIT :limit"
+    params["limit"] = request.limit
+
+    articles = db.execute_query(query, params)
+
+    if not articles:
+        return PipelineResponse(
+            status="success",
+            message="No claims need verification",
+            articles_processed=0
+        )
+
+    # Process verification
+    total_verified = 0
+    errors = []
+
+    for article in articles:
+        try:
+            verified_count, error = await verify_claims_for_article(article["article_id"])
+            total_verified += verified_count
+            if error:
+                errors.append(f"{article['title']}: {error}")
+        except Exception as e:
+            errors.append(f"{article['title']}: {str(e)}")
+
+    return PipelineResponse(
+        status="completed" if not errors else "partial",
+        message=f"Processed {len(articles)} articles",
+        articles_processed=len(articles),
+        claims_verified=total_verified,
+        errors=errors[:10]
+    )
+
+
+@router.post("/process-all", response_model=PipelineResponse)
+async def process_full_pipeline(
+    request: ProcessArticlesRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Run the complete pipeline: extract claims + verify claims.
+
+    This is the main endpoint to process articles end-to-end.
+    """
+    require_admin(current_user)
+    db = get_postgres()
+
+    # Get articles needing processing
+    query = """
+        SELECT article_id, title, excerpt, extracted_text
+        FROM articles
+        WHERE (claims_status IS NULL OR claims_status = 'pending' OR claims_status = 'failed')
+          AND (excerpt IS NOT NULL OR extracted_text IS NOT NULL)
+    """
+
+    params = {}
+    if request.article_ids:
+        query += " AND article_id = ANY(:ids)"
+        params["ids"] = request.article_ids
+
+    query += " LIMIT :limit"
+    params["limit"] = request.limit
+
+    articles = db.execute_query(query, params)
+
+    if not articles:
+        return PipelineResponse(
+            status="success",
+            message="No articles need processing",
+            articles_processed=0
+        )
+
+    # Process pipeline
+    total_claims = 0
+    total_verified = 0
+    errors = []
+
+    for article in articles:
+        article_text = article.get("extracted_text") or article.get("excerpt") or ""
+        if len(article_text) < 50:
+            continue
+
+        try:
+            result = await process_article_pipeline(
+                article["article_id"],
+                article_text,
+                extract=request.extract_claims,
+                verify=request.verify_claims
+            )
+            total_claims += result["claims_extracted"]
+            total_verified += result["claims_verified"]
+            errors.extend(result["errors"])
+
+        except Exception as e:
+            errors.append(f"{article['title']}: {str(e)}")
+
+    return PipelineResponse(
+        status="completed" if not errors else "partial",
+        message=f"Pipeline processed {len(articles)} articles",
+        articles_processed=len(articles),
+        claims_extracted=total_claims,
+        claims_verified=total_verified,
+        errors=errors[:10]
+    )
+
+
+@router.get("/status")
+async def get_pipeline_status(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get current pipeline status - how many articles need processing.
+    """
+    require_admin(current_user)
+    db = get_postgres()
+
+    stats = {
+        "total_articles": 0,
+        "needs_claim_extraction": 0,
+        "needs_verification": 0,
+        "completed": 0,
+        "failed": 0
+    }
+
+    # Total articles
+    result = db.execute_query("SELECT COUNT(*) as count FROM articles")
+    stats["total_articles"] = result[0]["count"] if result else 0
+
+    # Needs claim extraction
+    result = db.execute_query(
+        """
+        SELECT COUNT(*) as count FROM articles
+        WHERE (claims_status IS NULL OR claims_status = 'pending' OR claims_status = 'failed')
+          AND (excerpt IS NOT NULL OR extracted_text IS NOT NULL)
+        """
+    )
+    stats["needs_claim_extraction"] = result[0]["count"] if result else 0
+
+    # Needs verification
+    result = db.execute_query(
+        """
+        SELECT COUNT(DISTINCT a.article_id) as count
+        FROM articles a
+        JOIN claims c ON c.article_id = a.article_id
+        LEFT JOIN fact_checks fc ON fc.claim_id = c.claim_id
+        WHERE fc.fact_check_id IS NULL
+        """
+    )
+    stats["needs_verification"] = result[0]["count"] if result else 0
+
+    # Completed
+    result = db.execute_query(
+        "SELECT COUNT(*) as count FROM articles WHERE claims_status = 'completed'"
+    )
+    stats["completed"] = result[0]["count"] if result else 0
+
+    # Failed
+    result = db.execute_query(
+        "SELECT COUNT(*) as count FROM articles WHERE claims_status = 'failed'"
+    )
+    stats["failed"] = result[0]["count"] if result else 0
+
+    return stats

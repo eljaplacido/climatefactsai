@@ -1,0 +1,144 @@
+{
+  "name": "Multi-Service Deployment Template",
+  "description": "Coordinated deployment workflow for multiple services with validation",
+  "version": "1.0.0",
+  "tags": ["deployment", "multi-service", "orchestration", "validation"],
+  "workflow": {
+    "preTask": [
+      "npx claude-flow@alpha hooks pre-task --description 'Multi-service deployment: {{services}}'",
+      "npx claude-flow@alpha memory fetch --context 'deployment/{{environment}}' --labels 'deployment,validation'",
+      "npx claude-flow@alpha checkpoint create --label 'pre-deployment-{{timestamp}}'",
+      "docker-compose ps",
+      "git status"
+    ],
+    "agents": [
+      {
+        "type": "cicd-engineer",
+        "name": "Deployment Coordinator",
+        "task": "Coordinate deployment of services: {{services}}. Verify dependencies, check environment variables, validate configurations. Store deployment plan in .claude/memory/deployment/{{deploy_id}}/plan.json",
+        "memoryKey": "reasoningbank://{{project}}/deployment/{{environment}}/plan",
+        "checkpoint": true,
+        "hooks": ["post-edit", "notify"]
+      },
+      {
+        "type": "security-manager",
+        "name": "Security Validator",
+        "task": "Validate security configurations for all services. Check secrets management, network policies, and authentication. Document in .claude/memory/deployment/{{deploy_id}}/security.md",
+        "reasoningBank": "security/deployment",
+        "memoryKey": "reasoningbank://{{project}}/deployment/{{environment}}/security",
+        "checkpoint": true
+      },
+      {
+        "type": "tester",
+        "name": "Integration Tester",
+        "task": "Run integration tests across all services. Verify inter-service communication. Generate test report in .claude/memory/deployment/{{deploy_id}}/tests.json",
+        "framework": "pytest",
+        "memoryKey": "reasoningbank://{{project}}/deployment/{{environment}}/testing",
+        "checkpoint": true
+      },
+      {
+        "type": "code-analyzer",
+        "name": "Health Monitor",
+        "task": "Monitor service health during deployment. Check logs, metrics, and error rates. Alert on anomalies. Store metrics in .claude/memory/deployment/{{deploy_id}}/health.json",
+        "memoryKey": "reasoningbank://{{project}}/deployment/{{environment}}/health",
+        "checkpoint": true
+      },
+      {
+        "type": "api-docs",
+        "name": "Deployment Documentation",
+        "task": "Update deployment documentation. Document any changes, rollback procedures, and lessons learned in docs/deployment/{{deploy_id}}.md",
+        "memoryKey": "reasoningbank://{{project}}/deployment/{{environment}}/docs",
+        "checkpoint": true
+      }
+    ],
+    "postTask": [
+      "docker-compose ps",
+      "npm run test:integration",
+      "npx claude-flow@alpha hooks post-task --task-id 'deploy-{{deploy_id}}'",
+      "npx claude-flow@alpha memory push --provider reasoningbank --context {{project}}/deployment --confidence 0.93",
+      "npx claude-flow@alpha metrics log --feature 'multi-service-deploy' --session {{deploy_id}} --status {{status}}",
+      "npx claude-flow@alpha hooks session-end --export-metrics true"
+    ]
+  },
+  "variables": {
+    "services": {
+      "type": "string",
+      "required": true,
+      "description": "Comma-separated list of services to deploy"
+    },
+    "environment": {
+      "type": "string",
+      "required": true,
+      "description": "Target environment (dev, staging, production)"
+    },
+    "project": {
+      "type": "string",
+      "required": true,
+      "description": "Project name"
+    },
+    "deploy_id": {
+      "type": "string",
+      "required": true,
+      "description": "Unique deployment identifier"
+    },
+    "timestamp": {
+      "type": "string",
+      "default": "{{NOW}}",
+      "description": "Deployment timestamp"
+    },
+    "status": {
+      "type": "string",
+      "default": "success",
+      "description": "Deployment status (success, failed, partial)"
+    }
+  },
+  "todos": [
+    {
+      "id": "deploy-1",
+      "content": "Validate deployment configurations for {{services}}",
+      "status": "pending",
+      "priority": "high"
+    },
+    {
+      "id": "deploy-2",
+      "content": "Run security validation checks",
+      "status": "pending",
+      "priority": "high"
+    },
+    {
+      "id": "deploy-3",
+      "content": "Execute integration test suite",
+      "status": "pending",
+      "priority": "high"
+    },
+    {
+      "id": "deploy-4",
+      "content": "Monitor service health during deployment",
+      "status": "pending",
+      "priority": "high"
+    },
+    {
+      "id": "deploy-5",
+      "content": "Update deployment documentation",
+      "status": "pending",
+      "priority": "medium"
+    },
+    {
+      "id": "deploy-6",
+      "content": "Verify all services are healthy",
+      "status": "pending",
+      "priority": "high"
+    },
+    {
+      "id": "deploy-7",
+      "content": "Update ReasoningBank and metrics",
+      "status": "pending",
+      "priority": "low"
+    }
+  ],
+  "checkpoints": {
+    "auto": true,
+    "labels": ["pre-deploy", "security-validated", "tests-passed", "services-deployed", "health-verified"],
+    "rollback_instructions": "Use docker-compose down && git checkout <previous-commit> && docker-compose up to rollback. Check .claude/checkpoints/ for detailed state."
+  }
+}

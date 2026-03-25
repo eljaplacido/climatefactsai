@@ -1,0 +1,308 @@
+# Docker Compose Override Template
+#
+# This file provides examples for customizing the docker-compose.yml configuration
+# for local development without modifying the main compose file.
+#
+# USAGE:
+# 1. Copy this file: cp docker-compose.override.yml.example docker-compose.override.yml
+# 2. Uncomment and modify sections as needed
+# 3. Run: docker-compose up -d
+#
+# Docker automatically merges docker-compose.yml + docker-compose.override.yml
+#
+# IMPORTANT: docker-compose.override.yml is in .gitignore - don't commit your local settings!
+
+version: '3.8'
+
+services:
+  # =============================================================================
+  # DEVELOPMENT ENVIRONMENT OVERRIDES
+  # =============================================================================
+
+  # ---------------------------------------------------------------------------
+  # API Gateway - Development Mode
+  # ---------------------------------------------------------------------------
+  # api-gateway:
+  #   # Mount local code for hot reload
+  #   volumes:
+  #     - ./api:/app:rw
+  #   # Override command for development server with auto-reload
+  #   command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+  #   # Add debug environment variables
+  #   environment:
+  #     - LOG_LEVEL=DEBUG
+  #     - ENVIRONMENT=development
+  #   # Expose debugger port
+  #   ports:
+  #     - "5678:5678"  # Python debugger (debugpy)
+
+  # ---------------------------------------------------------------------------
+  # Frontend - Development Mode
+  # ---------------------------------------------------------------------------
+  # frontend:
+  #   # Mount local code for hot reload
+  #   volumes:
+  #     - ./src/frontend:/app:rw
+  #     - /app/node_modules  # Preserve node_modules in container
+  #     - /app/.next         # Preserve Next.js build cache
+  #   # Override for development server
+  #   command: npm run dev
+  #   environment:
+  #     - NODE_ENV=development
+  #     - NEXT_TELEMETRY_DISABLED=1
+  #   # Map to standard port 3000 for Next.js dev server
+  #   ports:
+  #     - "3000:3000"
+
+  # ---------------------------------------------------------------------------
+  # Orchestration Service - Development Mode
+  # ---------------------------------------------------------------------------
+  # orchestration-service:
+  #   volumes:
+  #     - ./src/backend/services/orchestration_service:/app:rw
+  #     - ./src/backend/shared:/app/shared:rw
+  #   environment:
+  #     - LOG_LEVEL=DEBUG
+  #     - PYTHONUNBUFFERED=1
+  #   # Python debugger port
+  #   ports:
+  #     - "5679:5678"
+
+  # ---------------------------------------------------------------------------
+  # Ingestion Service - Development Mode
+  # ---------------------------------------------------------------------------
+  # ingestion-service:
+  #   volumes:
+  #     - ./src/backend/services/ingestion_service:/app:rw
+  #     - ./src/backend/shared:/app/shared:rw
+  #   environment:
+  #     - LOG_LEVEL=DEBUG
+  #     - PYTHONUNBUFFERED=1
+  #   ports:
+  #     - "5680:5678"
+
+  # ---------------------------------------------------------------------------
+  # Verification Service - Development Mode
+  # ---------------------------------------------------------------------------
+  # verification-service:
+  #   volumes:
+  #     - ./src/backend/services/verification_service:/app:rw
+  #     - ./src/backend/shared:/app/shared:rw
+  #   environment:
+  #     - LOG_LEVEL=DEBUG
+  #     - PYTHONUNBUFFERED=1
+  #   ports:
+  #     - "5681:5678"
+
+  # ---------------------------------------------------------------------------
+  # Content Creation Service - Development Mode
+  # ---------------------------------------------------------------------------
+  # content-service:
+  #   volumes:
+  #     - ./src/backend/services/content_service:/app:rw
+  #     - ./src/backend/shared:/app/shared:rw
+  #   environment:
+  #     - LOG_LEVEL=DEBUG
+  #     - PYTHONUNBUFFERED=1
+  #   ports:
+  #     - "5682:5678"
+
+  # =============================================================================
+  # INFRASTRUCTURE CUSTOMIZATIONS
+  # =============================================================================
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL - Development Settings
+  # ---------------------------------------------------------------------------
+  # postgres:
+  #   # Use pgAdmin for database management
+  #   ports:
+  #     - "5433:5432"  # Already exposed, included for reference
+  #   environment:
+  #     # Increase performance for local development
+  #     - POSTGRES_SHARED_BUFFERS=256MB
+  #     - POSTGRES_WORK_MEM=16MB
+  #     - POSTGRES_MAINTENANCE_WORK_MEM=64MB
+  #   # Persist data across restarts
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data:rw
+
+  # ---------------------------------------------------------------------------
+  # Redis - Development Settings
+  # ---------------------------------------------------------------------------
+  # redis:
+  #   # Use Redis Commander for GUI
+  #   command: redis-server --loglevel verbose
+  #   # Disable persistence for faster restarts
+  #   # command: redis-server --save "" --appendonly no
+
+  # ---------------------------------------------------------------------------
+  # Kafka - Development Settings
+  # ---------------------------------------------------------------------------
+  # kafka:
+  #   environment:
+  #     # Increase log retention for debugging
+  #     - KAFKA_LOG_RETENTION_HOURS=24
+  #     - KAFKA_LOG_SEGMENT_BYTES=1073741824
+  #   # Expose JMX for monitoring
+  #   ports:
+  #     - "9999:9999"
+  #   environment:
+  #     - KAFKA_JMX_PORT=9999
+  #     - KAFKA_JMX_HOSTNAME=localhost
+
+  # =============================================================================
+  # ADDITIONAL DEVELOPMENT TOOLS
+  # =============================================================================
+
+  # ---------------------------------------------------------------------------
+  # pgAdmin - PostgreSQL GUI
+  # ---------------------------------------------------------------------------
+  # pgadmin:
+  #   image: dpage/pgadmin4:latest
+  #   container_name: climatenews-pgadmin
+  #   environment:
+  #     - PGADMIN_DEFAULT_EMAIL=admin@climatenews.local
+  #     - PGADMIN_DEFAULT_PASSWORD=admin
+  #   ports:
+  #     - "5050:80"
+  #   volumes:
+  #     - pgadmin-data:/var/lib/pgadmin
+  #   networks:
+  #     - climatenews-network
+
+  # ---------------------------------------------------------------------------
+  # Redis Commander - Redis GUI
+  # ---------------------------------------------------------------------------
+  # redis-commander:
+  #   image: rediscommander/redis-commander:latest
+  #   container_name: climatenews-redis-commander
+  #   environment:
+  #     - REDIS_HOSTS=local:redis:6379
+  #   ports:
+  #     - "8081:8081"
+  #   networks:
+  #     - climatenews-network
+  #   depends_on:
+  #     - redis
+
+  # ---------------------------------------------------------------------------
+  # Kafka UI - Kafka Management
+  # ---------------------------------------------------------------------------
+  # kafka-ui:
+  #   image: provectuslabs/kafka-ui:latest
+  #   container_name: climatenews-kafka-ui
+  #   environment:
+  #     - KAFKA_CLUSTERS_0_NAME=local
+  #     - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9093
+  #   ports:
+  #     - "8080:8080"
+  #   networks:
+  #     - climatenews-network
+  #   depends_on:
+  #     - kafka
+
+  # ---------------------------------------------------------------------------
+  # Mailhog - Email Testing (HITL notifications)
+  # ---------------------------------------------------------------------------
+  # mailhog:
+  #   image: mailhog/mailhog:latest
+  #   container_name: climatenews-mailhog
+  #   ports:
+  #     - "1025:1025"  # SMTP
+  #     - "8025:8025"  # Web UI
+  #   networks:
+  #     - climatenews-network
+
+# =============================================================================
+# VOLUME DEFINITIONS
+# =============================================================================
+volumes:
+  # Uncomment if using pgAdmin
+  # pgadmin-data:
+  #   driver: local
+
+# =============================================================================
+# COMMON DEVELOPMENT PATTERNS
+# =============================================================================
+
+# PATTERN 1: Hot Reload Python Services
+# -------------------------------------
+# Mount local code with :rw and add --reload to uvicorn/python command
+#
+# services:
+#   my-service:
+#     volumes:
+#       - ./src/backend/services/my_service:/app:rw
+#     command: python -m src.main --reload
+
+# PATTERN 2: Debug with VS Code
+# ------------------------------
+# Expose debugger port and add debugpy to requirements:
+#
+# services:
+#   my-service:
+#     ports:
+#       - "5678:5678"
+#     command: python -m debugpy --listen 0.0.0.0:5678 --wait-for-client -m src.main
+
+# PATTERN 3: Resource Limits for Development
+# ------------------------------------------
+# Add memory/CPU limits to prevent resource exhaustion:
+#
+# services:
+#   my-service:
+#     mem_limit: 512m
+#     cpus: 0.5
+
+# PATTERN 4: Environment-Specific Configuration
+# ----------------------------------------------
+# Override environment variables for development:
+#
+# services:
+#   my-service:
+#     environment:
+#       - LOG_LEVEL=DEBUG
+#       - ENVIRONMENT=development
+#       - RATE_LIMIT_ENABLED=false
+
+# PATTERN 5: Port Remapping
+# -------------------------
+# Remap ports to avoid conflicts with other projects:
+#
+# services:
+#   postgres:
+#     ports:
+#       - "5434:5432"  # Change host port to 5434
+#   redis:
+#     ports:
+#       - "6380:6379"  # Change host port to 6380
+
+# =============================================================================
+# TROUBLESHOOTING TIPS
+# =============================================================================
+
+# Issue: Changes not reflecting in container
+# Solution: Ensure volume mount is :rw (read-write)
+#   volumes:
+#     - ./src/backend:/app:rw
+
+# Issue: Permission denied on mounted volumes
+# Solution: Match user IDs or use Docker volume permissions
+#   user: "${UID}:${GID}"
+
+# Issue: Container keeps restarting
+# Solution: Check logs and add restart: "no" temporarily
+#   restart: "no"
+#   command: tail -f /dev/null  # Keep container alive for debugging
+
+# Issue: Port already in use
+# Solution: Remap to different host port
+#   ports:
+#     - "5201:5200"  # Use 5201 on host instead of 5200
+
+# Issue: Environment variables not loading
+# Solution: Ensure .env file exists and is readable
+#   env_file:
+#     - .env
+#     - .env.local  # Override with local-specific vars

@@ -1,0 +1,157 @@
+[
+  {
+    "article_id": "golden-001",
+    "article_text": "Finland's average temperature has risen by 2.3 degrees Celsius since pre-industrial times, making it one of the fastest-warming countries in Europe. The Finnish Meteorological Institute reported that 2024 was the warmest year on record for the country, with summer temperatures reaching unprecedented highs of 35.2\u00b0C in Lapland. Scientists attribute this rapid warming to the Arctic amplification effect, where feedback loops in the Arctic region accelerate temperature increases. The government has committed to carbon neutrality by 2035, the most ambitious target in the EU.",
+    "expected_claims": [
+      {
+        "claim_text": "Finland's average temperature has risen by 2.3 degrees Celsius since pre-industrial times",
+        "claim_category": "statistical",
+        "expected_category": "statistical"
+      },
+      {
+        "claim_text": "Finland is one of the fastest-warming countries in Europe",
+        "claim_category": "scientific_causal",
+        "expected_category": "scientific_causal"
+      },
+      {
+        "claim_text": "2024 was the warmest year on record for Finland",
+        "claim_category": "statistical",
+        "expected_category": "statistical"
+      },
+      {
+        "claim_text": "Summer temperatures reached unprecedented highs of 35.2\u00b0C in Lapland",
+        "claim_category": "statistical",
+        "expected_category": "statistical"
+      },
+      {
+        "claim_text": "Arctic amplification effect accelerates temperature increases in the region",
+        "claim_category": "scientific_causal",
+        "expected_category": "scientific_causal"
+      },
+      {
+        "claim_text": "The Finnish government has committed to carbon neutrality by 2035",
+        "claim_category": "policy",
+        "expected_category": "policy"
+      },
+      {
+        "claim_text": "Finland's carbon neutrality target of 2035 is the most ambitious in the EU",
+        "claim_category": "policy",
+        "expected_category": "policy"
+      }
+    ]
+  },
+  {
+    "article_id": "golden-002",
+    "article_text": "Germany's renewable energy sector generated 52% of the country's electricity in 2024, a new record according to the Fraunhofer Institute. Wind power alone contributed 28% of total generation, while solar provided 14%. The expansion comes as Germany phases out its last nuclear plants and aims to achieve 80% renewable electricity by 2030. Critics argue that grid stability remains a concern during periods of low wind and sunshine, pointing to several near-blackout incidents in January 2024.",
+    "expected_claims": [
+      {
+        "claim_text": "Germany's renewable energy sector generated 52% of the country's electricity in 2024",
+        "claim_category": "statistical",
+        "expected_category": "statistical"
+      },
+      {
+        "claim_text": "Wind power contributed 28% of Germany's total electricity generation",
+        "claim_category": "statistical",
+        "expected_category": "statistical"
+      },
+      {
+        "claim_text": "Solar provided 14% of Germany's total electricity generation",
+        "claim_category": "statistical",
+        "expected_category": "statistical"
+      },
+      {
+        "claim_text": "Germany aims to achieve 80% renewable electricity by 2030",
+        "claim_category": "policy",
+        "expected_category": "policy"
+      },
+      {
+        "claim_text": "There were several near-blackout incidents in Germany in January 2024",
+        "claim_category": "anecdotal",
+        "expected_category": "anecdotal"
+      }
+    ]
+  },
+  {
+    "article_id": "golden-003",
+    "article_text": "A new study published in Nature Climate Change predicts that Mediterranean sea levels will rise by 20-30 centimeters by 2050, threatening coastal cities across southern Europe. The researchers used satellite altimetry data from 1993 to 2023 to calibrate their models. Venice, Barcelona, and Athens are identified as the most vulnerable cities. The study notes that current adaptation measures are insufficient, with only 15% of at-risk coastal municipalities having implemented comprehensive protection plans.",
+    "expected_claims": [
+      {
+        "claim_text": "Mediterranean sea levels will rise by 20-30 centimeters by 2050",
+        "claim_category": "predictive",
+        "expected_category": "predictive"
+      },
+      {
+        "claim_text": "The study used satellite altimetry data from 1993 to 2023",
+        "claim_category": "statistical",
+        "expected_category": "statistical"
+      },
+      {
+        "claim_text": "Venice, Barcelona, and Athens are identified as the most vulnerable cities",
+        "claim_category": "scientific_causal",
+        "expected_category": "scientific_causal"
+      },
+      {
+        "claim_text": "Only 15% of at-risk coastal municipalities have implemented comprehensive protection plans",
+        "claim_category": "statistical",
+        "expected_category": "statistical"
+      }
+    ]
+  },
+  {
+    "article_id": "golden-004",
+    "article_text": "Norway's sovereign wealth fund divested $7.6 billion from fossil fuel companies in 2024, the largest single-year divestment by any institutional investor. The fund's CEO stated that climate risk is now the primary factor in long-term investment decisions. Environmental groups praised the move but noted that the fund still holds $12 billion in companies with significant carbon footprints. Norway itself remains Europe's largest oil and gas producer, creating what critics call a fundamental contradiction in climate policy.",
+    "expected_claims": [
+      {
+        "claim_text": "Norway's sovereign wealth fund divested $7.6 billion from fossil fuel companies in 2024",
+        "claim_category": "statistical",
+        "expected_category": "statistical"
+      },
+      {
+        "claim_text": "This was the largest single-year divestment by any institutional investor",
+        "claim_category": "statistical",
+        "expected_category": "statistical"
+      },
+      {
+        "claim_text": "The fund still holds $12 billion in companies with significant carbon footprints",
+        "claim_category": "statistical",
+        "expected_category": "statistical"
+      },
+      {
+        "claim_text": "Norway is Europe's largest oil and gas producer",
+        "claim_category": "statistical",
+        "expected_category": "statistical"
+      }
+    ]
+  },
+  {
+    "article_id": "golden-005",
+    "article_text": "Local fishermen in the Baltic Sea have reported a 40% decline in herring catches over the past decade, which marine biologists attribute to rising water temperatures and declining salinity. The Baltic Sea's surface temperature has increased by 1.5\u00b0C since 1990, making it one of the fastest-warming marine areas globally. HELCOM data shows oxygen-depleted dead zones now cover approximately 70,000 square kilometers of the Baltic seabed.",
+    "expected_claims": [
+      {
+        "claim_text": "Herring catches in the Baltic Sea have declined by 40% over the past decade",
+        "claim_category": "statistical",
+        "expected_category": "statistical"
+      },
+      {
+        "claim_text": "The decline is attributed to rising water temperatures and declining salinity",
+        "claim_category": "scientific_causal",
+        "expected_category": "scientific_causal"
+      },
+      {
+        "claim_text": "The Baltic Sea's surface temperature has increased by 1.5\u00b0C since 1990",
+        "claim_category": "statistical",
+        "expected_category": "statistical"
+      },
+      {
+        "claim_text": "The Baltic Sea is one of the fastest-warming marine areas globally",
+        "claim_category": "scientific_causal",
+        "expected_category": "scientific_causal"
+      },
+      {
+        "claim_text": "Oxygen-depleted dead zones cover approximately 70,000 square kilometers of the Baltic seabed",
+        "claim_category": "statistical",
+        "expected_category": "statistical"
+      }
+    ]
+  }
+]

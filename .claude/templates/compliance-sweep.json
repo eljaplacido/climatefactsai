@@ -1,0 +1,137 @@
+{
+  "name": "Compliance Sweep Template",
+  "description": "Automated compliance audit and documentation workflow",
+  "version": "1.0.0",
+  "tags": ["compliance", "security", "audit", "documentation"],
+  "workflow": {
+    "preTask": [
+      "npx claude-flow@alpha hooks pre-task --description 'Compliance sweep for {{audit_scope}}'",
+      "npx claude-flow@alpha memory connect --provider reasoningbank --context 'compliance/{{audit_year}}'",
+      "npx claude-flow@alpha memory fetch --context 'compliance/{{audit_year}}' --labels 'security,audit'",
+      "npx claude-flow@alpha checkpoint create --label 'pre-compliance-audit'"
+    ],
+    "agents": [
+      {
+        "type": "security-manager",
+        "name": "Security Lead",
+        "task": "Audit {{audit_scope}} against {{compliance_standard}} guidelines. Focus on authentication, authorization, data protection, and API security. Document findings in docs/compliance/{{audit_id}}/security.md",
+        "reasoningBank": "security/{{audit_year}}",
+        "hooks": ["post-edit", "notify"],
+        "memoryKey": "reasoningbank://compliance/{{audit_year}}/security",
+        "checkpoint": true
+      },
+      {
+        "type": "api-docs",
+        "name": "Documentation Subagent",
+        "task": "Review and update compliance documentation. Generate API security documentation. Update docs/compliance/{{audit_id}}/report.md with comprehensive findings.",
+        "context": "docs/compliance",
+        "memoryKey": "reasoningbank://compliance/{{audit_year}}/documentation",
+        "checkpoint": true
+      },
+      {
+        "type": "tester",
+        "name": "Compliance Testing Subagent",
+        "task": "Generate compliance proof tests. Create test suite under tests/compliance/{{audit_id}}/. Target coverage: {{coverage_target}}%",
+        "coverage": "{{coverage_target}}%",
+        "framework": "pytest",
+        "memoryKey": "reasoningbank://compliance/{{audit_year}}/testing",
+        "checkpoint": true
+      },
+      {
+        "type": "reviewer",
+        "name": "Compliance Reviewer",
+        "task": "Review all compliance changes for completeness and accuracy. Verify against {{compliance_standard}}. Document approval in docs/compliance/{{audit_id}}/approval.md",
+        "hooks": ["post-edit"],
+        "memoryKey": "reasoningbank://compliance/{{audit_year}}/review",
+        "checkpoint": true
+      }
+    ],
+    "postTask": [
+      "npm run test:compliance",
+      "npx claude-flow@alpha memory push --provider reasoningbank --context compliance/{{audit_year}} --file docs/compliance/{{audit_id}}/report.md --confidence 0.95",
+      "npx claude-flow@alpha hooks post-task --task-id 'compliance-{{audit_id}}'",
+      "npx claude-flow@alpha terminal history export --since 2h --output .claude/terminal/history/compliance-{{audit_id}}.log",
+      "npx claude-flow@alpha hooks session-end --export-metrics true"
+    ]
+  },
+  "variables": {
+    "audit_scope": {
+      "type": "string",
+      "required": true,
+      "description": "Scope of audit (e.g., 'ingestion + orchestration services')"
+    },
+    "audit_id": {
+      "type": "string",
+      "required": true,
+      "description": "Unique audit identifier"
+    },
+    "audit_year": {
+      "type": "string",
+      "required": true,
+      "description": "Audit year/period (e.g., '2025q1')"
+    },
+    "compliance_standard": {
+      "type": "string",
+      "default": "OWASP Top 10 2025",
+      "description": "Compliance standard to audit against"
+    },
+    "coverage_target": {
+      "type": "number",
+      "default": 95,
+      "description": "Target test coverage for compliance tests"
+    }
+  },
+  "todos": [
+    {
+      "id": "comp-1",
+      "content": "Security audit of {{audit_scope}}",
+      "status": "pending",
+      "priority": "high",
+      "link": "docs/compliance/{{audit_id}}/security.md"
+    },
+    {
+      "id": "comp-2",
+      "content": "Update compliance documentation",
+      "status": "pending",
+      "priority": "high",
+      "link": "docs/compliance/{{audit_id}}/report.md"
+    },
+    {
+      "id": "comp-3",
+      "content": "Generate compliance test suite",
+      "status": "pending",
+      "priority": "high",
+      "link": "tests/compliance/{{audit_id}}/"
+    },
+    {
+      "id": "comp-4",
+      "content": "Review and approve compliance changes",
+      "status": "pending",
+      "priority": "medium",
+      "link": "docs/compliance/{{audit_id}}/approval.md"
+    },
+    {
+      "id": "comp-5",
+      "content": "Run compliance test suite",
+      "status": "pending",
+      "priority": "high"
+    },
+    {
+      "id": "comp-6",
+      "content": "Update ReasoningBank with audit results",
+      "status": "pending",
+      "priority": "medium"
+    },
+    {
+      "id": "comp-7",
+      "content": "Export audit trail and metrics",
+      "status": "pending",
+      "priority": "low"
+    }
+  ],
+  "checkpoints": {
+    "auto": true,
+    "labels": ["pre-audit", "post-security-review", "post-docs", "post-testing", "final-approval"],
+    "rollback_instructions": "Review .claude/checkpoints/ for audit state. Use checkpoint rollback for specific audit stages."
+  }
+}

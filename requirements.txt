@@ -1,0 +1,170 @@
+# =============================================================================
+# CLIMATE NEWS MULTI-AGENT SYSTEM - PYTHON DEPENDENCIES
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# LLM & AI Libraries
+# -----------------------------------------------------------------------------
+anthropic==0.39.0                  # Claude API
+openai==1.54.0                     # GPT-4o API
+langchain==0.3.7                   # LLM orchestration framework
+langchain-community==0.3.7         # Community integrations
+
+# -----------------------------------------------------------------------------
+# Event-Driven Architecture
+# -----------------------------------------------------------------------------
+kafka-python==2.0.2                # Apache Kafka client
+confluent-kafka==2.6.1             # Alternative Kafka client (better performance)
+fastavro==1.9.7                    # Avro serialization for Kafka
+
+# -----------------------------------------------------------------------------
+# Memory & Databases
+# -----------------------------------------------------------------------------
+redis==5.2.0                       # Redis client for short-term memory
+psycopg2-binary==2.9.9            # PostgreSQL adapter
+pgvector==0.3.5                    # PostgreSQL vector extension
+sqlalchemy==2.0.35                 # SQL toolkit & ORM
+
+# Vector databases (choose one or use pgvector)
+# pinecone-client==5.0.1           # Pinecone vector DB
+# weaviate-client==4.9.3           # Weaviate vector DB
+# chromadb==0.5.23                 # ChromaDB vector DB
+
+# -----------------------------------------------------------------------------
+# Web Scraping & Content Discovery
+# -----------------------------------------------------------------------------
+scrapy==2.11.2                     # Web scraping framework
+playwright==1.48.0                 # Browser automation for dynamic content
+beautifulsoup4==4.12.3            # HTML parsing
+lxml==5.3.0                        # XML/HTML parser
+feedparser==6.0.11                 # RSS feed parser
+requests==2.32.3                   # HTTP library
+httpx==0.27.2                      # Async HTTP client
+
+# -----------------------------------------------------------------------------
+# NLP & Text Processing
+# -----------------------------------------------------------------------------
+spacy==3.8.2                       # NLP library for entity recognition
+textacy==0.13.0                    # Advanced text processing
+nltk==3.9.1                        # Natural Language Toolkit
+transformers==4.46.3               # Hugging Face transformers (for embeddings)
+sentence-transformers==3.3.1       # Sentence embeddings
+
+# Readability & Text Analysis
+textstat==0.7.4                    # Readability metrics (Flesch-Kincaid)
+readability==0.3.1                 # Readability scores
+langdetect==1.0.9                  # Language detection for multilingual content
+
+# Markdown Processing
+markdown>=3.5                      # Markdown-to-HTML conversion (analysis articles)
+
+# SVG & Image Generation
+svgwrite>=1.4                      # Programmatic SVG generation (infographics)
+cairosvg>=2.7                      # SVG-to-PNG rasterization (optional)
+
+# -----------------------------------------------------------------------------
+# Data Validation & Serialization
+# -----------------------------------------------------------------------------
+pydantic==2.9.2                    # Data validation using Python type hints
+jsonschema==4.23.0                 # JSON schema validation
+marshmallow==3.23.1                # Serialization/deserialization
+
+# -----------------------------------------------------------------------------
+# API & Web Framework
+# -----------------------------------------------------------------------------
+fastapi==0.109.0                   # Modern web framework for APIs
+uvicorn==0.32.0                    # ASGI server
+pydantic-settings==2.6.1           # Settings management
+
+# Authentication & Security (API)
+bcrypt==4.1.2                      # Password hashing
+PyJWT==2.8.0                       # JWT token handling
+
+# -----------------------------------------------------------------------------
+# Observability & Monitoring
+# -----------------------------------------------------------------------------
+opentelemetry-api==1.28.2          # OpenTelemetry API
+opentelemetry-sdk==1.28.2          # OpenTelemetry SDK
+opentelemetry-instrumentation==0.49b2  # Auto-instrumentation
+opentelemetry-instrumentation-fastapi==0.49b2  # FastAPI traces
+opentelemetry-instrumentation-requests==0.49b2 # requests traces
+opentelemetry-instrumentation-sqlalchemy==0.49b2 # SQLAlchemy traces
+opentelemetry-instrumentation-redis==0.49b2    # Redis traces
+opentelemetry-instrumentation-celery==0.49b2   # Celery traces
+opentelemetry-exporter-otlp==1.28.2    # OTLP exporter
+prometheus-client==0.21.0          # Prometheus metrics
+
+# Logging
+structlog==24.4.0                  # Structured logging
+python-json-logger==3.2.1          # JSON logging
+
+# -----------------------------------------------------------------------------
+# Utility Libraries
+# -----------------------------------------------------------------------------
+python-dotenv==1.0.1               # Environment variable management
+pyyaml==6.0.2                      # YAML parser
+pytz==2024.2                       # Timezone handling
+python-dateutil==2.9.0             # Date utilities
+tenacity==9.0.0                    # Retry logic
+
+# -----------------------------------------------------------------------------
+# Testing & Quality Assurance
+# -----------------------------------------------------------------------------
+pytest==8.3.3                      # Testing framework
+pytest-asyncio==0.24.0             # Async testing
+pytest-cov==6.0.0                  # Coverage plugin
+pytest-mock==3.14.0                # Mocking plugin
+faker==33.0.0                      # Fake data generation
+hypothesis==6.119.0                # Property-based testing
+deepeval>=1.0.0                    # LLM evaluation framework
+
+# -----------------------------------------------------------------------------
+# Development Tools
+# -----------------------------------------------------------------------------
+black==24.10.0                     # Code formatter
+flake8==7.1.1                      # Linting
+mypy==1.13.0                       # Static type checker
+isort==5.13.2                      # Import sorting
+pre-commit==4.0.1                  # Git hooks
+
+# -----------------------------------------------------------------------------
+# Security & Secrets Management
+# -----------------------------------------------------------------------------
+cryptography==43.0.3               # Cryptographic recipes
+python-jose==3.3.0                 # JOSE/JWT implementation
+
+# AWS Secrets Manager (optional)
+# boto3==1.35.68                   # AWS SDK
+
+# -----------------------------------------------------------------------------
+# Multimedia Processing (Video Production Agent)
+# -----------------------------------------------------------------------------
+Pillow==11.0.0                     # Image processing
+moviepy==1.0.3                     # Video editing
+
+# -----------------------------------------------------------------------------
+# Payment & Subscription (Stripe Integration)
+# -----------------------------------------------------------------------------
+stripe==11.1.1                     # Stripe payment processing
+
+# -----------------------------------------------------------------------------
+# PDF & Document Export
+# -----------------------------------------------------------------------------
+reportlab==4.2.5                   # PDF generation
+PyPDF2==3.0.1                      # PDF manipulation
+
+# -----------------------------------------------------------------------------
+# Data Science & Analytics (Optional)
+# -----------------------------------------------------------------------------
+pandas==2.2.3                      # Data analysis
+numpy==1.26.4                      # Numerical computing (langchain requires <2)
+matplotlib==3.9.2                  # Plotting library
+seaborn==0.13.2                    # Statistical visualization
+
+# -----------------------------------------------------------------------------
+# Type Stubs (for mypy)
+# -----------------------------------------------------------------------------
+types-requests==2.32.0.20241016
+types-redis==4.6.0.20241004
+types-python-dateutil==2.9.0.20241003
+

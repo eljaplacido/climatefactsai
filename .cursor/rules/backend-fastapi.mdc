@@ -1,0 +1,303 @@
+# Backend FastAPI Rules (MDC - Machine-Parseable Context)
+
+## FastAPI Best Practices
+
+### Route Handlers
+```python
+# ✅ GOOD: Thin router, delegates to service
+@router.get("/articles/{article_id}", response_model=ArticleDetail)
+async def get_article(
+    article_id: int,
+    service: ArticleService = Depends(get_article_service)
+):
+    """Get article details with claims and fact-checks."""
+    return await service.get_article_with_verification(article_id)
+
+# ❌ BAD: Business logic in router
+@router.get("/articles/{article_id}")
+async def get_article(article_id: int, db = Depends(get_db)):
+    article = db.execute("SELECT * FROM articles WHERE id = %s", (article_id,))
+    claims = db.execute("SELECT * FROM claims WHERE article_id = %s", (article_id,))
+    # ... more logic ...
+    return {"article": article, "claims": claims}
+```
+
+### Dependency Injection
+```python
+# Define dependencies in domains/*/dependencies.py
+from typing import Annotated
+from fastapi import Depends
+
+def get_article_service(
+    db: Annotated[Database, Depends(get_db)],
+    config: Annotated[Config, Depends(get_config)]
+) -> ArticleService:
+    return ArticleService(db, config)
+
+# Use in routers
+ArticleServiceDep = Annotated[ArticleService, Depends(get_article_service)]
+
+@router.get("/articles")
+async def list_articles(service: ArticleServiceDep):
+    return await service.list_articles()
+```
+
+### Pydantic v2 Models
+```python
+from pydantic import BaseModel, Field, ConfigDict
+from datetime import datetime
+
+class ArticleCreate(BaseModel):
+    """Request model for creating articles."""
+    model_config = ConfigDict(from_attributes=True)
+    
+    title: str = Field(..., min_length=10, max_length=500)
+    url: str = Field(..., description="Source URL")
+    source: str
+    published_at: datetime | None = None
+    
+    @field_validator('url')
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        if not v.startswith(('http://', 'https://')):
+            raise ValueError('Invalid URL')
+        return v
+```
+
+### Async Database Operations
+```python
+# ✅ GOOD: Async with context manager
+async def get_article(self, article_id: int) -> Article | None:
+    async with self.db.session() as session:
+        result = await session.execute(
+            text("SELECT * FROM articles WHERE id = :id"),
+            {"id": article_id}
+        )
+        row = result.fetchone()
+        return Article.model_validate(row) if row else None
+
+# ❌ BAD: Blocking operation
+def get_article(self, article_id: int):
+    result = self.db.execute("SELECT * FROM articles WHERE id = %s", (article_id,))
+    return result
+```
+
+### Error Handling
+```python
+from fastapi import HTTPException, status
+
+class ArticleService:
+    async def get_article(self, article_id: int) -> Article:
+        article = await self.repository.get_by_id(article_id)
+        if not article:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Article {article_id} not found"
+            )
+        return article
+```
+
+### Background Tasks
+```python
+from fastapi import BackgroundTasks
+
+@router.post("/articles/{article_id}/verify")
+async def trigger_verification(
+    article_id: int,
+    background_tasks: BackgroundTasks,
+    service: ArticleServiceDep
+):
+    """Trigger background verification of article claims."""
+    background_tasks.add_task(
+        service.verify_article_claims,
+        article_id
+    )
+    return {"status": "verification_queued", "article_id": article_id}
+```
+
+## Project-Specific Patterns
+
+### Domain Service Structure
+```python
+# domains/content/services.py
+from app.core.database import Database
+from app.core.logging import get_logger
+from .repository import ArticleRepository
+from .models import Article, ArticleDetail
+
+logger = get_logger(__name__)
+
+class ArticleService:
+    """Business logic for article management."""
+    
+    def __init__(self, db: Database):
+        self.repository = ArticleRepository(db)
+    
+    async def get_article_with_verification(
+        self, 
+        article_id: int
+    ) -> ArticleDetail:
+        """Get article with all verification data."""
+        article = await self.repository.get_by_id(article_id)
+        if not article:
+            raise ArticleNotFoundError(article_id)
+        
+        claims = await self.repository.get_claims(article_id)
+        credibility = self._calculate_credibility(article, claims)
+        
+        return ArticleDetail(
+            **article.model_dump(),
+            claims=claims,
+            credibility_score=credibility
+        )
+    
+    def _calculate_credibility(
+        self, 
+        article: Article, 
+        claims: list[Claim]
+    ) -> float:
+        """Private method for credibility calculation."""
+        # Business logic here
+        pass
+```
+
+### Repository Pattern
+```python
+# domains/content/repository.py
+from sqlalchemy import text
+from app.core.database import Database
+
+class ArticleRepository:
+    """Data access layer for articles."""
+    
+    def __init__(self, db: Database):
+        self.db = db
+    
+    async def get_by_id(self, article_id: int) -> Article | None:
+        async with self.db.session() as session:
+            result = await session.execute(
+                text("""
+                    SELECT id, title, url, source, published_at, 
+                           credibility_score, created_at
+                    FROM articles
+                    WHERE id = :article_id
+                """),
+                {"article_id": article_id}
+            )
+            row = result.fetchone()
+            return Article.model_validate(row) if row else None
+    
+    async def search(
+        self, 
+        query: str | None = None,
+        country: str | None = None,
+        limit: int = 20
+    ) -> list[Article]:
+        """Search articles with filters."""
+        conditions = []
+        params = {}
+        
+        if query:
+            conditions.append("to_tsvector('english', title || ' ' || excerpt) @@ plainto_tsquery('english', :query)")
+            params["query"] = query
+        
+        if country:
+            conditions.append("country = :country")
+            params["country"] = country
+        
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+        
+        async with self.db.session() as session:
+            result = await session.execute(
+                text(f"""
+                    SELECT * FROM articles
+                    WHERE {where_clause}
+                    ORDER BY published_at DESC
+                    LIMIT :limit
+                """),
+                {**params, "limit": limit}
+            )
+            return [Article.model_validate(row) for row in result.fetchall()]
+```
+
+## Anti-Patterns to Avoid
+
+### ❌ Don't: Mix business logic and data access
+```python
+# BAD
+@router.get("/articles")
+async def get_articles(db = Depends(get_db)):
+    rows = await db.execute("SELECT * FROM articles")
+    # Processing logic mixed with data access
+    for row in rows:
+        row['score'] = calculate_score(row)
+    return rows
+```
+
+### ❌ Don't: Return database models directly
+```python
+# BAD - exposes internal DB structure
+@router.get("/articles/{id}")
+async def get_article(id: int, db = Depends()):
+    return await db.query(ArticleTable).filter(id=id).first()
+
+# GOOD - use domain models
+@router.get("/articles/{id}", response_model=ArticleDetail)
+async def get_article(id: int, service: ArticleServiceDep):
+    return await service.get_article(id)
+```
+
+### ❌ Don't: Handle authentication in routers
+```python
+# BAD
+@router.get("/articles")
+async def get_articles(token: str = Header(...)):
+    user = verify_token(token)  # Auth logic in router
+    if not user:
+        raise HTTPException(401)
+    # ...
+
+# GOOD - use FastAPI dependencies
+@router.get("/articles")
+async def get_articles(
+    current_user: User = Depends(get_current_user)
+):
+    # Auth is handled by dependency
+    # ...
+```
+
+## Testing
+
+### Unit Test Example
+```python
+# tests/domains/content/test_article_service.py
+import pytest
+from app.domains.content.services import ArticleService
+from app.domains.content.models import Article
+
+@pytest.mark.asyncio
+async def test_get_article_with_verification(mock_db):
+    """Test article retrieval with verification data."""
+    service = ArticleService(mock_db)
+    
+    article = await service.get_article_with_verification(1)
+    
+    assert article.id == 1
+    assert article.credibility_score is not None
+    assert len(article.claims) > 0
+```
+
+### Integration Test Example
+```python
+# tests/api/test_article_routes.py
+from fastapi.testclient import TestClient
+
+def test_get_article_endpoint(client: TestClient, test_article):
+    """Test article detail endpoint."""
+    response = client.get(f"/api/articles/{test_article.id}")
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == test_article.id
+    assert "claims" in data
+```

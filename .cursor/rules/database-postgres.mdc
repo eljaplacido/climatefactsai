@@ -1,0 +1,462 @@
+# Database PostgreSQL Rules (MDC)
+
+## PostgreSQL 17 + pgvector Best Practices
+
+### Connection Management
+```python
+# ✅ GOOD: Async connection pool
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+
+engine = create_async_engine(
+    "postgresql+asyncpg://user:pass@localhost/db",
+    pool_size=20,
+    max_overflow=10,
+    pool_pre_ping=True,  # Verify connections before use
+    echo=False,  # Set True for debugging
+)
+
+AsyncSessionLocal = sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+async def get_session() -> AsyncSession:
+    async with AsyncSessionLocal() as session:
+        yield session
+```
+
+### Parameterized Queries (Security)
+```python
+# ✅ GOOD: Parameterized query
+from sqlalchemy import text
+
+async def get_articles_by_country(session: AsyncSession, country: str):
+    result = await session.execute(
+        text("SELECT * FROM articles WHERE country = :country"),
+        {"country": country}
+    )
+    return result.fetchall()
+
+# ❌ BAD: SQL injection vulnerability!
+async def get_articles_by_country_bad(session: AsyncSession, country: str):
+    query = f"SELECT * FROM articles WHERE country = '{country}'"
+    result = await session.execute(text(query))
+    return result.fetchall()
+```
+
+### pgvector for Semantic Search
+```python
+# Installation: CREATE EXTENSION IF NOT EXISTS vector;
+
+# Table with vector column
+"""
+CREATE TABLE articles (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT,
+    embedding vector(1536),  -- OpenAI ada-002 dimension
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX ON articles USING ivfflat (embedding vector_cosine_ops)
+WITH (lists = 100);  -- Adjust based on dataset size
+"""
+
+# Semantic search implementation
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Column, Integer, Text
+from sqlalchemy.orm import declarative_base
+
+Base = declarative_base()
+
+class Article(Base):
+    __tablename__ = "articles"
+    
+    id = Column(Integer, primary_key=True)
+    title = Column(Text, nullable=False)
+    embedding = Column(Vector(1536))
+
+# Search by vector similarity
+async def semantic_search(
+    session: AsyncSession,
+    query_embedding: list[float],
+    limit: int = 10
+):
+    result = await session.execute(
+        text("""
+            SELECT id, title, content,
+                   1 - (embedding <=> :query_embedding) AS similarity
+            FROM articles
+            WHERE embedding IS NOT NULL
+            ORDER BY embedding <=> :query_embedding
+            LIMIT :limit
+        """),
+        {
+            "query_embedding": str(query_embedding),
+            "limit": limit
+        }
+    )
+    return result.fetchall()
+```
+
+### Indexes Strategy
+```sql
+-- Full-text search index
+CREATE INDEX articles_search_idx ON articles 
+USING gin(to_tsvector('english', title || ' ' || COALESCE(excerpt, '')));
+
+-- Composite index for common filters
+CREATE INDEX articles_country_date_idx ON articles (country, published_at DESC);
+
+-- Partial index for active articles only
+CREATE INDEX articles_active_idx ON articles (created_at) 
+WHERE deleted_at IS NULL;
+
+-- Covering index (includes columns)
+CREATE INDEX articles_list_idx ON articles (country, published_at DESC)
+INCLUDE (title, credibility_score);
+```
+
+### JSON/JSONB Usage
+```python
+# Store flexible metadata as JSONB
+"""
+CREATE TABLE articles (
+    id SERIAL PRIMARY KEY,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    tags TEXT[]  -- PostgreSQL array type
+);
+
+-- GIN index for JSONB queries
+CREATE INDEX articles_metadata_idx ON articles USING gin(metadata);
+
+-- GIN index for array containment
+CREATE INDEX articles_tags_idx ON articles USING gin(tags);
+"""
+
+# Query JSONB fields
+async def find_articles_with_metadata(
+    session: AsyncSession,
+    key: str,
+    value: str
+):
+    result = await session.execute(
+        text("""
+            SELECT * FROM articles
+            WHERE metadata @> :condition::jsonb
+        """),
+        {"condition": json.dumps({key: value})}
+    )
+    return result.fetchall()
+
+# Query array containment
+async def find_articles_by_tags(
+    session: AsyncSession,
+    required_tags: list[str]
+):
+    result = await session.execute(
+        text("""
+            SELECT * FROM articles
+            WHERE tags @> :tags
+        """),
+        {"tags": required_tags}
+    )
+    return result.fetchall()
+```
+
+### Transactions and Locks
+```python
+# ✅ GOOD: Explicit transaction with rollback
+async def create_article_with_claims(
+    session: AsyncSession,
+    article_data: dict,
+    claims: list[dict]
+):
+    try:
+        # Insert article
+        result = await session.execute(
+            text("""
+                INSERT INTO articles (title, url, source)
+                VALUES (:title, :url, :source)
+                RETURNING id
+            """),
+            article_data
+        )
+        article_id = result.scalar()
+        
+        # Insert associated claims
+        for claim in claims:
+            await session.execute(
+                text("""
+                    INSERT INTO claims (article_id, claim_text)
+                    VALUES (:article_id, :claim_text)
+                """),
+                {"article_id": article_id, "claim_text": claim["text"]}
+            )
+        
+        await session.commit()
+        return article_id
+        
+    except Exception as e:
+        await session.rollback()
+        raise
+
+# Pessimistic locking (when needed)
+async def update_with_lock(session: AsyncSession, article_id: int):
+    # SELECT FOR UPDATE locks the row
+    result = await session.execute(
+        text("""
+            SELECT * FROM articles
+            WHERE id = :id
+            FOR UPDATE
+        """),
+        {"id": article_id}
+    )
+    article = result.fetchone()
+    
+    # Update operations...
+    
+    await session.commit()
+```
+
+## CliLens.AI Schema Patterns
+
+### Core Tables Structure
+```sql
+-- Articles (main content)
+CREATE TABLE articles (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    url TEXT NOT NULL UNIQUE,
+    source TEXT NOT NULL,
+    author TEXT,
+    published_at TIMESTAMP,
+    full_text TEXT,
+    excerpt TEXT,
+    country VARCHAR(2),  -- ISO country code
+    language_code VARCHAR(5) DEFAULT 'en',
+    
+    -- Credibility
+    credibility_score DECIMAL(3,2) CHECK (credibility_score BETWEEN 0 AND 1),
+    credibility_level VARCHAR(10) CHECK (credibility_level IN ('high', 'medium', 'low')),
+    
+    -- Metadata
+    tags TEXT[],
+    embedding vector(1536),
+    
+    -- Timestamps
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    deleted_at TIMESTAMP
+);
+
+-- Claims extracted from articles
+CREATE TABLE claims (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    claim_text TEXT NOT NULL,
+    claim_type VARCHAR(50),
+    claim_context TEXT,
+    
+    -- Extracted metadata
+    extracted_at TIMESTAMP DEFAULT NOW(),
+    extraction_model VARCHAR(50),  -- e.g., "claude-3-sonnet"
+    
+    UNIQUE(article_id, claim_text)
+);
+
+-- Fact-checks for claims
+CREATE TABLE fact_checks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    claim_id UUID NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
+    
+    -- Verification results
+    verdict VARCHAR(20) CHECK (verdict IN ('verified', 'disputed', 'unverified', 'partially_true')),
+    confidence_score DECIMAL(3,2) CHECK (confidence_score BETWEEN 0 AND 1),
+    justification TEXT,
+    
+    -- Evidence
+    evidence JSONB DEFAULT '[]'::jsonb,  -- Array of evidence objects
+    sources TEXT[],  -- Source URLs
+    
+    -- Metadata
+    verified_at TIMESTAMP DEFAULT NOW(),
+    verification_model VARCHAR(50),
+    verification_method VARCHAR(50),  -- 'automated', 'human_reviewed'
+    
+    UNIQUE(claim_id, verification_method)
+);
+
+-- User feedback on articles
+CREATE TABLE feedback (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    
+    feedback_type VARCHAR(20) CHECK (feedback_type IN ('useful', 'not_useful', 'flagged')),
+    reliability_score INTEGER CHECK (reliability_score BETWEEN 0 AND 100),
+    comment TEXT,
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    ip_address INET
+);
+```
+
+### Indexes for Common Queries
+```sql
+-- Article listing by country and date
+CREATE INDEX idx_articles_country_date ON articles (country, published_at DESC)
+WHERE deleted_at IS NULL;
+
+-- Full-text search
+CREATE INDEX idx_articles_search ON articles 
+USING gin(to_tsvector('english', title || ' ' || COALESCE(excerpt, '')));
+
+-- Semantic search
+CREATE INDEX idx_articles_embedding ON articles 
+USING ivfflat (embedding vector_cosine_ops)
+WITH (lists = 100);
+
+-- Tags array search
+CREATE INDEX idx_articles_tags ON articles USING gin(tags);
+
+-- Claim lookups
+CREATE INDEX idx_claims_article ON claims (article_id);
+CREATE INDEX idx_factchecks_claim ON fact_checks (claim_id);
+
+-- Feedback aggregation
+CREATE INDEX idx_feedback_article ON feedback (article_id, created_at);
+```
+
+### Materialized Views for Analytics
+```sql
+-- Aggregate article stats (refresh periodically)
+CREATE MATERIALIZED VIEW article_stats AS
+SELECT
+    country,
+    COUNT(*) as total_articles,
+    AVG(credibility_score) as avg_credibility,
+    COUNT(DISTINCT tags) FILTER (WHERE tags IS NOT NULL) as unique_tags
+FROM articles
+WHERE deleted_at IS NULL
+GROUP BY country;
+
+CREATE UNIQUE INDEX ON article_stats (country);
+
+-- Refresh strategy
+-- Run this in a scheduled job:
+REFRESH MATERIALIZED VIEW CONCURRENTLY article_stats;
+```
+
+## Anti-Patterns to Avoid
+
+### ❌ Don't: N+1 queries
+```python
+# BAD - N+1 problem
+async def get_articles_with_claims():
+    articles = await session.execute(text("SELECT * FROM articles"))
+    
+    for article in articles:
+        # This executes a query for EACH article!
+        claims = await session.execute(
+            text("SELECT * FROM claims WHERE article_id = :id"),
+            {"id": article.id}
+        )
+
+# GOOD - Single JOIN query
+async def get_articles_with_claims():
+    result = await session.execute(text("""
+        SELECT
+            a.*,
+            json_agg(c.*) as claims
+        FROM articles a
+        LEFT JOIN claims c ON c.article_id = a.id
+        GROUP BY a.id
+    """))
+```
+
+### ❌ Don't: SELECT * in production
+```python
+# BAD
+result = await session.execute(text("SELECT * FROM articles"))
+
+# GOOD - Select only needed columns
+result = await session.execute(text("""
+    SELECT id, title, url, credibility_score, published_at
+    FROM articles
+"""))
+```
+
+### ❌ Don't: Missing error handling
+```python
+# BAD - No error handling
+async def update_article(session, article_id, data):
+    await session.execute(text("UPDATE articles SET ..."))
+    await session.commit()
+
+# GOOD
+async def update_article(session, article_id, data):
+    try:
+        await session.execute(text("UPDATE articles SET ..."))
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise ValueError("Article update failed - constraint violation")
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Database error: {e}")
+        raise
+```
+
+## Testing Database Code
+
+### Test Fixtures
+```python
+# conftest.py
+import pytest
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+
+@pytest.fixture
+async def db_session():
+    """Provide a test database session."""
+    engine = create_async_engine(
+        "postgresql+asyncpg://test:test@localhost/test_db",
+        echo=True
+    )
+    
+    async_session = sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    
+    async with async_session() as session:
+        # Setup
+        yield session
+        # Teardown - rollback any changes
+        await session.rollback()
+```
+
+### Repository Test Example
+```python
+@pytest.mark.asyncio
+async def test_article_repository_create(db_session):
+    """Test creating an article via repository."""
+    repo = ArticleRepository(db_session)
+    
+    article_data = {
+        "title": "Test Article",
+        "url": "https://example.com/test",
+        "source": "Test Source"
+    }
+    
+    article = await repo.create(article_data)
+    
+    assert article.id is not None
+    assert article.title == "Test Article"
+    
+    # Verify it's in the database
+    fetched = await repo.get_by_id(article.id)
+    assert fetched.title == article.title
+```

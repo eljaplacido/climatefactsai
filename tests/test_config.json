@@ -1,0 +1,64 @@
+{
+  "test_environment": {
+    "project_name": "climatenews",
+    "base_dir": ".",
+    "test_data_dir": "tests/data",
+    "output_dir": "tests/output"
+  },
+  "test_scenarios": {
+    "refactoring": {
+      "module_name": "test_module",
+      "session_id": "test-refactor-001",
+      "coverage_target": 90
+    },
+    "compliance": {
+      "audit_id": "test-audit-001",
+      "audit_year": "2025q1",
+      "audit_scope": "test services",
+      "compliance_standard": "OWASP Top 10 2025"
+    },
+    "deployment": {
+      "services": "service1,service2",
+      "environment": "test",
+      "deploy_id": "test-deploy-001"
+    },
+    "documentation": {
+      "doc_scope": "test documentation",
+      "doc_path": "tests/docs"
+    }
+  },
+  "test_users": [
+    {
+      "name": "Test Developer",
+      "email": "dev@test.com",
+      "role": "developer"
+    },
+    {
+      "name": "Test Lead",
+      "email": "lead@test.com",
+      "role": "team_lead"
+    }
+  ],
+  "features_to_test": [
+    "checkpoints",
+    "subagents",
+    "vs-code-extension",
+    "web-interface",
+    "enhanced-terminal",
+    "reasoningbank",
+    "agent-booster",
+    "openrouter-proxy"
+  ],
+  "automation_scripts": [
+    "checkpoint-manager.sh",
+    "sync-reasoningbank.sh",
+    "sync-vectal-todos.sh",
+    "metrics-dashboard.sh"
+  ],
+  "templates": [
+    "checkpoint-refactor.json",
+    "compliance-sweep.json",
+    "doc-update.json",
+    "multi-service-deploy.json"
+  ]
+}

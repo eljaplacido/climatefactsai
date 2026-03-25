@@ -1,0 +1,207 @@
+{
+  "folders": [
+    {
+      "name": "CliLens.AI (Root)",
+      "path": "."
+    },
+    {
+      "name": "Ingestion Service",
+      "path": "src/backend/services/ingestion_service"
+    },
+    {
+      "name": "Orchestration Service",
+      "path": "src/backend/services/orchestration_service"
+    },
+    {
+      "name": "Verification Service",
+      "path": "src/backend/services/verification_service"
+    },
+    {
+      "name": "Content Creation Service",
+      "path": "src/backend/services/content_creation_service"
+    },
+    {
+      "name": "Video Production Service",
+      "path": "src/backend/services/video_production_service"
+    },
+    {
+      "name": "Shared Backend",
+      "path": "src/backend/shared"
+    },
+    {
+      "name": "Frontend",
+      "path": "src/frontend"
+    },
+    {
+      "name": "Documentation",
+      "path": "docs"
+    },
+    {
+      "name": "Tests",
+      "path": "tests"
+    }
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "${workspaceFolder}/venv/bin/python",
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": true,
+    "python.linting.flake8Enabled": true,
+    "python.formatting.provider": "black",
+    "python.formatting.blackArgs": ["--line-length", "100"],
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": ["tests"],
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    },
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/*.pyc": true,
+      "**/.pytest_cache": true,
+      "**/.mypy_cache": true,
+      "**/node_modules": true,
+      "**/.next": true
+    },
+    "typescript.tsdk": "src/frontend/node_modules/typescript/lib",
+    "typescript.enablePromptUseWorkspaceTsdk": true,
+    "[python]": {
+      "editor.tabSize": 4,
+      "editor.rulers": [100]
+    },
+    "[typescript]": {
+      "editor.tabSize": 2,
+      "editor.rulers": [80]
+    },
+    "[typescriptreact]": {
+      "editor.tabSize": 2,
+      "editor.rulers": [80]
+    },
+    "files.associations": {
+      "*.md": "markdown",
+      "Dockerfile*": "dockerfile",
+      "*.json": "jsonc"
+    },
+    "search.exclude": {
+      "**/venv": true,
+      "**/node_modules": true,
+      "**/.next": true,
+      "**/dist": true,
+      "**/build": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-python.python",
+      "ms-python.vscode-pylance",
+      "ms-python.black-formatter",
+      "dbaeumer.vscode-eslint",
+      "esbenp.prettier-vscode",
+      "bradlc.vscode-tailwindcss",
+      "ms-azuretools.vscode-docker",
+      "redhat.vscode-yaml",
+      "humao.rest-client",
+      "streetsidesoftware.code-spell-checker"
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Ingestion Service",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/src/backend/services/ingestion_service/src/main.py",
+        "console": "integratedTerminal",
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src/backend"
+        }
+      },
+      {
+        "name": "Orchestration Service",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/src/backend/services/orchestration_service/src/main.py",
+        "console": "integratedTerminal",
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src/backend"
+        }
+      },
+      {
+        "name": "Verification Service",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/src/backend/services/verification_service/src/main.py",
+        "console": "integratedTerminal",
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src/backend"
+        }
+      },
+      {
+        "name": "Frontend Dev Server",
+        "type": "node",
+        "request": "launch",
+        "runtimeExecutable": "npm",
+        "runtimeArgs": ["run", "dev"],
+        "cwd": "${workspaceFolder}/src/frontend",
+        "console": "integratedTerminal"
+      },
+      {
+        "name": "Python: Current File",
+        "type": "python",
+        "request": "launch",
+        "program": "${file}",
+        "console": "integratedTerminal",
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src/backend"
+        }
+      }
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Start All Services",
+        "type": "shell",
+        "command": "docker-compose up",
+        "problemMatcher": [],
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        }
+      },
+      {
+        "label": "Run Tests",
+        "type": "shell",
+        "command": "pytest tests/",
+        "problemMatcher": [],
+        "group": "test"
+      },
+      {
+        "label": "Format Python Code",
+        "type": "shell",
+        "command": "black src/backend/",
+        "problemMatcher": []
+      },
+      {
+        "label": "Lint Python Code",
+        "type": "shell",
+        "command": "flake8 src/backend/",
+        "problemMatcher": []
+      },
+      {
+        "label": "Build Frontend",
+        "type": "shell",
+        "command": "npm run build",
+        "options": {
+          "cwd": "${workspaceFolder}/src/frontend"
+        },
+        "problemMatcher": []
+      }
+    ]
+  }
+}

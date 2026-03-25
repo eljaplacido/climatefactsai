@@ -1,0 +1,309 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://climatenews.com/schemas/orchestrator_task.json",
+  "title": "Orchestrator Task Schema",
+  "description": "Orchestrator-agentin käyttämä tehtävämalli työnkulun hallintaan",
+  "version": "1.0",
+  "type": "object",
+  "required": [
+    "taskId",
+    "workflowType",
+    "status",
+    "createdAt"
+  ],
+  "properties": {
+    "taskId": {
+      "type": "string",
+      "pattern": "^task-[0-9]{8}-[0-9]{3}$",
+      "description": "Yksilöllinen tehtävätunniste"
+    },
+    "workflowType": {
+      "type": "string",
+      "enum": ["DAILY_WORKFLOW", "MANUAL_TRIGGER", "EMERGENCY_UPDATE"],
+      "description": "Työnkulun tyyppi"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "INITIATED",
+        "DISCOVERY",
+        "FACT_CHECKING",
+        "CONTENT_CREATION",
+        "VIDEO_PRODUCTION",
+        "HITL_REVIEW",
+        "APPROVED",
+        "PUBLISHED",
+        "FAILED",
+        "CANCELLED"
+      ],
+      "description": "Työnkulun nykyinen tila"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "targetLocation": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "latitude": {
+          "type": "number"
+        },
+        "longitude": {
+          "type": "number"
+        },
+        "country": {
+          "type": "string"
+        }
+      }
+    },
+    "stages": {
+      "type": "object",
+      "properties": {
+        "discovery": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["PENDING", "IN_PROGRESS", "COMPLETED", "FAILED"]
+            },
+            "startedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "completedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "articlesFound": {
+              "type": "number"
+            },
+            "errors": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "errorCode": {
+                    "type": "string"
+                  },
+                  "errorMessage": {
+                    "type": "string"
+                  },
+                  "timestamp": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "factChecking": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["PENDING", "IN_PROGRESS", "COMPLETED", "FAILED"]
+            },
+            "startedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "completedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "articlesProcessed": {
+              "type": "number"
+            },
+            "claimsVerified": {
+              "type": "number"
+            },
+            "apiCallsMade": {
+              "type": "object",
+              "properties": {
+                "climateCheck": {
+                  "type": "number"
+                },
+                "noaa": {
+                  "type": "number"
+                },
+                "nasa": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "contentCreation": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["PENDING", "IN_PROGRESS", "COMPLETED", "FAILED"]
+            },
+            "startedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "completedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "summaryWordCount": {
+              "type": "number"
+            },
+            "qualityScore": {
+              "type": "number"
+            }
+          }
+        },
+        "videoProduction": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["PENDING", "IN_PROGRESS", "COMPLETED", "FAILED", "SKIPPED"]
+            },
+            "startedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "completedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "videoUrl": {
+              "type": "string",
+              "format": "uri"
+            },
+            "videoDurationSeconds": {
+              "type": "number"
+            }
+          }
+        },
+        "hitlReview": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["PENDING", "IN_PROGRESS", "APPROVED", "REJECTED"]
+            },
+            "notifiedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "reviewedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "reviewedBy": {
+              "type": "string"
+            }
+          }
+        },
+        "publication": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["PENDING", "IN_PROGRESS", "COMPLETED", "FAILED"]
+            },
+            "publishedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "cmsContentId": {
+              "type": "string"
+            },
+            "publishedUrls": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          }
+        }
+      }
+    },
+    "costTracking": {
+      "type": "object",
+      "properties": {
+        "totalCostUsd": {
+          "type": "number"
+        },
+        "llmCosts": {
+          "type": "object",
+          "properties": {
+            "claude": {
+              "type": "object",
+              "properties": {
+                "inputTokens": {
+                  "type": "number"
+                },
+                "outputTokens": {
+                  "type": "number"
+                },
+                "costUsd": {
+                  "type": "number"
+                }
+              }
+            },
+            "gpt4o": {
+              "type": "object",
+              "properties": {
+                "inputTokens": {
+                  "type": "number"
+                },
+                "outputTokens": {
+                  "type": "number"
+                },
+                "costUsd": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "apiCosts": {
+          "type": "object",
+          "properties": {
+            "climateCheck": {
+              "type": "number"
+            },
+            "videoGeneration": {
+              "type": "number"
+            },
+            "stockMedia": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    "retry": {
+      "type": "object",
+      "properties": {
+        "attemptCount": {
+          "type": "number",
+          "default": 0
+        },
+        "maxAttempts": {
+          "type": "number",
+          "default": 3
+        },
+        "lastError": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
+

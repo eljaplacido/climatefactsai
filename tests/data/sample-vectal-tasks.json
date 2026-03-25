@@ -1,0 +1,67 @@
+{
+  "sprint": "sprint-2025q1",
+  "tasks": [
+    {
+      "id": "T-001",
+      "title": "Implement authentication service",
+      "description": "Create OAuth2 authentication service with JWT tokens",
+      "completed": false,
+      "in_progress": true,
+      "priority": "high",
+      "assignee": "dev@test.com",
+      "estimated_hours": 8,
+      "tags": ["backend", "security", "authentication"]
+    },
+    {
+      "id": "T-002",
+      "title": "Refactor ingestion module",
+      "description": "Improve performance and add error handling",
+      "completed": false,
+      "in_progress": false,
+      "priority": "high",
+      "assignee": "dev@test.com",
+      "estimated_hours": 12,
+      "tags": ["refactoring", "performance"]
+    },
+    {
+      "id": "T-003",
+      "title": "Update API documentation",
+      "description": "Document all REST endpoints with examples",
+      "completed": true,
+      "in_progress": false,
+      "priority": "medium",
+      "assignee": "lead@test.com",
+      "estimated_hours": 4,
+      "tags": ["documentation"]
+    },
+    {
+      "id": "T-004",
+      "title": "Security audit - compliance review",
+      "description": "Complete OWASP Top 10 security audit",
+      "completed": false,
+      "in_progress": false,
+      "priority": "critical",
+      "assignee": "security@test.com",
+      "estimated_hours": 16,
+      "tags": ["security", "compliance", "audit"]
+    },
+    {
+      "id": "T-005",
+      "title": "Deploy to staging environment",
+      "description": "Deploy all services to staging for QA testing",
+      "completed": false,
+      "in_progress": false,
+      "priority": "high",
+      "assignee": "devops@test.com",
+      "estimated_hours": 6,
+      "tags": ["deployment", "devops"]
+    }
+  ],
+  "metadata": {
+    "total_tasks": 5,
+    "completed": 1,
+    "in_progress": 1,
+    "pending": 3,
+    "total_estimated_hours": 46
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "tasks": [
+    {
+      "id": "T-001",
+      "title": "Test task 1",
+      "completed": false,
+      "in_progress": true,
+      "priority": "high"
+    },
+    {
+      "id": "T-002",
+      "title": "Test task 2",
+      "completed": true,
+      "in_progress": false,
+      "priority": "medium"
+    }
+  ]
+}

@@ -1,0 +1,140 @@
+{
+  "name": "Checkpoint Refactor Template",
+  "description": "Template for large-scale refactoring with automatic checkpoint management",
+  "version": "1.0.0",
+  "tags": ["refactor", "checkpoint", "safety"],
+  "workflow": {
+    "preTask": [
+      "npx claude-flow@alpha hooks pre-task --description 'Refactoring {{module_name}}'",
+      "npx claude-flow@alpha hooks session-restore --session-id 'refactor-{{session_id}}'",
+      "git status",
+      "git stash save 'pre-refactor-checkpoint-{{timestamp}}'"
+    ],
+    "agents": [
+      {
+        "type": "code-analyzer",
+        "name": "Analyzer",
+        "task": "Analyze {{module_name}} module structure and dependencies. Document current architecture in .claude/memory/refactor/{{session_id}}/analysis.json",
+        "memoryKey": "reasoningbank://{{project}}/refactor/{{module_name}}/analysis",
+        "checkpoint": true
+      },
+      {
+        "type": "system-architect",
+        "name": "Architect",
+        "task": "Design improved architecture for {{module_name}}. Check memory for analysis results. Store design in .claude/memory/refactor/{{session_id}}/design.json",
+        "memoryKey": "reasoningbank://{{project}}/refactor/{{module_name}}/design",
+        "checkpoint": true
+      },
+      {
+        "type": "coder",
+        "name": "Refactor Agent",
+        "task": "Implement refactoring based on architectural design. Use Agent Booster for speed. Create checkpoint before each major change.",
+        "agentBooster": {
+          "mode": "turbo",
+          "diffPreview": true,
+          "autosave": true
+        },
+        "memoryKey": "reasoningbank://{{project}}/refactor/{{module_name}}/implementation",
+        "checkpoint": true,
+        "hooks": ["post-edit", "notify"]
+      },
+      {
+        "type": "tester",
+        "name": "Test Generator",
+        "task": "Generate comprehensive test suite for refactored code. Coverage target: {{coverage_target}}%",
+        "memoryKey": "reasoningbank://{{project}}/refactor/{{module_name}}/tests",
+        "checkpoint": true
+      },
+      {
+        "type": "reviewer",
+        "name": "Quality Reviewer",
+        "task": "Review refactored code for quality, security, and performance. Document findings in .claude/memory/refactor/{{session_id}}/review.md",
+        "memoryKey": "reasoningbank://{{project}}/refactor/{{module_name}}/review",
+        "checkpoint": true
+      }
+    ],
+    "postTask": [
+      "npm run lint",
+      "npm run test",
+      "npx claude-flow@alpha hooks post-task --task-id 'refactor-{{session_id}}'",
+      "npx claude-flow@alpha memory push --provider reasoningbank --context {{project}}/refactor --confidence 0.90",
+      "npx claude-flow@alpha hooks session-end --export-metrics true"
+    ]
+  },
+  "variables": {
+    "module_name": {
+      "type": "string",
+      "required": true,
+      "description": "Name of the module to refactor"
+    },
+    "project": {
+      "type": "string",
+      "required": true,
+      "description": "Project context for ReasoningBank"
+    },
+    "session_id": {
+      "type": "string",
+      "required": true,
+      "description": "Unique session identifier"
+    },
+    "coverage_target": {
+      "type": "number",
+      "default": 90,
+      "description": "Target test coverage percentage"
+    },
+    "timestamp": {
+      "type": "string",
+      "default": "{{NOW}}",
+      "description": "Timestamp for checkpoint identification"
+    }
+  },
+  "todos": [
+    {
+      "id": "refactor-1",
+      "content": "Analyze {{module_name}} structure and dependencies",
+      "status": "pending",
+      "priority": "high"
+    },
+    {
+      "id": "refactor-2",
+      "content": "Design improved architecture",
+      "status": "pending",
+      "priority": "high"
+    },
+    {
+      "id": "refactor-3",
+      "content": "Implement refactoring changes",
+      "status": "pending",
+      "priority": "high"
+    },
+    {
+      "id": "refactor-4",
+      "content": "Generate comprehensive tests",
+      "status": "pending",
+      "priority": "medium"
+    },
+    {
+      "id": "refactor-5",
+      "content": "Review code quality and security",
+      "status": "pending",
+      "priority": "medium"
+    },
+    {
+      "id": "refactor-6",
+      "content": "Run lint and tests",
+      "status": "pending",
+      "priority": "high"
+    },
+    {
+      "id": "refactor-7",
+      "content": "Update ReasoningBank with results",
+      "status": "pending",
+      "priority": "low"
+    }
+  ],
+  "checkpoints": {
+    "auto": true,
+    "labels": ["pre-analysis", "post-design", "mid-implementation", "pre-test", "final-review"],
+    "rollback_instructions": "Use 'git stash pop' to restore pre-refactor state. Check .claude/checkpoints/ for detailed rollback points."
+  }
+}

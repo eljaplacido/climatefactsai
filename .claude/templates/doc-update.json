@@ -1,0 +1,110 @@
+{
+  "name": "Documentation Update Template",
+  "description": "Comprehensive documentation update workflow with automated verification",
+  "version": "1.0.0",
+  "tags": ["documentation", "update", "verification"],
+  "workflow": {
+    "preTask": [
+      "npx claude-flow@alpha hooks pre-task --description 'Documentation update for {{doc_scope}}'",
+      "npx claude-flow@alpha memory fetch --context 'docs/{{project}}' --labels 'documentation,architecture'",
+      "git status"
+    ],
+    "agents": [
+      {
+        "type": "researcher",
+        "name": "Documentation Researcher",
+        "task": "Review {{doc_scope}} for documentation needs. Identify gaps, outdated information, and missing examples. Store findings in .claude/memory/docs/{{session_id}}/analysis.json",
+        "memoryKey": "reasoningbank://{{project}}/docs/analysis",
+        "checkpoint": true
+      },
+      {
+        "type": "api-docs",
+        "name": "Documentation Writer",
+        "task": "Update documentation for {{doc_scope}}. Include examples, API references, and usage guides. Focus on clarity and completeness.",
+        "context": "docs/{{doc_path}}",
+        "memoryKey": "reasoningbank://{{project}}/docs/content",
+        "checkpoint": true,
+        "hooks": ["post-edit"]
+      },
+      {
+        "type": "coder",
+        "name": "Code Example Generator",
+        "task": "Create working code examples for documentation. Store examples in docs/examples/{{doc_scope}}/",
+        "memoryKey": "reasoningbank://{{project}}/docs/examples",
+        "checkpoint": true
+      },
+      {
+        "type": "reviewer",
+        "name": "Documentation Reviewer",
+        "task": "Review documentation for accuracy, completeness, and consistency. Verify all links and code examples work.",
+        "memoryKey": "reasoningbank://{{project}}/docs/review",
+        "checkpoint": true
+      }
+    ],
+    "postTask": [
+      "npx claude-flow@alpha hooks post-task --task-id 'docs-{{session_id}}'",
+      "npx claude-flow@alpha memory push --provider reasoningbank --context {{project}}/docs --confidence 0.92",
+      "npx claude-flow@alpha hooks notify --message 'Documentation updated for {{doc_scope}}'",
+      "npx claude-flow@alpha hooks session-end --export-metrics true"
+    ]
+  },
+  "variables": {
+    "doc_scope": {
+      "type": "string",
+      "required": true,
+      "description": "Scope of documentation to update"
+    },
+    "project": {
+      "type": "string",
+      "required": true,
+      "description": "Project name for context"
+    },
+    "doc_path": {
+      "type": "string",
+      "required": true,
+      "description": "Documentation path (e.g., 'services', 'api', 'architecture')"
+    },
+    "session_id": {
+      "type": "string",
+      "required": true,
+      "description": "Unique session identifier"
+    }
+  },
+  "todos": [
+    {
+      "id": "doc-1",
+      "content": "Analyze documentation gaps for {{doc_scope}}",
+      "status": "pending",
+      "priority": "high"
+    },
+    {
+      "id": "doc-2",
+      "content": "Write/update documentation content",
+      "status": "pending",
+      "priority": "high"
+    },
+    {
+      "id": "doc-3",
+      "content": "Create working code examples",
+      "status": "pending",
+      "priority": "medium"
+    },
+    {
+      "id": "doc-4",
+      "content": "Review documentation for accuracy",
+      "status": "pending",
+      "priority": "medium"
+    },
+    {
+      "id": "doc-5",
+      "content": "Update ReasoningBank with documentation changes",
+      "status": "pending",
+      "priority": "low"
+    }
+  ],
+  "checkpoints": {
+    "auto": true,
+    "labels": ["pre-analysis", "post-writing", "post-examples", "final-review"],
+    "rollback_instructions": "Use .claude/checkpoints/ to restore previous documentation state if needed."
+  }
+}

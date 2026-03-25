@@ -1,0 +1,256 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://climatenews.com/schemas/creation_to_publication.json",
+  "title": "Content Creation to Publication Queue Schema",
+  "description": "Valmis sisältöpaketti HITL-tarkistukseen ja julkaisuun",
+  "version": "2.1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "taskId",
+    "summaryMarkdown",
+    "metadata"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "2.1"
+    },
+    "taskId": {
+      "type": "string",
+      "pattern": "^task-[0-9]{8}-[0-9]{3}$"
+    },
+    "summaryMarkdown": {
+      "type": "string",
+      "minLength": 500,
+      "maxLength": 10000,
+      "description": "Lopullinen uutisyhteenveto Markdown-muodossa"
+    },
+    "summaryPlainText": {
+      "type": "string",
+      "description": "Pelkkä tekstiversio ilman muotoiluja"
+    },
+    "videoUrl": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL tuotettuun videotiedostoon (jos valmis)"
+    },
+    "headline": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 200,
+      "description": "Pääotsikko"
+    },
+    "excerpt": {
+      "type": "string",
+      "minLength": 50,
+      "maxLength": 300,
+      "description": "Lyhyt tiivistelmä (lead/ingressi)"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["sourceArticles", "qualityMetrics"],
+      "properties": {
+        "publicationDate": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Suunniteltu julkaisupäivä"
+        },
+        "targetLocation": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "latitude": {
+              "type": "number"
+            },
+            "longitude": {
+              "type": "number"
+            },
+            "country": {
+              "type": "string"
+            }
+          }
+        },
+        "sourceArticles": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["articleId", "url", "title"],
+            "properties": {
+              "articleId": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "title": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "sourceCredibilityScore": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "overallCredibility": {
+                "type": "string",
+                "enum": ["HIGH", "MEDIUM", "LOW", "MIXED"]
+              }
+            }
+          }
+        },
+        "verifiedClaims": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "claimId": {
+                "type": "string"
+              },
+              "claimText": {
+                "type": "string"
+              },
+              "verificationStatus": {
+                "type": "string",
+                "enum": ["VERIFIED", "UNVERIFIED", "MISLEADING", "LACKS_CONTEXT", "FALSE"]
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          }
+        },
+        "qualityMetrics": {
+          "type": "object",
+          "required": ["contentRelevanceScore"],
+          "properties": {
+            "contentRelevanceScore": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Sisällön relevanssipisteytys (0-1)"
+            },
+            "semanticSimilarity": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Semanttinen samankaltaisuus lähteiden kanssa"
+            },
+            "keywordCoverage": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Avainsanojen kattavuus"
+            },
+            "readabilityGradeLevel": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Flesch-Kincaid luokka-aste"
+            },
+            "averageSourceCredibility": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Lähteiden keskimääräinen uskottavuus"
+            }
+          }
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "climate_policy",
+              "extreme_weather",
+              "sea_level_rise",
+              "sustainability",
+              "renewable_energy",
+              "environmental_protection",
+              "climate_science",
+              "adaptation",
+              "mitigation"
+            ]
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "language": {
+          "type": "string",
+          "pattern": "^[a-z]{2}$",
+          "default": "fi"
+        },
+        "wordCount": {
+          "type": "number",
+          "description": "Sanojen määrä yhteenvedossa"
+        },
+        "estimatedReadingTimeMinutes": {
+          "type": "number",
+          "description": "Arvioitu lukuaika minuutteissa"
+        },
+        "creationTimestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "creationAgentVersion": {
+          "type": "string"
+        }
+      }
+    },
+    "hitlReview": {
+      "type": "object",
+      "description": "HITL-tarkistuksen tila ja tulokset",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["PENDING", "APPROVED", "REJECTED", "REQUIRES_EDIT"],
+          "default": "PENDING"
+        },
+        "reviewedBy": {
+          "type": "string",
+          "description": "Tarkistajan tunnus"
+        },
+        "reviewedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "feedback": {
+          "type": "string",
+          "description": "Tarkistajan palaute"
+        },
+        "edits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "originalValue": {
+                "type": "string"
+              },
+              "editedValue": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+

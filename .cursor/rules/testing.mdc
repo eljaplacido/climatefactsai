@@ -1,0 +1,484 @@
+# Testing Rules (MDC)
+
+## Testing Philosophy
+
+- **Test behavior, not implementation**: Focus on what the code does, not how it does it
+- **Test pyramid**: Many unit tests, some integration tests, few E2E tests
+- **Test-Driven Development encouraged**: Write tests before implementation when feasible
+- **No untested code in production domains**: Coverage requirement: >80% for domain services
+
+## Pytest Backend Testing
+
+### Test Structure
+```
+tests/
+├── conftest.py              # Shared fixtures
+├── unit/
+│   ├── domains/
+│   │   ├── content/
+│   │   │   ├── test_article_service.py
+│   │   │   └── test_article_repository.py
+│   │   ├── intelligence/
+│   │   │   ├── test_claim_extractor.py
+│   │   │   └── test_verifier.py
+│   │   └── identity/
+│   │       └── test_auth_service.py
+│   └── core/
+│       └── test_scoring.py
+├── integration/
+│   ├── test_api_articles.py
+│   ├── test_api_search.py
+│   └── test_verification_pipeline.py
+└── e2e/
+    └── test_user_workflows.py
+```
+
+### Fixtures (conftest.py)
+```python
+import pytest
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from fastapi.testclient import TestClient
+
+# Database fixture
+@pytest.fixture
+async def db_session():
+    """Provide async database session for tests."""
+    engine = create_async_engine(
+        "postgresql+asyncpg://test:test@localhost/test_climatenews",
+        echo=False
+    )
+    
+    async_session = sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    
+    async with async_session() as session:
+        yield session
+        await session.rollback()  # Rollback after each test
+    
+    await engine.dispose()
+
+# Test data fixtures
+@pytest.fixture
+def sample_article():
+    """Sample article data for testing."""
+    return {
+        "id": 1,
+        "title": "Climate Change Impact on Arctic Ice",
+        "url": "https://example.com/article",
+        "source": "Nature",
+        "published_at": "2025-01-15T10:00:00Z",
+        "credibility_score": 0.95,
+        "credibility_level": "high",
+        "country": "US",
+        "tags": ["climate", "arctic", "research"]
+    }
+
+@pytest.fixture
+def sample_claim():
+    """Sample claim data for testing."""
+    return {
+        "id": "claim-123",
+        "claim_text": "Arctic ice extent decreased by 13% per decade since 1979",
+        "claim_type": "factual",
+        "verification_status": "verified",
+        "confidence_score": 0.92
+    }
+
+# API client fixture
+@pytest.fixture
+def api_client(app):
+    """Provide TestClient for API testing."""
+    from api.main import app
+    return TestClient(app)
+```
+
+### Unit Test Examples
+
+#### Testing Domain Services
+```python
+# tests/unit/domains/content/test_article_service.py
+import pytest
+from unittest.mock import AsyncMock, Mock
+from app.domains.content.services import ArticleService
+from app.domains.content.models import Article
+
+@pytest.mark.asyncio
+async def test_get_article_with_verification_success(sample_article):
+    """Test retrieving article with verification data."""
+    # Arrange
+    mock_repository = AsyncMock()
+    mock_repository.get_by_id.return_value = Article(**sample_article)
+    mock_repository.get_claims.return_value = []
+    
+    service = ArticleService(repository=mock_repository)
+    
+    # Act
+    result = await service.get_article_with_verification(1)
+    
+    # Assert
+    assert result.id == 1
+    assert result.title == sample_article["title"]
+    assert result.credibility_score is not None
+    mock_repository.get_by_id.assert_called_once_with(1)
+
+@pytest.mark.asyncio
+async def test_get_article_not_found():
+    """Test handling of non-existent article."""
+    # Arrange
+    mock_repository = AsyncMock()
+    mock_repository.get_by_id.return_value = None
+    
+    service = ArticleService(repository=mock_repository)
+    
+    # Act & Assert
+    with pytest.raises(ArticleNotFoundError) as exc_info:
+        await service.get_article_with_verification(999)
+    
+    assert "999" in str(exc_info.value)
+```
+
+#### Testing Intelligence Domain
+```python
+# tests/unit/domains/intelligence/test_claim_extractor.py
+import pytest
+from app.domains.intelligence.services import ClaimExtractor
+from app.domains.intelligence.schemas import AtomicClaim
+
+@pytest.mark.asyncio
+async def test_decompose_claims_from_article():
+    """Test extracting atomic claims from article text."""
+    # Arrange
+    extractor = ClaimExtractor(model="claude-3-sonnet")
+    article_text = """
+    Global temperatures have risen by 1.1°C since pre-industrial times.
+    The Arctic sea ice extent has decreased by 13% per decade since 1979.
+    """
+    
+    # Act
+    claims = await extractor.decompose_claims(article_text)
+    
+    # Assert
+    assert len(claims) >= 2  # Should extract at least 2 claims
+    assert all(isinstance(c, AtomicClaim) for c in claims)
+    assert any("1.1°C" in c.claim_text for c in claims)
+    assert any("13%" in c.claim_text for c in claims)
+
+@pytest.mark.asyncio
+async def test_decompose_claims_empty_text():
+    """Test handling of empty input."""
+    extractor = ClaimExtractor(model="claude-3-sonnet")
+    
+    claims = await extractor.decompose_claims("")
+    
+    assert claims == []
+```
+
+### Integration Test Examples
+
+#### Testing API Endpoints
+```python
+# tests/integration/test_api_articles.py
+import pytest
+from fastapi.testclient import TestClient
+
+def test_list_articles_endpoint(api_client, db_session, sample_article):
+    """Test GET /api/articles endpoint."""
+    # Arrange - insert test data
+    # (Assume fixture handles DB setup)
+    
+    # Act
+    response = api_client.get("/api/articles?limit=10")
+    
+    # Assert
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) > 0
+    assert "title" in data[0]
+    assert "credibility_score" in data[0]
+
+def test_get_article_detail(api_client, sample_article):
+    """Test GET /api/articles/{id} endpoint."""
+    response = api_client.get(f"/api/articles/{sample_article['id']}")
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == sample_article["id"]
+    assert "claims" in data
+
+def test_get_article_not_found(api_client):
+    """Test 404 for non-existent article."""
+    response = api_client.get("/api/articles/999999")
+    
+    assert response.status_code == 404
+
+def test_article_search(api_client):
+    """Test article search functionality."""
+    response = api_client.get("/api/articles?q=climate&country=US")
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+```
+
+#### Testing Verification Pipeline
+```python
+# tests/integration/test_verification_pipeline.py
+import pytest
+from app.domains.intelligence.services import (
+    ClaimExtractor,
+    EvidenceRetriever,
+    VerdictAdjudicator
+)
+
+@pytest.mark.asyncio
+async def test_full_verification_pipeline():
+    """Test complete verification flow: extract -> fetch evidence -> adjudicate."""
+    # Arrange
+    extractor = ClaimExtractor()
+    retriever = EvidenceRetriever()
+    adjudicator = VerdictAdjudicator()
+    
+    article_text = "Global temperatures have risen by 1.1°C since 1850."
+    
+    # Act - Step 1: Extract claims
+    claims = await extractor.decompose_claims(article_text)
+    assert len(claims) > 0
+    
+    # Act - Step 2: Fetch evidence for first claim
+    evidence = await retriever.fetch_evidence(claims[0])
+    assert len(evidence) > 0
+    
+    # Act - Step 3: Adjudicate
+    verdict = await adjudicator.adjudicate(claims[0], evidence)
+    
+    # Assert
+    assert verdict.verdict in ["verified", "disputed", "unverified"]
+    assert 0 <= verdict.confidence_score <= 1
+    assert verdict.justification is not None
+```
+
+### Mocking External Services
+
+#### Mocking LLM Calls
+```python
+import pytest
+from unittest.mock import patch, MagicMock
+
+@pytest.fixture
+def mock_anthropic():
+    """Mock Anthropic API calls."""
+    with patch('anthropic.Anthropic') as mock:
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = MagicMock(
+            content=[MagicMock(text='{"claims": [{"text": "Test claim"}]}')]
+        )
+        mock.return_value = mock_client
+        yield mock
+
+@pytest.mark.asyncio
+async def test_claim_extraction_with_mock(mock_anthropic):
+    """Test claim extraction with mocked LLM."""
+    extractor = ClaimExtractor()
+    claims = await extractor.decompose_claims("Test article")
+    
+    assert len(claims) > 0
+    mock_anthropic.return_value.messages.create.assert_called_once()
+```
+
+#### Mocking HTTP Requests
+```python
+import pytest
+from unittest.mock import patch
+import httpx
+
+@pytest.fixture
+def mock_climate_api():
+    """Mock Climate Watch API responses."""
+    with patch('httpx.AsyncClient.get') as mock_get:
+        mock_response = httpx.Response(
+            200,
+            json={
+                "data": {
+                    "temperature_anomaly": 1.1,
+                    "year": 2024
+                }
+            }
+        )
+        mock_get.return_value = mock_response
+        yield mock_get
+
+@pytest.mark.asyncio
+async def test_evidence_retrieval_from_climate_api(mock_climate_api):
+    """Test fetching evidence from Climate Watch API."""
+    retriever = EvidenceRetriever()
+    evidence = await retriever.fetch_from_climate_watch("temperature rise")
+    
+    assert evidence is not None
+    assert evidence.source == "Climate Watch"
+    mock_climate_api.assert_called_once()
+```
+
+## Frontend Testing (Vitest + React Testing Library)
+
+### Component Test Example
+```typescript
+// __tests__/components/ArticleCard.test.tsx
+import { render, screen } from '@testing-library/react';
+import { ArticleCard } from '@/components/articles/ArticleCard';
+import { vi } from 'vitest';
+
+describe('ArticleCard', () => {
+  const mockArticle = {
+    id: 1,
+    title: 'Climate Change Impact',
+    source: 'BBC',
+    credibility_level: 'high',
+    credibility_score: 0.95,
+    published_at: '2025-01-15T10:00:00Z',
+    tags: ['climate', 'science'],
+  };
+
+  it('renders article information correctly', () => {
+    render(<ArticleCard article={mockArticle} />);
+    
+    expect(screen.getByText('Climate Change Impact')).toBeInTheDocument();
+    expect(screen.getByText('BBC')).toBeInTheDocument();
+    expect(screen.getByText(/high/i)).toBeInTheDocument();
+  });
+
+  it('calls onVerify when verify button is clicked', async () => {
+    const onVerify = vi.fn();
+    const { user } = render(
+      <ArticleCard article={mockArticle} onVerify={onVerify} />
+    );
+    
+    await user.click(screen.getByRole('button', { name: /verify/i }));
+    
+    expect(onVerify).toHaveBeenCalledWith(mockArticle.id);
+  });
+});
+```
+
+### Hook Test Example
+```typescript
+// __tests__/hooks/useArticles.test.ts
+import { renderHook, waitFor } from '@testing-library/react';
+import { useArticles } from '@/hooks/useArticles';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const createWrapper = () => {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+    },
+  });
+  
+  return ({ children }) => (
+    <QueryClientProvider client={queryClient}>
+      {children}
+    </QueryClientProvider>
+  );
+};
+
+describe('useArticles', () => {
+  it('fetches articles successfully', async () => {
+    const { result } = renderHook(() => useArticles(), {
+      wrapper: createWrapper(),
+    });
+    
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    
+    expect(result.current.data).toBeDefined();
+    expect(Array.isArray(result.current.data)).toBe(true);
+  });
+});
+```
+
+## E2E Testing (Playwright)
+
+### E2E Test Example
+```typescript
+// tests/e2e/article-workflow.spec.ts
+import { test, expect } from '@playwright/test';
+
+test.describe('Article Verification Workflow', () => {
+  test('user can search for articles and view details', async ({ page }) => {
+    // Navigate to homepage
+    await page.goto('http://localhost:5300');
+    
+    // Search for articles
+    await page.fill('input[name="search"]', 'climate change');
+    await page.click('button[type="submit"]');
+    
+    // Wait for results
+    await page.waitForSelector('.article-card');
+    
+    // Verify results are displayed
+    const articles = page.locator('.article-card');
+    await expect(articles).toHaveCountGreaterThan(0);
+    
+    // Click first article
+    await articles.first().click();
+    
+    // Verify article detail page
+    await expect(page.locator('h1')).toBeVisible();
+    await expect(page.locator('.claims-section')).toBeVisible();
+  });
+
+  test('user can submit URL for verification', async ({ page }) => {
+    await page.goto('http://localhost:5300/verify');
+    
+    // Submit URL
+    await page.fill('input[name="url"]', 'https://example.com/article');
+    await page.click('button[type="submit"]');
+    
+    // Wait for verification to start
+    await expect(page.locator('.verification-status')).toContainText('Analyzing');
+    
+    // Eventually shows results (with timeout)
+    await expect(page.locator('.verification-results')).toBeVisible({
+      timeout: 30000,
+    });
+  });
+});
+```
+
+## Test Coverage Requirements
+
+### Coverage Goals
+- **Domain Services**: ≥90% coverage
+- **Repositories**: ≥85% coverage
+- **API Routes**: ≥80% coverage
+- **React Components**: ≥75% coverage
+
+### Running Coverage
+```bash
+# Backend
+pytest --cov=src/backend/app --cov-report=html --cov-report=term
+
+# Frontend
+npm run test:coverage
+```
+
+## Testing Best Practices
+
+### DO
+- ✅ Write tests that describe behavior, not implementation
+- ✅ Use descriptive test names: `test_user_can_verify_url_with_valid_input`
+- ✅ Arrange-Act-Assert pattern
+- ✅ Test edge cases and error conditions
+- ✅ Mock external dependencies (APIs, LLMs, databases in unit tests)
+- ✅ Use fixtures for reusable test data
+- ✅ Keep tests independent and isolated
+
+### DON'T
+- ❌ Test implementation details (private methods, internal state)
+- ❌ Write tests that depend on external services in unit tests
+- ❌ Create tests that depend on execution order
+- ❌ Ignore flaky tests - fix them
+- ❌ Mock everything - integration tests should use real DB
+- ❌ Write tests without assertions
+- ❌ Skip testing error paths
