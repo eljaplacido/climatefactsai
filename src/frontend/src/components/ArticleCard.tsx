@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Calendar, User, Beaker, BarChart3, Scale, Eye, TrendingUp, Loader2, CheckCircle2, AlertCircle, Clock } from "lucide-react";
+import { Calendar, User, Beaker, BarChart3, Scale, Eye, TrendingUp, Loader2, CheckCircle2, AlertCircle, Clock, Thermometer } from "lucide-react";
 import { format } from "date-fns";
 import { enGB } from "date-fns/locale";
 import clsx from "clsx";
@@ -115,9 +115,18 @@ function ArticleCard({ article }: ArticleCardProps) {
           {article.title}
         </h3>
 
-        {article.excerpt && (
-          <div className="text-gray-600 text-sm mb-4 line-clamp-3">
-            <Markdown content={article.excerpt} />
+        {/* Enriched excerpt (full paragraph) or fallback to basic excerpt */}
+        {(article.enriched_excerpt || article.excerpt) && (
+          <div className="text-gray-600 text-sm mb-4 line-clamp-6">
+            <Markdown content={article.enriched_excerpt || article.excerpt || ""} />
+          </div>
+        )}
+
+        {/* Climate context indicator */}
+        {article.climate_context_summary && (
+          <div className="flex items-start gap-2 mb-4 px-3 py-2 bg-teal-50 border border-teal-200 rounded-lg">
+            <Thermometer className="h-4 w-4 text-teal-600 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-teal-700 line-clamp-2">{article.climate_context_summary}</p>
           </div>
         )}
 

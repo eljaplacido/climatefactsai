@@ -51,6 +51,15 @@ export interface Article {
   source_name: string;
   source_credibility_score: number;
   excerpt?: string;
+  enriched_excerpt?: string;
+  climate_context_summary?: string;
+  enrichment_metadata?: {
+    weather_match?: boolean;
+    source_reliability_assessed?: boolean;
+    trend_context?: string;
+    temperature_trend?: string;
+    enrichment_model?: string;
+  };
   claim_count: number;
   verified_claim_count: number;
   claims_status?: "pending" | "processing" | "completed" | "failed";
@@ -108,6 +117,15 @@ export interface ArticleDetail extends Article {
   analysis_article_generated_at?: string;
   executive_brief?: string;
   content_category?: ContentCategory;
+  enriched_excerpt?: string;
+  climate_context_summary?: string;
+  enrichment_metadata?: {
+    weather_match?: boolean;
+    source_reliability_assessed?: boolean;
+    trend_context?: string;
+    temperature_trend?: string;
+    enrichment_model?: string;
+  };
 }
 
 // --- Dashboard & Workflows ---
@@ -469,5 +487,146 @@ export interface AnalyticsDashboard {
   top_sources: SourcePerformance[];
   claim_categories: ClaimCategoryBreakdown[];
   country_stats: CountryArticleStats[];
+  generated_at: string;
+}
+
+// --- User Auth & Dashboard ---
+
+export interface UserProfile {
+  user_id: string;
+  email: string;
+  full_name: string;
+  subscription_tier: "FREEMIUM" | "BASIC" | "PROFESSIONAL" | "ENTERPRISE";
+  is_verified: boolean;
+  created_at: string;
+}
+
+export interface ReadingHistoryEntry {
+  history_id: string;
+  article_id: string;
+  article_title: string;
+  article_source: string;
+  article_credibility?: string;
+  read_at: string;
+  read_duration_seconds?: number;
+}
+
+export interface Bookmark {
+  bookmark_id: string;
+  article_id: string;
+  article_title: string;
+  article_source: string;
+  article_credibility?: string;
+  folder: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface UserDashboardStats {
+  articles_read_week: number;
+  articles_read_total: number;
+  bookmarks_count: number;
+  searches_count: number;
+  days_active: number;
+  current_tier: string;
+  tier_usage: {
+    articles_today: number;
+    articles_limit: number;
+    api_calls_today: number;
+    api_calls_limit: number;
+  };
+}
+
+// --- Map Intelligence ---
+
+export interface MapCountryDetail {
+  country_code: string;
+  country_name: string;
+  continent?: string;
+  region?: string;
+  flag_emoji?: string;
+  coordinates?: { lat: number; lon: number };
+  weather?: {
+    temperature_c: number;
+    humidity_pct: number;
+    precipitation_mm: number;
+    wind_speed_kmh: number;
+  };
+  temperature_anomaly?: {
+    current: number;
+    historical_avg: number;
+    deviation: number;
+    trend: string;
+  };
+  article_stats: {
+    total: number;
+    by_category: Record<string, number>;
+    avg_credibility: number;
+  };
+  recent_articles: {
+    article_id: string;
+    title: string;
+    source_name: string;
+    published_date?: string;
+    credibility?: string;
+    excerpt?: string;
+  }[];
+  source_coverage: { source_name: string; article_count: number; avg_reliability?: number }[];
+  climate_risk: {
+    risk_score: number;
+    claim_count: number;
+    disputed_ratio: number;
+  };
+}
+
+export interface MapQueryResponse {
+  query: string;
+  answer: string;
+  highlighted_countries: string[];
+  matching_articles: number;
+  country_highlights: {
+    country_code: string;
+    country_name: string;
+    article_count: number;
+    avg_credibility_score?: number;
+  }[];
+  session_id?: string;
+}
+
+// --- Knowledge Graph ---
+
+export interface KnowledgeEntity {
+  entity_id: string;
+  entity_name: string;
+  entity_type: string;
+  description?: string;
+  article_count: number;
+}
+
+export interface EntityRelationship {
+  source: KnowledgeEntity;
+  target: KnowledgeEntity;
+  relationship_type: string;
+  strength: number;
+  evidence_text?: string;
+}
+
+export interface ArticleEntityGraph {
+  entities: KnowledgeEntity[];
+  relationships: EntityRelationship[];
+  connected_articles: { article_id: string; title: string; connection_path: string }[];
+}
+
+// --- Intelligence Brief ---
+
+export interface IntelligenceBrief {
+  topic: string;
+  summary: string;
+  key_findings: string[];
+  consensus_areas: string[];
+  disputed_areas: string[];
+  data_gaps: string[];
+  article_count: number;
+  source_count: number;
   generated_at: string;
 }

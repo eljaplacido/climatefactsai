@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import GlobalNav from '@/components/GlobalNav'
 import ErrorBoundary from '@/components/ErrorBoundary'
+import { AuthProvider } from '@/lib/auth'
 
 export const metadata: Metadata = {
   title: 'CliLens.AI - Fact-Checked Climate News',
@@ -16,11 +17,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-gray-50 dark:bg-gray-900">
-        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-teal-600 focus:text-white focus:rounded">Skip to main content</a>
-        <GlobalNav />
-        <ErrorBoundary>
-          {children}
-        </ErrorBoundary>
+        <AuthProvider>
+          <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-teal-600 focus:text-white focus:rounded">Skip to main content</a>
+          <GlobalNav />
+          <ErrorBoundary>
+            {children}
+          </ErrorBoundary>
+        </AuthProvider>
       </body>
     </html>
   )

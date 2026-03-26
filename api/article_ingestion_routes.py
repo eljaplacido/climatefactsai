@@ -106,6 +106,34 @@ def scrape_article_content(url: str) -> dict:
         raise HTTPException(status_code=400, detail=f"Failed to scrape article: {str(e)}")
 
 
+async def _enrich_article_background(
+    article_id: str,
+    title: str,
+    content: str,
+    source_name: str,
+    country_code: str,
+):
+    """
+    Background task to enrich an article with LLM-generated excerpt,
+    climate context, and source reliability assessment.
+    """
+    try:
+        from app.domains.content.article_enrichment_service import ArticleEnrichmentService
+
+        db = get_postgres()
+        service = ArticleEnrichmentService(db)
+        result = await service.enrich_article(
+            article_id=article_id,
+            title=title,
+            extracted_text=content,
+            source_name=source_name,
+            country_code=country_code,
+        )
+        logger.info(f"Enrichment complete for article {article_id}")
+    except Exception as e:
+        logger.error(f"Background enrichment failed for {article_id}: {e}", exc_info=True)
+
+
 async def process_article_claims_background(article_id: str, article_text: str):
     """
     Background task to extract and verify claims for a newly ingested article.
@@ -206,6 +234,18 @@ async def ingest_article(request: IngestArticleRequest, background_tasks: Backgr
     )
 
     logger.info(f"Ingested article {article_id}: {title}")
+
+    # Schedule background enrichment (always, when text is available)
+    source_domain = url_str.split('/')[2]
+    if scraped_data['text']:
+        background_tasks.add_task(
+            _enrich_article_background,
+            article_id,
+            title,
+            scraped_data['text'],
+            source_domain,
+            "XX",  # country_code not available from URL scraping; default to International
+        )
 
     # Schedule background processing if requested
     if request.process_claims and scraped_data['text']:
@@ -384,8 +424,16 @@ async def ingest_document(
         f"Ingested document {article_id}: type={content_type} doi={doi} title={title[:80]}"
     )
 
-    # Schedule background claim extraction with content_type context
+    # Schedule background enrichment and claim extraction
     if doc["text"]:
+        background_tasks.add_task(
+            _enrich_article_background,
+            article_id,
+            title,
+            doc["text"],
+            url_str.split("/")[2],
+            "XX",
+        )
         background_tasks.add_task(
             process_article_claims_background,
             article_id,
@@ -629,8 +677,16 @@ async def upload_document(
         f"text_len={len(text)} title={title[:80]}"
     )
 
-    # Schedule background claim extraction
+    # Schedule background enrichment and claim extraction
     if text:
+        background_tasks.add_task(
+            _enrich_article_background,
+            article_id,
+            title,
+            text,
+            f"upload:{file.filename}",
+            (country_code or "XX").upper(),
+        )
         background_tasks.add_task(
             process_article_claims_background,
             article_id,

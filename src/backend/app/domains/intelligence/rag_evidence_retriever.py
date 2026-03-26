@@ -1,8 +1,9 @@
 """
 RAG Evidence Retriever — queries the article corpus for similar verified claims.
 
-Uses pgvector cosine similarity on article embeddings to find previously verified
-articles with similar claims, providing internal cross-reference evidence.
+Uses HybridRAGService (pgvector semantic + full-text + knowledge graph) with
+Reciprocal Rank Fusion to find previously verified articles with similar claims,
+providing internal cross-reference evidence.
 """
 
 import os
@@ -17,51 +18,107 @@ logger = get_logger(__name__)
 
 class RAGEvidenceRetriever:
     """
-    Retrieves evidence from the internal article corpus using pgvector similarity search.
+    Retrieves evidence from the internal article corpus using hybrid multi-strategy
+    search (pgvector semantic, PostgreSQL FTS, knowledge graph) fused with RRF.
 
-    Queries articles that have been previously verified and have embeddings,
-    finding similar content that can serve as corroborating or contradicting evidence.
+    Falls back to direct pgvector search when the hybrid service is unavailable.
     """
 
-    SIMILARITY_THRESHOLD = 0.7
-    MAX_RESULTS = 5
+    SIMILARITY_THRESHOLD = 0.5
+    MAX_RESULTS = 15
 
     async def retrieve(self, claim: str, country_code: str = "FI") -> list[Evidence]:
         """
-        Search for similar verified articles using pgvector cosine similarity.
+        Search for similar verified articles using HybridRAGService.
 
-        Falls back gracefully if embeddings are not populated or pgvector is unavailable.
+        Falls back gracefully if embeddings are not populated or services unavailable.
         """
         evidence = []
 
         try:
             db = get_db()
 
-            # First check if we have any articles with embeddings
+            # Use HybridRAGService for multi-strategy retrieval
+            from app.domains.intelligence.hybrid_rag_service import HybridRAGService
+
+            hybrid = HybridRAGService(db)
+            filters = {}
+            if country_code:
+                filters["country_code"] = country_code
+
+            results = await hybrid.retrieve(
+                query=claim,
+                limit=self.MAX_RESULTS,
+                filters=filters,
+            )
+
+            for item in results:
+                similarity = float(item.get("rrf_score", item.get("similarity_score", 0)))
+                if similarity < self.SIMILARITY_THRESHOLD and not item.get("retrieval_sources"):
+                    continue
+
+                credibility = item.get("credibility", "UNKNOWN")
+                title = item.get("title", "")
+                source_name = item.get("source_name", "Unknown")
+                retrieval_sources = item.get("retrieval_sources", [])
+
+                # Determine if similar article supports or contradicts
+                supports = None
+                if credibility == "HIGH":
+                    supports = True
+                elif credibility == "LOW":
+                    supports = False
+
+                strategy_label = ", ".join(retrieval_sources) if retrieval_sources else "hybrid"
+
+                evidence.append(Evidence(
+                    source=f"CliLens Corpus ({source_name})",
+                    source_url="",
+                    source_reliability="high" if credibility == "HIGH" else "medium",
+                    content_excerpt=(
+                        f"Similar article: \"{title}\". "
+                        f"Credibility: {credibility}. "
+                        f"Retrieval: {strategy_label}. "
+                        f"Score: {similarity:.4f}"
+                    ),
+                    relevance_score=round(min(similarity * 2.0, 0.95), 2),
+                    supports_claim=supports,
+                    retrieval_method=f"hybrid_rag_{strategy_label}",
+                ))
+
+            if evidence:
+                logger.info(f"RAG retriever found {len(evidence)} similar articles via hybrid search")
+
+        except ImportError:
+            logger.debug("HybridRAGService not available, falling back to direct pgvector")
+            return await self._fallback_pgvector_retrieve(claim)
+        except Exception as e:
+            logger.warning(f"RAG evidence retrieval failed: {e}")
+
+        return evidence
+
+    async def _fallback_pgvector_retrieve(self, claim: str) -> list[Evidence]:
+        """Direct pgvector search fallback when HybridRAGService is unavailable."""
+        evidence = []
+        try:
+            db = get_db()
+
             check = db.execute_query(
                 "SELECT COUNT(*) as cnt FROM articles WHERE embedding IS NOT NULL"
             )
             if not check or check[0]["cnt"] == 0:
-                logger.debug("No article embeddings available for RAG retrieval")
                 return []
 
-            # Generate embedding for the claim using the same method as articles
             claim_embedding = await self._get_claim_embedding(claim)
             if claim_embedding is None:
                 return []
 
-            # Query similar articles using pgvector cosine distance
             rows = db.execute_query(
                 """
                 SELECT
-                    a.article_id,
-                    a.title,
-                    a.url,
-                    a.source_name,
-                    a.reliability_score,
-                    a.overall_credibility,
-                    a.claims_count,
-                    a.verified_claims_count,
+                    a.article_id, a.title, a.url, a.source_name,
+                    a.reliability_score, a.overall_credibility,
+                    a.claims_count, a.verified_claims_count,
                     1 - (a.embedding <=> :embedding::vector) as similarity
                 FROM articles a
                 WHERE a.embedding IS NOT NULL
@@ -82,7 +139,6 @@ class RAGEvidenceRetriever:
                 reliability = row.get("reliability_score")
                 credibility = row.get("overall_credibility", "")
 
-                # Determine if similar article supports or contradicts
                 supports = None
                 if credibility == "HIGH" and reliability and reliability >= 70:
                     supports = True
@@ -99,16 +155,13 @@ class RAGEvidenceRetriever:
                         f"Claims: {row.get('verified_claims_count', 0)}/{row.get('claims_count', 0)} verified. "
                         f"Similarity: {similarity:.2f}"
                     ),
-                    relevance_score=round(similarity * 0.9, 2),  # Slightly discount internal evidence
+                    relevance_score=round(similarity * 0.9, 2),
                     supports_claim=supports,
                     retrieval_method="rag_pgvector",
                 ))
 
-            if evidence:
-                logger.info(f"RAG retriever found {len(evidence)} similar articles")
-
         except Exception as e:
-            logger.warning(f"RAG evidence retrieval failed: {e}")
+            logger.warning(f"Fallback pgvector retrieval failed: {e}")
 
         return evidence
 

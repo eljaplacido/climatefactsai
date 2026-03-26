@@ -5,9 +5,14 @@ Provides per-country article counts, top topics, source/reliability filtering,
 heatmap data, and natural-language query endpoint for chat-driven map updates.
 """
 
-from datetime import datetime
+import json
+import math
+import os
+import time
+from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
@@ -16,6 +21,29 @@ from shared.logger import setup_logging
 
 logger = setup_logging("map-api")
 router = APIRouter(prefix="/api/map", tags=["Map"])
+
+# ---------------------------------------------------------------------------
+# Simple in-memory TTL cache for weather / layer data
+# ---------------------------------------------------------------------------
+_cache: Dict[str, Dict[str, Any]] = {}
+
+
+def _cache_get(key: str, ttl_seconds: int = 21600) -> Optional[Any]:
+    """Return cached value if it exists and has not expired."""
+    entry = _cache.get(key)
+    if entry and (time.time() - entry["ts"]) < ttl_seconds:
+        return entry["value"]
+    return None
+
+
+def _cache_set(key: str, value: Any) -> None:
+    _cache[key] = {"value": value, "ts": time.time()}
+
+
+# ---------------------------------------------------------------------------
+# In-memory session store for enhanced /query follow-ups
+# ---------------------------------------------------------------------------
+_query_sessions: Dict[str, Dict[str, Any]] = {}
 
 
 class CountryStats(BaseModel):
@@ -56,6 +84,7 @@ class MapQueryRequest(BaseModel):
     categories: List[str] = Field(default_factory=list)
     topic: Optional[str] = None
     limit: int = Field(20, ge=1, le=100)
+    session_id: Optional[str] = Field(None, description="Session ID for follow-up queries")
 
 
 class MapQueryResponse(BaseModel):
@@ -64,8 +93,117 @@ class MapQueryResponse(BaseModel):
     country_highlights: List[CountryStats] = []
     matching_articles: int = 0
     answer: Optional[str] = None
+    highlighted_countries: List[str] = []
     filters_applied: Dict[str, Any] = {}
+    session_id: Optional[str] = None
     queried_at: str
+
+
+# ---------------------------------------------------------------------------
+# New response models for extended endpoints
+# ---------------------------------------------------------------------------
+
+class ArticleBrief(BaseModel):
+    """Brief article representation for country detail."""
+    article_id: str
+    title: str
+    source_name: Optional[str] = None
+    published_date: Optional[str] = None
+    credibility: Optional[str] = None
+    excerpt: Optional[str] = None
+
+
+class WeatherInfo(BaseModel):
+    """Current weather snapshot."""
+    temperature_c: Optional[float] = None
+    humidity_pct: Optional[float] = None
+    precipitation_mm: Optional[float] = None
+    wind_speed_kmh: Optional[float] = None
+    temperature_anomaly_c: Optional[float] = None
+
+
+class CountryDetail(BaseModel):
+    """Rich detail for a single country."""
+    country_code: str
+    country_name: str
+    continent: Optional[str] = None
+    region: Optional[str] = None
+    flag_emoji: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    weather: Optional[WeatherInfo] = None
+    article_count: int = 0
+    articles_by_category: Dict[str, int] = {}
+    avg_credibility: Optional[float] = None
+    recent_articles: List[ArticleBrief] = []
+    source_coverage: List[Dict[str, Any]] = []
+    high_severity_claims: int = 0
+    disputed_claims_ratio: Optional[float] = None
+
+
+class TrendPoint(BaseModel):
+    """Single data point in a time series."""
+    date: str
+    article_count: int = 0
+    avg_credibility: Optional[float] = None
+
+
+class ClimateDataPoint(BaseModel):
+    """Temperature / precipitation comparison point."""
+    period: str
+    temperature_avg_c: Optional[float] = None
+    precipitation_avg_mm: Optional[float] = None
+
+
+class CountryClimateData(BaseModel):
+    """Climate comparison data for a country."""
+    country_code: str
+    current_month: Optional[ClimateDataPoint] = None
+    last_year_same_month: Optional[ClimateDataPoint] = None
+    five_years_ago_same_month: Optional[ClimateDataPoint] = None
+    temperature_trend: Optional[str] = None  # rising / falling / stable
+    precipitation_comparison: Optional[str] = None
+
+
+class CountryComparison(BaseModel):
+    """Comparison metrics for one country."""
+    country_code: str
+    country_name: str
+    article_count: int = 0
+    source_count: int = 0
+    avg_credibility: Optional[float] = None
+    top_topics: List[str] = []
+    climate_risk_score: Optional[float] = None
+
+
+class CompareResponse(BaseModel):
+    """Response for /compare endpoint."""
+    countries: List[CountryComparison] = []
+    comparison_summary: Optional[str] = None
+
+
+class TimelineEntry(BaseModel):
+    """One time bucket in the timeline."""
+    date: str
+    data: Dict[str, int] = {}
+
+
+class TemperatureAnomalyItem(BaseModel):
+    """Per-country temperature anomaly for map layer."""
+    country_code: str
+    anomaly_celsius: Optional[float] = None
+    trend: Optional[str] = None
+    current_temp: Optional[float] = None
+    historical_avg: Optional[float] = None
+
+
+class ClimateRiskItem(BaseModel):
+    """Per-country climate risk from article claims."""
+    country_code: str
+    risk_score: float = 0.0
+    claim_count: int = 0
+    disputed_ratio: float = 0.0
+    top_risks: List[str] = []
 
 
 # Region → country code mapping for region-based queries
@@ -387,38 +525,60 @@ async def query_map(request: MapQueryRequest):
     Agentic map query endpoint — accepts natural language or structured filters
     and returns map-ready country highlights with article counts.
 
+    Enhanced with LLM-powered query parsing, highlighted countries, and
+    contextual summaries with article citations.
+
     This endpoint powers chat-driven map interactions:
     - "Show me climate news about drought in East Africa"
     - "Highlight countries with high-credibility renewable energy coverage"
     - "Which sources cover Southeast Asian climate?"
 
-    Returns country highlights that can be rendered on the map, plus an
-    optional LLM-generated summary answer.
+    Supports `session_id` for follow-up queries that maintain conversation context.
     """
     db = get_postgres()
+
+    # --- LLM-based query parsing for natural language queries -----------------
+    parsed_filters: Dict[str, Any] = {}
+    if request.query:
+        parsed_filters = await _llm_parse_query(request.query, request.session_id)
+
+    # Merge LLM-parsed filters with explicit request filters (explicit wins)
+    effective_countries = request.countries or parsed_filters.get("countries", [])
+    effective_region = request.region or parsed_filters.get("region")
+    effective_sources = request.sources or parsed_filters.get("sources", [])
+    effective_categories = request.categories or parsed_filters.get("categories", [])
+    effective_topic = request.topic or parsed_filters.get("topic")
+    effective_date_from = parsed_filters.get("date_from")
+    effective_date_to = parsed_filters.get("date_to")
 
     conditions = ["a.country_code IS NOT NULL"]
     params: Dict[str, Any] = {"limit": request.limit}
 
     # Apply structured filters
-    if request.countries:
+    if effective_countries:
         conditions.append("a.country_code = ANY(:countries)")
-        params["countries"] = [c.upper() for c in request.countries]
-    if request.region and request.region in REGION_COUNTRIES:
+        params["countries"] = [c.upper() for c in effective_countries]
+    if effective_region and effective_region in REGION_COUNTRIES:
         conditions.append("a.country_code = ANY(:region_codes)")
-        params["region_codes"] = REGION_COUNTRIES[request.region]
-    if request.sources:
+        params["region_codes"] = REGION_COUNTRIES[effective_region]
+    if effective_sources:
         conditions.append("a.source_name = ANY(:sources)")
-        params["sources"] = request.sources
+        params["sources"] = effective_sources
     if request.reliability_min is not None:
         conditions.append("COALESCE(a.reliability_score, 0) >= :rel_min")
         params["rel_min"] = request.reliability_min
-    if request.categories:
+    if effective_categories:
         conditions.append("a.content_category = ANY(:cats)")
-        params["cats"] = [c.lower() for c in request.categories]
-    if request.topic:
+        params["cats"] = [c.lower() for c in effective_categories]
+    if effective_topic:
         conditions.append(":topic = ANY(a.tags)")
-        params["topic"] = request.topic.lower()
+        params["topic"] = effective_topic.lower()
+    if effective_date_from:
+        conditions.append("a.created_at >= :date_from")
+        params["date_from"] = effective_date_from
+    if effective_date_to:
+        conditions.append("a.created_at <= :date_to")
+        params["date_to"] = effective_date_to
 
     # If natural language query, add full-text search
     if request.query:
@@ -462,25 +622,33 @@ async def query_map(request: MapQueryRequest):
             for r in (rows or [])
         ]
 
-        # Generate a summary answer if it was a natural language query
+        highlighted_codes = [h.country_code for h in highlights[:10]]
+
+        # --- Generate LLM-powered answer with article citations ---------------
         answer = None
-        if request.query and highlights:
+        session_id = request.session_id
+        if request.query:
+            answer, session_id = await _llm_generate_map_answer(
+                db, request.query, highlights, total, where, params, session_id,
+            )
+        if answer is None and request.query and highlights:
             top_countries = ", ".join(f"{h.country_name} ({h.article_count})" for h in highlights[:5])
             answer = (
                 f"Found {total} articles matching your query across {len(highlights)} countries. "
                 f"Top coverage: {top_countries}."
             )
-        elif request.query and not highlights:
+        elif answer is None and request.query and not highlights:
             answer = f"No articles found matching: \"{request.query}\". Try broadening your search."
 
         filters_applied = {k: v for k, v in {
             "query": request.query,
-            "countries": request.countries or None,
-            "region": request.region,
-            "sources": request.sources or None,
+            "countries": effective_countries or None,
+            "region": effective_region,
+            "sources": effective_sources or None,
             "reliability_min": request.reliability_min,
-            "categories": request.categories or None,
-            "topic": request.topic,
+            "categories": effective_categories or None,
+            "topic": effective_topic,
+            "llm_parsed": parsed_filters or None,
         }.items() if v}
 
         return MapQueryResponse(
@@ -488,7 +656,9 @@ async def query_map(request: MapQueryRequest):
             country_highlights=highlights,
             matching_articles=total,
             answer=answer,
+            highlighted_countries=highlighted_codes,
             filters_applied=filters_applied,
+            session_id=session_id,
             queried_at=datetime.utcnow().isoformat(),
         )
 
@@ -568,3 +738,817 @@ async def list_available_themes():
     except Exception as e:
         logger.error(f"Available themes query failed: {e}")
         return []
+
+
+# ==========================================================================
+# NEW ENDPOINTS — country detail, trends, climate-data, compare, timeline,
+#                 map layers (temperature-anomaly, climate-risk)
+# ==========================================================================
+
+
+# ---------------------------------------------------------------------------
+# Weather helpers (Open-Meteo, free, no key)
+# ---------------------------------------------------------------------------
+
+async def _fetch_current_weather(lat: float, lon: float) -> Optional[Dict[str, Any]]:
+    """Fetch current weather from Open-Meteo forecast API."""
+    cache_key = f"weather:current:{lat:.2f},{lon:.2f}"
+    cached = _cache_get(cache_key, ttl_seconds=3600)  # 1-hour cache
+    if cached is not None:
+        return cached
+    try:
+        url = (
+            f"https://api.open-meteo.com/v1/forecast"
+            f"?latitude={lat}&longitude={lon}"
+            f"&current=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m"
+            f"&timezone=auto"
+        )
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+        current = data.get("current", {})
+        result = {
+            "temperature_c": current.get("temperature_2m"),
+            "humidity_pct": current.get("relative_humidity_2m"),
+            "precipitation_mm": current.get("precipitation"),
+            "wind_speed_kmh": current.get("wind_speed_10m"),
+        }
+        _cache_set(cache_key, result)
+        return result
+    except Exception as e:
+        logger.warning(f"Open-Meteo current fetch failed ({lat},{lon}): {e}")
+        return None
+
+
+async def _fetch_historical_weather(
+    lat: float, lon: float, start_date: str, end_date: str,
+) -> Optional[Dict[str, Any]]:
+    """Fetch historical daily data from Open-Meteo archive API."""
+    cache_key = f"weather:hist:{lat:.2f},{lon:.2f}:{start_date}:{end_date}"
+    cached = _cache_get(cache_key, ttl_seconds=86400)  # 24-hour cache
+    if cached is not None:
+        return cached
+    try:
+        url = (
+            f"https://archive-api.open-meteo.com/v1/archive"
+            f"?latitude={lat}&longitude={lon}"
+            f"&start_date={start_date}&end_date={end_date}"
+            f"&daily=temperature_2m_mean,precipitation_sum"
+            f"&timezone=auto"
+        )
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+        daily = data.get("daily", {})
+        temps = [t for t in (daily.get("temperature_2m_mean") or []) if t is not None]
+        precip = [p for p in (daily.get("precipitation_sum") or []) if p is not None]
+        result = {
+            "temperature_avg": round(sum(temps) / len(temps), 1) if temps else None,
+            "precipitation_avg": round(sum(precip) / len(precip), 1) if precip else None,
+        }
+        _cache_set(cache_key, result)
+        return result
+    except Exception as e:
+        logger.warning(f"Open-Meteo archive fetch failed ({lat},{lon}): {e}")
+        return None
+
+
+# ---------------------------------------------------------------------------
+# LLM helpers for enhanced /query
+# ---------------------------------------------------------------------------
+
+async def _llm_parse_query(query: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+    """Use LLM to parse natural-language query into structured filters."""
+    try:
+        from app.domains.intelligence.llm_client import get_llm_client
+        client, model = get_llm_client()
+        if not client:
+            return {}
+
+        # Include prior context for follow-ups
+        session_context = ""
+        if session_id and session_id in _query_sessions:
+            prev = _query_sessions[session_id]
+            session_context = (
+                f"\nPrevious query context: {json.dumps(prev.get('last_parsed', {}))}\n"
+                f"Previous query: {prev.get('last_query', '')}\n"
+            )
+
+        system_prompt = (
+            "You are a query parser for a climate news map. Extract structured filters "
+            "from the user's natural language query. Return ONLY valid JSON with these "
+            "optional fields: countries (list of ISO 2-letter codes), region (one of: "
+            "europe, north_america, latin_america, africa, asia, middle_east), "
+            "sources (list of source names), categories (list), topic (string), "
+            "date_from (YYYY-MM-DD), date_to (YYYY-MM-DD), intent (string describing "
+            "what the user wants). If you cannot determine a field, omit it."
+        )
+        user_prompt = f"{session_context}User query: {query}\n\nReturn JSON only."
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens=400,
+            temperature=0.0,
+        )
+        raw = response.choices[0].message.content.strip()
+        # Strip markdown fences if present
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0]
+        parsed = json.loads(raw)
+
+        # Store in session
+        if session_id:
+            _query_sessions[session_id] = {
+                "last_query": query,
+                "last_parsed": parsed,
+                "ts": time.time(),
+            }
+
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception as e:
+        logger.warning(f"LLM query parse failed: {e}")
+        return {}
+
+
+async def _llm_generate_map_answer(
+    db, query: str, highlights: List[CountryStats], total: int,
+    where_clause: str, params: Dict[str, Any],
+    session_id: Optional[str] = None,
+) -> tuple:
+    """Generate an LLM answer with article citations for the map query."""
+    try:
+        from app.domains.intelligence.llm_client import get_llm_client
+        client, model = get_llm_client()
+        if not client:
+            return None, session_id
+
+        # Fetch a handful of matching articles for citation context
+        article_rows = db.execute_query(f"""
+            SELECT a.title, a.source_name, a.excerpt, a.country_code,
+                   a.overall_credibility, a.published_date
+            FROM articles a WHERE {where_clause}
+            ORDER BY a.created_at DESC LIMIT 8
+        """, params)
+
+        articles_context = ""
+        for i, ar in enumerate(article_rows or [], 1):
+            articles_context += (
+                f"[{i}] \"{ar.get('title', 'Untitled')}\" "
+                f"({ar.get('source_name', 'Unknown')}, "
+                f"credibility: {ar.get('overall_credibility', 'N/A')}) "
+                f"— {(ar.get('excerpt') or '')[:150]}\n"
+            )
+
+        # Session history
+        session_context = ""
+        if session_id and session_id in _query_sessions:
+            prev = _query_sessions[session_id]
+            session_context = f"Previous question: {prev.get('last_query', '')}\n"
+
+        country_names_map = _get_country_names(db)
+        top_countries = ", ".join(
+            f"{country_names_map.get(h.country_code, h.country_code)} ({h.article_count} articles)"
+            for h in highlights[:5]
+        )
+
+        system_prompt = (
+            "You are CliLens.AI's climate map assistant. Answer the user's question "
+            "about climate news using the article data below. Cite articles by their "
+            "number [1], [2] etc. Be concise (2-4 sentences). Mention relevant "
+            "countries and credibility when appropriate."
+        )
+        user_prompt = (
+            f"{session_context}"
+            f"ARTICLES:\n{articles_context}\n"
+            f"STATS: {total} articles across {len(highlights)} countries. "
+            f"Top: {top_countries}.\n\n"
+            f"QUESTION: {query}"
+        )
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens=500,
+            temperature=0.3,
+        )
+        answer = response.choices[0].message.content.strip()
+
+        # Generate or reuse session_id
+        if not session_id:
+            from uuid import uuid4
+            session_id = str(uuid4())
+        _query_sessions[session_id] = {
+            "last_query": query,
+            "last_parsed": {},
+            "last_answer": answer,
+            "ts": time.time(),
+        }
+
+        return answer, session_id
+    except Exception as e:
+        logger.warning(f"LLM map answer generation failed: {e}")
+        return None, session_id
+
+
+# ---------------------------------------------------------------------------
+# 1. GET /country/{cc}/detail
+# ---------------------------------------------------------------------------
+
+@router.get("/country/{cc}/detail", response_model=CountryDetail)
+async def get_country_detail(cc: str):
+    """
+    Rich country detail endpoint.
+
+    Returns country metadata, current weather, temperature anomaly,
+    article statistics, top 5 recent articles, source coverage,
+    and climate risk indicators from article claims.
+    """
+    from app.domains.content.forecast_service import COUNTRY_COORDS, COUNTRY_NAMES
+
+    cc = cc.upper()
+    db = get_postgres()
+
+    # --- Country info from DB -------------------------------------------------
+    country_row = None
+    try:
+        rows = db.execute_query(
+            """SELECT country_code, country_name, continent, flag_emoji,
+                      latitude, longitude
+               FROM countries WHERE country_code = :cc""",
+            {"cc": cc},
+        )
+        if rows:
+            country_row = rows[0]
+    except Exception:
+        pass
+
+    country_name = (
+        (country_row or {}).get("country_name")
+        or COUNTRY_NAMES.get(cc, cc)
+    )
+    continent = (country_row or {}).get("continent")
+    flag = (country_row or {}).get("flag_emoji")
+    lat = float((country_row or {}).get("latitude") or 0)
+    lon = float((country_row or {}).get("longitude") or 0)
+
+    coords = COUNTRY_COORDS.get(cc)
+    if coords:
+        lat = lat or coords["lat"]
+        lon = lon or coords["lon"]
+
+    # --- Weather (Open-Meteo) -------------------------------------------------
+    weather = None
+    if lat and lon:
+        current_wx = await _fetch_current_weather(lat, lon)
+        if current_wx:
+            # Historical average for same month to compute anomaly
+            today = date.today()
+            hist_start = date(today.year - 1, today.month, 1).isoformat()
+            hist_end = date(today.year - 1, today.month,
+                           min(28, today.day)).isoformat()
+            hist = await _fetch_historical_weather(lat, lon, hist_start, hist_end)
+            anomaly = None
+            if hist and hist.get("temperature_avg") is not None and current_wx.get("temperature_c") is not None:
+                anomaly = round(current_wx["temperature_c"] - hist["temperature_avg"], 1)
+            weather = WeatherInfo(
+                temperature_c=current_wx.get("temperature_c"),
+                humidity_pct=current_wx.get("humidity_pct"),
+                precipitation_mm=current_wx.get("precipitation_mm"),
+                wind_speed_kmh=current_wx.get("wind_speed_kmh"),
+                temperature_anomaly_c=anomaly,
+            )
+
+    # --- Article statistics ---------------------------------------------------
+    try:
+        stat_rows = db.execute_query("""
+            SELECT COUNT(*) as total,
+                   AVG(reliability_score) as avg_cred
+            FROM articles WHERE country_code = :cc
+        """, {"cc": cc})
+        total = stat_rows[0]["total"] if stat_rows else 0
+        avg_cred = (
+            round(float(stat_rows[0]["avg_cred"]), 1)
+            if stat_rows and stat_rows[0].get("avg_cred") else None
+        )
+    except Exception:
+        total, avg_cred = 0, None
+
+    # Count by category
+    articles_by_cat: Dict[str, int] = {}
+    try:
+        cat_rows = db.execute_query("""
+            SELECT COALESCE(content_category, 'uncategorised') as cat, COUNT(*) as cnt
+            FROM articles WHERE country_code = :cc
+            GROUP BY cat ORDER BY cnt DESC
+        """, {"cc": cc})
+        articles_by_cat = {r["cat"]: r["cnt"] for r in (cat_rows or [])}
+    except Exception:
+        pass
+
+    # --- Top 5 recent articles ------------------------------------------------
+    recent: List[ArticleBrief] = []
+    try:
+        art_rows = db.execute_query("""
+            SELECT article_id, title, source_name, published_date,
+                   overall_credibility, excerpt
+            FROM articles WHERE country_code = :cc
+            ORDER BY created_at DESC LIMIT 5
+        """, {"cc": cc})
+        recent = [
+            ArticleBrief(
+                article_id=str(r["article_id"]),
+                title=r.get("title", ""),
+                source_name=r.get("source_name"),
+                published_date=str(r["published_date"]) if r.get("published_date") else None,
+                credibility=r.get("overall_credibility"),
+                excerpt=(r.get("excerpt") or "")[:200],
+            )
+            for r in (art_rows or [])
+        ]
+    except Exception:
+        pass
+
+    # --- Source coverage -------------------------------------------------------
+    source_coverage: List[Dict[str, Any]] = []
+    try:
+        src_rows = db.execute_query("""
+            SELECT source_name, COUNT(*) as cnt,
+                   AVG(reliability_score) as avg_rel
+            FROM articles WHERE country_code = :cc AND source_name IS NOT NULL
+            GROUP BY source_name ORDER BY cnt DESC LIMIT 10
+        """, {"cc": cc})
+        source_coverage = [
+            {
+                "source_name": r["source_name"],
+                "article_count": r["cnt"],
+                "avg_credibility": round(float(r["avg_rel"]), 1) if r.get("avg_rel") else None,
+            }
+            for r in (src_rows or [])
+        ]
+    except Exception:
+        pass
+
+    # --- Climate risk indicators from claims -----------------------------------
+    high_severity = 0
+    disputed_ratio: Optional[float] = None
+    try:
+        risk_rows = db.execute_query("""
+            SELECT
+                COUNT(c.claim_id) as total_claims,
+                COUNT(CASE WHEN fc.verification_status IN ('FALSE','MISLEADING','LACKS_CONTEXT')
+                      THEN 1 END) as disputed,
+                COUNT(CASE WHEN c.claim_type IN ('prediction','factual_data')
+                      THEN 1 END) as high_severity
+            FROM claims c
+            JOIN articles a ON a.article_id = c.article_id
+            LEFT JOIN fact_checks fc ON fc.claim_id = c.claim_id
+            WHERE a.country_code = :cc
+        """, {"cc": cc})
+        if risk_rows and risk_rows[0]["total_claims"]:
+            tc = risk_rows[0]["total_claims"]
+            high_severity = risk_rows[0].get("high_severity", 0) or 0
+            disp = risk_rows[0].get("disputed", 0) or 0
+            disputed_ratio = round(disp / tc, 3) if tc > 0 else 0.0
+    except Exception:
+        pass
+
+    return CountryDetail(
+        country_code=cc,
+        country_name=country_name,
+        continent=continent,
+        region=_country_region(cc),
+        flag_emoji=flag,
+        latitude=lat or None,
+        longitude=lon or None,
+        weather=weather,
+        article_count=total,
+        articles_by_category=articles_by_cat,
+        avg_credibility=avg_cred,
+        recent_articles=recent,
+        source_coverage=source_coverage,
+        high_severity_claims=high_severity,
+        disputed_claims_ratio=disputed_ratio,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 2. GET /country/{cc}/trends
+# ---------------------------------------------------------------------------
+
+@router.get("/country/{cc}/trends", response_model=List[TrendPoint])
+async def get_country_trends(
+    cc: str,
+    period: str = Query("6m", description="Time period: 1m, 3m, 6m, 1y, 2y"),
+    granularity: str = Query("month", description="Granularity: week or month"),
+):
+    """
+    Article volume time series for a country.
+    Returns array of {date, article_count, avg_credibility} grouped by month or week.
+    """
+    cc = cc.upper()
+    db = get_postgres()
+
+    # Resolve period to an interval string
+    period_map = {"1m": "1 month", "3m": "3 months", "6m": "6 months", "1y": "1 year", "2y": "2 years"}
+    interval = period_map.get(period, "6 months")
+
+    trunc = "month" if granularity != "week" else "week"
+
+    try:
+        rows = db.execute_query(f"""
+            SELECT DATE_TRUNC(:trunc, created_at) as bucket,
+                   COUNT(*) as article_count,
+                   AVG(reliability_score) as avg_cred
+            FROM articles
+            WHERE country_code = :cc
+              AND created_at >= NOW() - INTERVAL '{interval}'
+            GROUP BY bucket
+            ORDER BY bucket ASC
+        """, {"cc": cc, "trunc": trunc})
+
+        return [
+            TrendPoint(
+                date=str(r["bucket"].date()) if hasattr(r["bucket"], "date") else str(r["bucket"]),
+                article_count=r["article_count"],
+                avg_credibility=round(float(r["avg_cred"]), 1) if r.get("avg_cred") else None,
+            )
+            for r in (rows or [])
+        ]
+    except Exception as e:
+        logger.error(f"Country trends query failed for {cc}: {e}")
+        return []
+
+
+# ---------------------------------------------------------------------------
+# 3. GET /country/{cc}/climate-data
+# ---------------------------------------------------------------------------
+
+@router.get("/country/{cc}/climate-data", response_model=CountryClimateData)
+async def get_country_climate_data(cc: str):
+    """
+    Temperature anomaly and precipitation data for a country.
+
+    Compares current month averages against the same month last year
+    and five years ago using the Open-Meteo archive API.
+    """
+    from app.domains.content.forecast_service import COUNTRY_COORDS
+
+    cc = cc.upper()
+    coords = COUNTRY_COORDS.get(cc)
+    if not coords:
+        raise HTTPException(status_code=404, detail=f"No coordinates for country {cc}")
+
+    lat, lon = coords["lat"], coords["lon"]
+    today = date.today()
+    m, d = today.month, min(today.day, 28)
+
+    async def _period_data(year: int) -> Optional[ClimateDataPoint]:
+        start = date(year, m, 1).isoformat()
+        end = date(year, m, d).isoformat()
+        h = await _fetch_historical_weather(lat, lon, start, end)
+        if not h:
+            return None
+        return ClimateDataPoint(
+            period=f"{year}-{m:02d}",
+            temperature_avg_c=h.get("temperature_avg"),
+            precipitation_avg_mm=h.get("precipitation_avg"),
+        )
+
+    current = await _period_data(today.year)
+    last_year = await _period_data(today.year - 1)
+    five_ago = await _period_data(today.year - 5)
+
+    # Determine trend
+    trend = None
+    if current and last_year and five_ago:
+        temps = [
+            p.temperature_avg_c for p in [five_ago, last_year, current]
+            if p and p.temperature_avg_c is not None
+        ]
+        if len(temps) >= 2:
+            diff = temps[-1] - temps[0]
+            if diff > 0.5:
+                trend = "rising"
+            elif diff < -0.5:
+                trend = "falling"
+            else:
+                trend = "stable"
+
+    # Precipitation comparison
+    precip_cmp = None
+    if current and last_year:
+        cp = current.precipitation_avg_mm
+        lp = last_year.precipitation_avg_mm
+        if cp is not None and lp is not None and lp > 0:
+            pct = ((cp - lp) / lp) * 100
+            if pct > 10:
+                precip_cmp = f"{pct:+.0f}% wetter than last year"
+            elif pct < -10:
+                precip_cmp = f"{pct:+.0f}% drier than last year"
+            else:
+                precip_cmp = "similar to last year"
+
+    return CountryClimateData(
+        country_code=cc,
+        current_month=current,
+        last_year_same_month=last_year,
+        five_years_ago_same_month=five_ago,
+        temperature_trend=trend,
+        precipitation_comparison=precip_cmp,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 4. GET /compare
+# ---------------------------------------------------------------------------
+
+@router.get("/compare", response_model=CompareResponse)
+async def compare_countries(
+    countries: str = Query(..., description="Comma-separated country codes, e.g. FI,SE,NO"),
+):
+    """
+    Compare multiple countries across article coverage, credibility,
+    top topics, and climate risk score.
+    """
+    codes = [c.strip().upper() for c in countries.split(",") if c.strip()]
+    if not codes or len(codes) > 10:
+        raise HTTPException(status_code=400, detail="Provide 1-10 comma-separated country codes")
+
+    db = get_postgres()
+    country_names = _get_country_names(db)
+    results: List[CountryComparison] = []
+
+    for cc in codes:
+        try:
+            # Basic stats
+            stat_rows = db.execute_query("""
+                SELECT COUNT(*) as cnt,
+                       COUNT(DISTINCT source_name) as src_cnt,
+                       AVG(reliability_score) as avg_cred
+                FROM articles WHERE country_code = :cc
+            """, {"cc": cc})
+            s = stat_rows[0] if stat_rows else {}
+
+            # Top topics
+            topic_rows = db.execute_query("""
+                SELECT UNNEST(tags) as tag, COUNT(*) as cnt
+                FROM articles WHERE country_code = :cc AND tags IS NOT NULL
+                GROUP BY tag ORDER BY cnt DESC LIMIT 5
+            """, {"cc": cc})
+            top_topics = [r["tag"] for r in (topic_rows or [])]
+
+            # Climate risk score (normalised 0-10)
+            risk_rows = db.execute_query("""
+                SELECT COUNT(c.claim_id) as total_claims,
+                       COUNT(CASE WHEN fc.verification_status
+                             IN ('FALSE','MISLEADING','LACKS_CONTEXT') THEN 1 END) as disputed
+                FROM claims c
+                JOIN articles a ON a.article_id = c.article_id
+                LEFT JOIN fact_checks fc ON fc.claim_id = c.claim_id
+                WHERE a.country_code = :cc
+            """, {"cc": cc})
+            risk_score = 0.0
+            if risk_rows and risk_rows[0]["total_claims"]:
+                tc = risk_rows[0]["total_claims"]
+                disp = risk_rows[0].get("disputed", 0) or 0
+                # Score: base from claim volume + penalty for disputed ratio
+                risk_score = round(min(10.0, (tc / 5.0) + (disp / max(tc, 1)) * 5), 1)
+
+            results.append(CountryComparison(
+                country_code=cc,
+                country_name=country_names.get(cc, cc),
+                article_count=s.get("cnt", 0),
+                source_count=s.get("src_cnt", 0),
+                avg_credibility=round(float(s["avg_cred"]), 1) if s.get("avg_cred") else None,
+                top_topics=top_topics,
+                climate_risk_score=risk_score,
+            ))
+        except Exception as e:
+            logger.warning(f"Compare failed for {cc}: {e}")
+            results.append(CountryComparison(
+                country_code=cc,
+                country_name=country_names.get(cc, cc),
+            ))
+
+    # Build comparison summary
+    summary = None
+    if len(results) >= 2:
+        ranked = sorted(results, key=lambda r: r.article_count, reverse=True)
+        parts = [f"{r.country_name}: {r.article_count} articles" for r in ranked]
+        top = ranked[0]
+        summary = (
+            f"Coverage comparison: {'; '.join(parts)}. "
+            f"{top.country_name} has the most coverage"
+        )
+        if top.avg_credibility:
+            summary += f" with avg credibility {top.avg_credibility}"
+        summary += "."
+        highest_risk = max(results, key=lambda r: r.climate_risk_score or 0)
+        if highest_risk.climate_risk_score and highest_risk.climate_risk_score > 0:
+            summary += (
+                f" {highest_risk.country_name} has the highest climate risk score "
+                f"({highest_risk.climate_risk_score}/10)."
+            )
+
+    return CompareResponse(countries=results, comparison_summary=summary)
+
+
+# ---------------------------------------------------------------------------
+# 5. GET /timeline
+# ---------------------------------------------------------------------------
+
+@router.get("/timeline", response_model=List[TimelineEntry])
+async def get_timeline(
+    start_date: str = Query(..., description="Start date YYYY-MM-DD"),
+    end_date: str = Query(..., description="End date YYYY-MM-DD"),
+    granularity: str = Query("month", description="Granularity: day, week, or month"),
+):
+    """
+    Time series of article distribution across countries.
+    Returns array of {date, data: {country_code: article_count}}.
+    """
+    db = get_postgres()
+
+    trunc = granularity if granularity in ("day", "week", "month") else "month"
+
+    try:
+        rows = db.execute_query(f"""
+            SELECT DATE_TRUNC(:trunc, created_at) as bucket,
+                   country_code,
+                   COUNT(*) as cnt
+            FROM articles
+            WHERE country_code IS NOT NULL
+              AND created_at >= :start_d
+              AND created_at <= :end_d
+            GROUP BY bucket, country_code
+            ORDER BY bucket ASC
+        """, {"trunc": trunc, "start_d": start_date, "end_d": end_date})
+
+        # Pivot into {date -> {cc: count}}
+        buckets: Dict[str, Dict[str, int]] = {}
+        for r in (rows or []):
+            d = str(r["bucket"].date()) if hasattr(r["bucket"], "date") else str(r["bucket"])
+            buckets.setdefault(d, {})[r["country_code"]] = r["cnt"]
+
+        return [
+            TimelineEntry(date=d, data=cc_map)
+            for d, cc_map in sorted(buckets.items())
+        ]
+    except Exception as e:
+        logger.error(f"Timeline query failed: {e}")
+        return []
+
+
+# ---------------------------------------------------------------------------
+# 6. GET /layers/temperature-anomaly
+# ---------------------------------------------------------------------------
+
+@router.get("/layers/temperature-anomaly", response_model=List[TemperatureAnomalyItem])
+async def get_temperature_anomaly_layer():
+    """
+    Per-country temperature anomaly data for map layer rendering.
+
+    For each country with articles in the DB, fetches current temperature
+    and compares to the same month last year. Results cached for 6 hours.
+    """
+    from app.domains.content.forecast_service import COUNTRY_COORDS
+
+    cache_key = "layer:temp_anomaly"
+    cached = _cache_get(cache_key, ttl_seconds=21600)
+    if cached is not None:
+        return cached
+
+    db = get_postgres()
+
+    # Countries that have articles
+    try:
+        cc_rows = db.execute_query("""
+            SELECT DISTINCT country_code FROM articles
+            WHERE country_code IS NOT NULL
+        """)
+        active_codes = [r["country_code"] for r in (cc_rows or [])]
+    except Exception:
+        active_codes = []
+
+    results: List[TemperatureAnomalyItem] = []
+    today = date.today()
+    hist_start = date(today.year - 1, today.month, 1).isoformat()
+    hist_end = date(today.year - 1, today.month, min(28, today.day)).isoformat()
+
+    for cc in active_codes:
+        coords = COUNTRY_COORDS.get(cc)
+        if not coords:
+            continue
+
+        lat, lon = coords["lat"], coords["lon"]
+        current_wx = await _fetch_current_weather(lat, lon)
+        hist = await _fetch_historical_weather(lat, lon, hist_start, hist_end)
+
+        current_temp = current_wx.get("temperature_c") if current_wx else None
+        hist_avg = hist.get("temperature_avg") if hist else None
+        anomaly = None
+        trend = None
+
+        if current_temp is not None and hist_avg is not None:
+            anomaly = round(current_temp - hist_avg, 1)
+            if anomaly > 1.0:
+                trend = "warmer"
+            elif anomaly < -1.0:
+                trend = "cooler"
+            else:
+                trend = "normal"
+
+        results.append(TemperatureAnomalyItem(
+            country_code=cc,
+            anomaly_celsius=anomaly,
+            trend=trend,
+            current_temp=current_temp,
+            historical_avg=hist_avg,
+        ))
+
+    _cache_set(cache_key, results)
+    return results
+
+
+# ---------------------------------------------------------------------------
+# 7. GET /layers/climate-risk
+# ---------------------------------------------------------------------------
+
+@router.get("/layers/climate-risk", response_model=List[ClimateRiskItem])
+async def get_climate_risk_layer():
+    """
+    Per-country climate risk scores computed from article claims.
+
+    For each country: counts high-importance claims, computes disputed/unverified
+    ratio, and derives a severity score (0-10).
+    """
+    cache_key = "layer:climate_risk"
+    cached = _cache_get(cache_key, ttl_seconds=21600)
+    if cached is not None:
+        return cached
+
+    db = get_postgres()
+
+    try:
+        rows = db.execute_query("""
+            SELECT
+                a.country_code,
+                COUNT(c.claim_id) as total_claims,
+                COUNT(CASE WHEN fc.verification_status
+                      IN ('FALSE','MISLEADING','LACKS_CONTEXT','DISPUTED')
+                      THEN 1 END) as disputed,
+                COUNT(CASE WHEN fc.verification_status = 'UNVERIFIED'
+                      THEN 1 END) as unverified
+            FROM articles a
+            JOIN claims c ON c.article_id = a.article_id
+            LEFT JOIN fact_checks fc ON fc.claim_id = c.claim_id
+            WHERE a.country_code IS NOT NULL
+            GROUP BY a.country_code
+            ORDER BY total_claims DESC
+        """)
+    except Exception as e:
+        logger.error(f"Climate risk layer query failed: {e}")
+        return []
+
+    results: List[ClimateRiskItem] = []
+    for r in (rows or []):
+        tc = r["total_claims"] or 0
+        disp = r.get("disputed", 0) or 0
+        unver = r.get("unverified", 0) or 0
+        ratio = round((disp + unver) / tc, 3) if tc > 0 else 0.0
+        # Risk score: logarithmic scaling on claim volume + penalty for disputed ratio
+        score = round(min(10.0, math.log1p(tc) * 1.5 + ratio * 5), 1)
+
+        # Top risk categories
+        top_risks: List[str] = []
+        try:
+            risk_type_rows = db.execute_query("""
+                SELECT c.claim_type, COUNT(*) as cnt
+                FROM claims c
+                JOIN articles a ON a.article_id = c.article_id
+                WHERE a.country_code = :cc AND c.claim_type IS NOT NULL
+                GROUP BY c.claim_type ORDER BY cnt DESC LIMIT 3
+            """, {"cc": r["country_code"]})
+            top_risks = [rt["claim_type"] for rt in (risk_type_rows or [])]
+        except Exception:
+            pass
+
+        results.append(ClimateRiskItem(
+            country_code=r["country_code"],
+            risk_score=score,
+            claim_count=tc,
+            disputed_ratio=ratio,
+            top_risks=top_risks,
+        ))
+
+    _cache_set(cache_key, results)
+    return results

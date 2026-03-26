@@ -287,6 +287,66 @@ async def get_article_weather_context(
         raise HTTPException(status_code=500, detail="Weather context unavailable.")
 
 
+@router.get("/intelligence-brief")
+async def get_intelligence_brief(
+    topic: str = Query(..., min_length=3, max_length=500, description="Topic for the brief"),
+    country: Optional[str] = Query(None, max_length=2, description="Country code filter"),
+    current_user: Any = Depends(get_current_user),
+):
+    """
+    Generate a comprehensive intelligence brief on a climate topic.
+
+    Returns a structured brief with summary, key findings, areas of agreement,
+    areas of dispute, data gaps, recommended reading, and consensus analysis.
+
+    Requires Professional or Enterprise subscription.
+    """
+    user_tier = (
+        current_user.get("subscription_tier")
+        if isinstance(current_user, dict)
+        else getattr(current_user, "subscription_tier", "freemium")
+    )
+    user_id = (
+        current_user.get("user_id")
+        if isinstance(current_user, dict)
+        else getattr(current_user, "user_id", None)
+    )
+
+    if not check_premium_feature(user_tier, "deep_search"):
+        raise HTTPException(
+            status_code=403,
+            detail="Intelligence briefs require Professional or Enterprise subscription."
+        )
+
+    db = get_postgres()
+
+    try:
+        from app.domains.intelligence.cross_article_service import CrossArticleService
+        service = CrossArticleService(db)
+        brief = await service.generate_intelligence_brief(topic=topic, country=country)
+
+        # Log usage
+        if user_id:
+            UsageTracker.log_usage(
+                user_id=str(user_id),
+                usage_type="discovery_query",
+                resource_url=f"intelligence_brief:{topic[:80]}",
+            )
+
+        logger.info(
+            "Intelligence brief generated",
+            user_id=user_id,
+            topic=topic[:100],
+            article_count=brief.get("article_count", 0),
+        )
+
+        return brief
+
+    except Exception as e:
+        logger.error(f"Intelligence brief failed: {e}", topic=topic[:100])
+        raise HTTPException(status_code=500, detail="Intelligence brief generation failed.")
+
+
 @router.get("/weather-location")
 async def get_location_weather(
     lat: float = Query(..., ge=-90, le=90),

@@ -36,6 +36,10 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = Field(None, description="Existing session to continue")
     country: Optional[str] = Field(None, max_length=2, description="Filter by country")
     category: Optional[str] = Field(None, description="Filter by category")
+    mode: Optional[str] = Field(
+        "general",
+        description="Chat mode: general, map_intelligence, research_analysis, article_qa",
+    )
 
 
 class ChatSource(BaseModel):
@@ -55,6 +59,11 @@ class ChatResponse(BaseModel):
     model: Optional[str] = None
     error: Optional[str] = None
     created_at: str
+    # Mode-specific fields
+    mode: Optional[str] = "general"
+    highlighted_countries: Optional[List[str]] = None
+    relevant_articles: Optional[List[dict]] = None
+    cynefin_classification: Optional[dict] = None
 
 
 class ChatSessionInfo(BaseModel):
@@ -130,16 +139,49 @@ async def ask_general_question(
         except Exception as e:
             logger.warning(f"Could not create chat session: {e}")
 
-    # Search relevant articles
-    sources = _search_relevant_articles(
+    mode = (request.mode or "general").lower()
+
+    # Use HybridRAGService for retrieval when available, fall back to FTS
+    sources = await _hybrid_search_articles(
         db, request.question, request.country, request.category
     )
+    if not sources:
+        sources = _search_relevant_articles(
+            db, request.question, request.country, request.category
+        )
 
     # Build context from found articles
     context_text = _build_multi_article_context(db, sources)
 
     # Get conversation history for context
     history = _get_session_history(db, session_id, limit=5)
+
+    # Mode-specific enrichment
+    highlighted_countries = None
+    relevant_articles_extra = None
+    cynefin_classification = None
+
+    if mode == "map_intelligence":
+        # Extract unique country codes from sources for map highlighting
+        highlighted_countries = list(set(
+            s.credibility[:2] if s.credibility and len(s.credibility) == 2 else ""
+            for s in sources
+        ))
+        # Better: extract from article data
+        highlighted_countries = _extract_countries_from_sources(db, sources)
+        relevant_articles_extra = [
+            {"article_id": s.article_id, "title": s.title, "source": s.source_name}
+            for s in sources[:10]
+        ]
+
+    elif mode == "research_analysis":
+        # Route through Cynefin classification for analysis depth
+        try:
+            from app.domains.intelligence.cynefin_router import CynefinRouter
+            cynefin = CynefinRouter()
+            cynefin_classification = cynefin.classify(request.question)
+        except Exception as e:
+            logger.warning(f"Cynefin classification failed: {e}")
 
     # Generate answer
     answer_data = await _generate_answer(
@@ -159,7 +201,7 @@ async def ask_general_question(
     try:
         UsageTracker.log_usage(
             user_id=user_id, usage_type="general_chat",
-            metadata={"question": request.question[:100], "session_id": session_id},
+            metadata={"question": request.question[:100], "session_id": session_id, "mode": mode},
         )
     except Exception:
         pass
@@ -173,6 +215,10 @@ async def ask_general_question(
         model=answer_data.get("model"),
         error=answer_data.get("error"),
         created_at=datetime.utcnow().isoformat(),
+        mode=mode,
+        highlighted_countries=highlighted_countries,
+        relevant_articles=relevant_articles_extra,
+        cynefin_classification=cynefin_classification,
     )
 
 
@@ -253,6 +299,59 @@ async def delete_chat_session(
 
 
 # ── Internal helpers ──
+
+async def _hybrid_search_articles(
+    db, question: str, country: Optional[str], category: Optional[str]
+) -> List[ChatSource]:
+    """Search articles using HybridRAGService with RRF fusion."""
+    try:
+        from app.domains.intelligence.hybrid_rag_service import HybridRAGService
+
+        hybrid = HybridRAGService(db)
+        filters = {}
+        if country:
+            filters["country_code"] = country.upper()
+        if category:
+            filters["content_category"] = category.lower()
+
+        results = await hybrid.retrieve(query=question, limit=10, filters=filters)
+
+        return [
+            ChatSource(
+                article_id=str(r.get("article_id", "")),
+                title=r.get("title", ""),
+                source_name=r.get("source_name", ""),
+                credibility=r.get("credibility"),
+                relevance=float(r.get("rrf_score", r.get("similarity_score", 0))),
+            )
+            for r in results
+        ]
+    except ImportError:
+        logger.debug("HybridRAGService not available, using FTS fallback")
+        return []
+    except Exception as e:
+        logger.warning(f"Hybrid search failed, falling back to FTS: {e}")
+        return []
+
+
+def _extract_countries_from_sources(db, sources: List[ChatSource]) -> List[str]:
+    """Extract unique country codes from article sources for map highlighting."""
+    if not sources:
+        return []
+
+    article_ids = [s.article_id for s in sources[:15]]
+    placeholders = ", ".join(f":id{i}" for i in range(len(article_ids)))
+    params = {f"id{i}": aid for i, aid in enumerate(article_ids)}
+
+    rows = db.execute_query(
+        f"""SELECT DISTINCT country_code
+            FROM articles
+            WHERE article_id IN ({placeholders})
+              AND country_code IS NOT NULL""",
+        params,
+    )
+    return [r["country_code"] for r in (rows or []) if r.get("country_code")]
+
 
 def _search_relevant_articles(
     db, question: str, country: Optional[str], category: Optional[str]

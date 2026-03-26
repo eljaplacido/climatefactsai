@@ -13,6 +13,7 @@ import ArticleDetailTabs from "@/components/ArticleDetailTabs";
 import ShareButton from "@/components/ShareButton";
 import BookmarkButton from "@/components/BookmarkButton";
 import ReanalyzeButton from "@/components/ReanalyzeButton";
+import ArgumentationGraph from "@/components/ArgumentationGraph";
 import Link from "next/link";
 import { Beaker, BarChart3, Scale, Eye, TrendingUp, Info, Loader2, CheckCircle2, AlertCircle, Clock, BookOpen, Leaf, Recycle, Zap, CloudSun, Landmark, ExternalLink, AlertTriangle } from "lucide-react";
 
@@ -338,6 +339,36 @@ export default async function ArticlePage({ params }: { params: { id: string } }
             </div>
           )}
 
+          {/* Enriched Climate Context — localized weather/climate intelligence */}
+          {(article as any).enriched_excerpt && (
+            <div className="bg-gradient-to-r from-teal-50 to-cyan-50 border border-teal-200 rounded-xl p-6">
+              <div className="flex items-start space-x-4">
+                <div className="flex-shrink-0 w-10 h-10 bg-teal-600 rounded-full flex items-center justify-center">
+                  <CloudSun className="h-5 w-5 text-white" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-base font-bold text-gray-900 mb-2">In-Depth Analysis</h3>
+                  <p className="text-base text-gray-700 leading-relaxed mb-3">{(article as any).enriched_excerpt}</p>
+                  {(article as any).climate_context_summary && (
+                    <div className="mt-3 p-3 bg-white/60 rounded-lg border border-teal-100">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
+                          Local Climate Context
+                        </span>
+                        {(article as any).enrichment_metadata?.temperature_trend && (
+                          <span className="text-xs text-gray-500">
+                            Trend: {(article as any).enrichment_metadata.temperature_trend}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-teal-800 leading-relaxed">{(article as any).climate_context_summary}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Insight Summary (fallback if no executive brief) */}
           {!article.executive_brief && article.insight_summary && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -418,6 +449,9 @@ export default async function ArticlePage({ params }: { params: { id: string } }
 
           {/* Local Weather Context */}
           <WeatherContext articleId={article.article_id} />
+
+          {/* Knowledge Graph / Argumentation */}
+          <ArgumentationGraph articleId={article.article_id} />
 
           {/* Similar Articles */}
           <SimilarArticles articleId={article.article_id} />
