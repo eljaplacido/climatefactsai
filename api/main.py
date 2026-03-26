@@ -116,6 +116,14 @@ def _row_to_article(row: Dict[str, Any]) -> Article:
         extracted = row.get("extracted_text") or ""
         excerpt = extracted[:280].strip() or None
 
+    # Parse enrichment_metadata from JSON string if needed
+    enrichment_meta = row.get("enrichment_metadata")
+    if isinstance(enrichment_meta, str):
+        try:
+            enrichment_meta = json.loads(enrichment_meta)
+        except (json.JSONDecodeError, TypeError):
+            enrichment_meta = None
+
     article = Article(
         article_id=str(row.get("article_id")),
         title=row.get("title", ""),
@@ -125,6 +133,9 @@ def _row_to_article(row: Dict[str, Any]) -> Article:
         source_name=row.get("source_name", ""),
         source_credibility_score=_to_int(row.get("source_credibility_score")),
         excerpt=excerpt,
+        enriched_excerpt=row.get("enriched_excerpt"),
+        climate_context_summary=row.get("climate_context_summary"),
+        enrichment_metadata=enrichment_meta,
         claim_count=_to_int(row.get("claims_count")) or 0,
         verified_claim_count=_to_int(row.get("verified_claims_count")) or 0,
         tags=_parse_tags(row.get("tags")),
@@ -452,7 +463,10 @@ async def list_articles(
             a.claims_status,
             a.claims_error_message,
             a.claims_processed_at,
-            a.content_category
+            a.content_category,
+            a.enriched_excerpt,
+            a.climate_context_summary,
+            a.enrichment_metadata
         FROM articles a
         LEFT JOIN source_credibility sc ON LOWER(a.source_name) = LOWER(sc.source_name)
         WHERE 1 = 1
@@ -510,7 +524,16 @@ async def get_article_detail(article_id: str, db=Depends(get_db)):
             a.claims_status,
             a.claims_error_message,
             a.claims_processed_at,
-            a.content_category
+            a.content_category,
+            a.enriched_excerpt,
+            a.climate_context_summary,
+            a.enrichment_metadata,
+            a.executive_brief,
+            a.analysis_article_html,
+            a.analysis_article_generated_at,
+            a.decomposed_confidence,
+            a.reliability_breakdown,
+            a.insight_summary
         FROM articles a
         WHERE a.article_id = :article_id
     """

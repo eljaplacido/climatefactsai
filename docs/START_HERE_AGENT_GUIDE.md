@@ -79,7 +79,7 @@ if not api_key:
 ```bash
 # After agent says "done", run:
 pytest tests/                              # Tests pass?
-curl http://localhost:5200/api/endpoint    # Real data?
+curl http://localhost:5400/api/endpoint    # Real data?
 # Open browser → Test feature               # Works in UI?
 grep -r "mock\|placeholder" [files]        # No mock code?
 ```
@@ -118,7 +118,7 @@ Fix by:
 
 Verification:
 1. Tests pass: pytest tests/test_*.py
-2. Manual test: curl http://localhost:5200/api/...
+2. Manual test: curl http://localhost:5400/api/...
 3. Browser test: Check http://localhost:5300
 4. No mock code added: grep -r "mock" [files]
 
@@ -195,7 +195,7 @@ Welcome back! Before we continue:
 2. Read docs/CURRENT_STATE.md
 3. Verify previous work:
    - docker ps (containers running?)
-   - curl http://localhost:5200/healthz (API works?)
+   - curl http://localhost:5400/healthz (API works?)
    - git log --oneline -5 (what changed?)
 
 Summarize what was done last session and what we should do next.
@@ -229,7 +229,7 @@ raise HTTPException(503, 'Service unavailable: API key missing')"
 ❌ Agent: "Types synced, backend/frontend complete ✓"
 ✅ You: "Not done yet. Per SKILL.md definition of done:
 1. Run pytest tests/
-2. Run curl http://localhost:5200/api/endpoint
+2. Run curl http://localhost:5400/api/endpoint
 3. Open browser and test
 4. Check for mock code: grep -r 'mock' [files]
 Do these now and report results."
@@ -266,8 +266,8 @@ cd C:\Users\35845\Desktop\DIGICISU\climatenews
 pytest tests/ -v
 
 # 2. API works
-curl http://localhost:5200/healthz
-curl http://localhost:5200/api/articles?limit=1
+curl http://localhost:5400/healthz
+curl http://localhost:5400/api/articles?limit=1
 
 # 3. Frontend works
 # Open browser: http://localhost:5300
@@ -365,7 +365,7 @@ If agent says any of these, **STOP AND CORRECT:**
 
 **Before Starting Development:**
 - [ ] Containers running: `docker ps`
-- [ ] API healthy: `curl http://localhost:5200/healthz`
+- [ ] API healthy: `curl http://localhost:5400/healthz`
 - [ ] Git clean: `git status`
 
 **When Prompting Agent:**
@@ -415,7 +415,7 @@ If agent says any of these, **STOP AND CORRECT:**
    ```bash
    cd C:\Users\35845\Desktop\DIGICISU\climatenews
    docker-compose up -d
-   curl http://localhost:5200/healthz
+   curl http://localhost:5400/healthz
    ```
 
 2. **Start your first guided session:**

@@ -13,11 +13,12 @@ from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from shared.database import get_postgres
 from shared.logger import setup_logging
+from api.auth_routes import get_optional_user
 
 logger = setup_logging("map-api")
 router = APIRouter(prefix="/api/map", tags=["Map"])
@@ -520,10 +521,14 @@ async def get_source_coverage(
 
 
 @router.post("/query", response_model=MapQueryResponse)
-async def query_map(request: MapQueryRequest):
+async def query_map(
+    request: MapQueryRequest,
+    current_user: Optional[dict] = Depends(get_optional_user),
+):
     """
     Agentic map query endpoint — accepts natural language or structured filters
     and returns map-ready country highlights with article counts.
+    Supports both JWT and API key authentication.
 
     Enhanced with LLM-powered query parsing, highlighted countries, and
     contextual summaries with article citations.

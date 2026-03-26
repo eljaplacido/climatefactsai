@@ -124,7 +124,7 @@ You: "Apply the fix"
 Cursor:
 6. Uses MCP postgres to run the SQL command
 7. Verifies extension installed
-8. Tests endpoint: curl http://localhost:5200/api/search?q=climate
+8. Tests endpoint: curl http://localhost:5400/api/search?q=climate
 9. Confirms working
 ```
 
@@ -409,7 +409,7 @@ Claude Code:
 3. **Verify system works**
    ```bash
    docker-compose ps
-   curl http://localhost:5200/healthz
+   curl http://localhost:5400/healthz
    ```
 
 ---

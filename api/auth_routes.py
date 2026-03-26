@@ -109,32 +109,80 @@ def get_current_user(
 
 def get_optional_user(
     authorization: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     db=Depends(get_db)
 ) -> Optional[dict]:
     """
-    Optional authentication - returns user if token is valid, None otherwise
+    Optional authentication - supports both JWT Bearer tokens and API keys.
+    Returns user dict if valid auth is provided, None otherwise.
+    External agents/chatbots can authenticate via X-API-Key header.
     """
-    if not authorization or not authorization.startswith("Bearer "):
-        return None
+    # Strategy 1: Try JWT Bearer token
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            token = authorization.replace("Bearer ", "")
+            payload = TokenManager.verify_access_token(token)
+            user_id = payload.get("sub")
 
-    try:
-        token = authorization.replace("Bearer ", "")
-        payload = TokenManager.verify_access_token(token)
-        user_id = payload.get("sub")
+            query = """
+                SELECT
+                    user_id, email, full_name, subscription_tier,
+                    is_active, email_verified
+                FROM users
+                WHERE user_id = :user_id AND is_active = true
+            """
 
-        query = """
-            SELECT
-                user_id, email, full_name, subscription_tier,
-                is_active, email_verified
-            FROM users
-            WHERE user_id = :user_id AND is_active = true
-        """
+            rows = db.execute_query(query, params={"user_id": user_id})
+            if rows:
+                return rows[0]
+        except Exception:
+            pass
 
-        rows = db.execute_query(query, params={"user_id": user_id})
-        return rows[0] if rows else None
+    # Strategy 2: Try API key (for external agents/chatbots)
+    if x_api_key:
+        try:
+            import hashlib
+            key_hash = hashlib.sha256(x_api_key.encode()).hexdigest()
+            rows = db.execute_query(
+                """
+                SELECT
+                    ak.key_id, ak.user_id, ak.scopes, ak.expires_at, ak.is_active,
+                    u.user_id, u.email, u.full_name, u.subscription_tier,
+                    u.is_active as user_is_active, u.email_verified
+                FROM api_keys ak
+                JOIN users u ON ak.user_id = u.user_id
+                WHERE ak.key_hash = :key_hash
+                """,
+                {"key_hash": key_hash},
+            )
+            if rows:
+                key_row = rows[0]
+                if not key_row.get("is_active") or not key_row.get("user_is_active"):
+                    return None
+                if key_row.get("expires_at") and key_row["expires_at"] < datetime.utcnow():
+                    return None
+                # Update last_used_at
+                try:
+                    db.execute_update(
+                        "UPDATE api_keys SET last_used_at = NOW() WHERE key_id = :key_id",
+                        {"key_id": str(key_row["key_id"])},
+                    )
+                except Exception:
+                    pass
+                return {
+                    "user_id": key_row["user_id"],
+                    "email": key_row["email"],
+                    "full_name": key_row.get("full_name"),
+                    "subscription_tier": key_row.get("subscription_tier", "FREEMIUM"),
+                    "is_active": True,
+                    "email_verified": key_row.get("email_verified", False),
+                    "api_key_id": str(key_row["key_id"]),
+                    "scopes": key_row.get("scopes", ["read"]),
+                }
+        except Exception:
+            pass
 
-    except Exception:
-        return None
+    return None
 
 
 # =============================================================================

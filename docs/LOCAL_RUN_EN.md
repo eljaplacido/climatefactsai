@@ -11,7 +11,7 @@ docker-compose -f docker-compose.simple.yml ps
 
 Open:
 - Frontend: `http://localhost:5300`
-- API docs: `http://localhost:5200/docs`
+- API docs: `http://localhost:5400/docs`
 - Jaeger (traces): `http://localhost:5686`
 
 ## Option B: Develop locally (API/UI on host, DB/Redis in Docker)
@@ -30,10 +30,10 @@ py -3.11 -m venv venv
 pip install -r requirements.txt -r api\requirements.txt
 ```
 
-Run the API locally (port 5200 to match the UI defaults):
+Run the API locally (port 5400 to match the UI defaults):
 
 ```powershell
-python -m uvicorn api.main:app --reload --host 0.0.0.0 --port 5200
+python -m uvicorn api.main:app --reload --host 0.0.0.0 --port 5400
 ```
 
 Run the Next.js frontend locally:
@@ -41,7 +41,7 @@ Run the Next.js frontend locally:
 ```powershell
 cd src\frontend
 npm install
-$env:NEXT_PUBLIC_API_URL="http://localhost:5200"
+$env:NEXT_PUBLIC_API_URL="http://localhost:5400"
 npm run dev
 ```
 

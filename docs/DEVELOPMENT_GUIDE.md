@@ -109,7 +109,7 @@ What are you doing?
 1. Read docs/CURRENT_STATE.md (skim the "What Works" section)
 2. Verify setup:
    - docker ps  # Should show 4 containers
-   - curl http://localhost:5200/healthz  # Should return {"status":"ok"}
+   - curl http://localhost:5400/healthz  # Should return {"status":"ok"}
 3. Start coding:
    - "Show me where claims_count is calculated"
    - "Fix the bug in ArticleCard.tsx line 45"
@@ -172,7 +172,7 @@ cat docs/CURRENT_STATE.md  # Read "Known Issues" section
 1. Prompt: "Implement X"
 2. Review proposed changes
 3. Accept/reject inline
-4. Test manually: curl http://localhost:5200/api/...
+4. Test manually: curl http://localhost:5400/api/...
 5. Done
 ```
 
@@ -366,7 +366,7 @@ npx claude-flow agents list  # See 54 agents
 - [ ] Read `docs/CURRENT_STATE.md`
 - [ ] Read `.claude/skills/clilens-development/SKILL.md`
 - [ ] Containers running: `docker ps`
-- [ ] API works: `curl http://localhost:5200/healthz`
+- [ ] API works: `curl http://localhost:5400/healthz`
 - [ ] Database accessible: `docker exec climatenews-postgres pg_isready`
 - [ ] Git clean: `git status`
 

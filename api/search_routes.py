@@ -91,6 +91,9 @@ async def basic_search(
             a.source_name,
             a.published_date,
             a.excerpt,
+            a.enriched_excerpt,
+            a.climate_context_summary,
+            a.enrichment_metadata,
             a.source_credibility_score,
             a.overall_credibility,
             a.country_code,
@@ -255,7 +258,9 @@ async def semantic_search(
             )
             SELECT
                 a.article_id, a.title, a.url, a.source_name,
-                a.published_date, a.excerpt, a.source_credibility_score,
+                a.published_date, a.excerpt, a.enriched_excerpt,
+                a.climate_context_summary, a.enrichment_metadata,
+                a.source_credibility_score,
                 a.overall_credibility, a.country_code, a.tags,
                 a.created_at, a.claims_count, a.verified_claims_count,
                 a.content_relevance_score, a.reliability_score,

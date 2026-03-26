@@ -1,7 +1,7 @@
 # CliLens.AI Backend API Reference
 
 ## Base URL
-- **Development**: `http://localhost:5200`
+- **Development**: `http://localhost:5400`
 - **Production**: `https://api.clilens.ai`
 
 ## Authentication
@@ -346,6 +346,6 @@ GET /api/articles?limit=20&offset=0
 ## Interactive Documentation
 
 Visit `/docs` for Swagger UI interactive documentation:
-- **Development**: `http://localhost:5200/docs`
+- **Development**: `http://localhost:5400/docs`
 - **Production**: `https://api.clilens.ai/docs`
 

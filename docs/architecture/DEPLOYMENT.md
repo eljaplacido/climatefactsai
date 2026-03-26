@@ -32,8 +32,8 @@ cp .env.example .env
 docker-compose up -d --build
 
 # Frontend → http://localhost:5300
-# API → http://localhost:5200/docs
-# Health → http://localhost:5200/healthz
+# API → http://localhost:5400/docs
+# Health → http://localhost:5400/healthz
 ```
 
 ## Production Notes

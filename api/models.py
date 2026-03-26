@@ -78,6 +78,9 @@ class Article(BaseModel):
     source_name: str
     source_credibility_score: Optional[int] = Field(default=None, ge=0, le=100)
     excerpt: Optional[str] = None
+    enriched_excerpt: Optional[str] = None
+    climate_context_summary: Optional[str] = None
+    enrichment_metadata: Optional[Dict[str, Any]] = None
     claim_count: int = Field(default=0, ge=0)
     verified_claim_count: int = Field(default=0, ge=0)
     tags: List[str] = Field(default_factory=list)

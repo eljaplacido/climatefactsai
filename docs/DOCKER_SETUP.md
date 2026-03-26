@@ -24,7 +24,7 @@ docker ps
 
 | Service | Container Name | Ports | Purpose |
 |---------|---------------|-------|---------|
-| API | clilens-api | 5200:8000 | FastAPI backend |
+| API | clilens-api | 5400:8000 | FastAPI backend |
 | Frontend | clilens-frontend | 5300:3000 | Next.js UI |
 | PostgreSQL | climatenews-postgres | 5433:5432 | Main database |
 | Redis | climatenews-redis | 5379:6379 | Cache & sessions |
@@ -113,7 +113,7 @@ docker-compose logs -f
 
 ```bash
 # API health
-curl http://localhost:5200/healthz
+curl http://localhost:5400/healthz
 
 # Database connection
 docker exec climatenews-postgres psql -U postgres -d climatenews -c "SELECT 1"

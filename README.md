@@ -6,7 +6,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-green.svg)](https://fastapi.tiangolo.com/)
 [![Next.js 14](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
 
-**Version:** 2.0.0 | **Updated:** 2025-11-22
+**Version:** 3.0.0 | **Updated:** 2026-03-26
 
 ---
 
@@ -15,11 +15,14 @@
 CliLens.AI is an AI-powered platform that discovers, verifies, and publishes climate news with transparent credibility scoring. Every claim ships with evidence trails and confidence scores.
 
 **Key Features:**
-- 🔍 Automated news discovery from 31 European countries
+- 🔍 Automated news discovery from 144+ countries across all continents
 - ✅ Multi-layer fact-checking with authoritative climate data sources
 - 📊 Transparent credibility scoring (source + content + verification)
 - 🌐 Multi-country support with language-specific content analysis
-- 💡 Interactive UI for exploring fact-checks and evidence trails
+- 🗺️ Interactive Climate Intelligence Map with agentic chat and drill-down
+- 🧠 HybridRAG pipeline with knowledge graph and CARF analytical engines
+- 🤖 AI-powered agentic assistant across all pages (API-first for chatbot integration)
+- 👤 User dashboard with reading history, bookmarks, and subscription tiers
 
 ---
 
@@ -41,7 +44,7 @@ docker-compose -f docker-compose.simple.yml up -d
 
 # Access the platform
 # Frontend: http://localhost:5300
-# API: http://localhost:5200/docs
+# API: http://localhost:5400/docs
 # Jaeger (traces): http://localhost:5686
 ```
 

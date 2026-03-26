@@ -132,7 +132,7 @@ Open these URLs in your browser:
 | Service | URL | What You'll See |
 |---------|-----|-----------------|
 | **Frontend** | http://localhost:5300 | CliLens.AI web interface |
-| **API Docs** | http://localhost:5200/docs | Interactive API documentation |
+| **API Docs** | http://localhost:5400/docs | Interactive API documentation |
 | **Jaeger** | http://localhost:5686 | Distributed tracing UI |
 
 **✅ Success Indicators:**
@@ -145,7 +145,7 @@ Open these URLs in your browser:
 
 ```bash
 # Trigger the (Celery-backed) workflow pipeline
-curl -X POST http://localhost:5200/api/admin/trigger-workflow \
+curl -X POST http://localhost:5400/api/admin/trigger-workflow \
   -H "Content-Type: application/json" \
   -d '{
     "country": "FI",
@@ -153,7 +153,7 @@ curl -X POST http://localhost:5200/api/admin/trigger-workflow \
   }'
 
 # Check workflow status
-curl http://localhost:5200/api/admin/workflows
+curl http://localhost:5400/api/admin/workflows
 ```
 
 To discover fresh articles on demand (country + keywords), open `http://localhost:5300/admin` and use **Discover Fresh News**.
@@ -449,10 +449,10 @@ docker exec -it climatenews-redis redis-cli
 2. Check ports aren't in use:
    ```bash
    # Windows
-   netstat -ano | findstr :5200
+   netstat -ano | findstr :5400
 
    # macOS/Linux
-   lsof -i :5200
+   lsof -i :5400
    ```
 3. Clean and rebuild:
    ```bash
@@ -486,7 +486,7 @@ docker exec -it climatenews-redis redis-cli
 **Solutions**:
 1. Check API connectivity:
    ```bash
-   curl http://localhost:5200/api/v2/content/articles
+   curl http://localhost:5400/api/v2/content/articles
    ```
 2. Verify database has data:
    ```bash
@@ -514,7 +514,7 @@ If ports are already in use, modify `docker-compose.yml`:
 
 | Service | Default Port | Alternative Port |
 |---------|--------------|------------------|
-| API | 5200 | 5201 |
+| API | 5400 | 5201 |
 | Frontend | 5300 | 5301 |
 | PostgreSQL | 5433 | 5434 |
 | Redis | 5379 | 5380 |

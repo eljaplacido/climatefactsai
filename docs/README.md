@@ -274,7 +274,7 @@ docker ps
 # Should show: clilens-api, clilens-frontend, climatenews-postgres, climatenews-redis
 
 # 2. API works
-curl http://localhost:5200/healthz
+curl http://localhost:5400/healthz
 # Should return: {"status":"ok"}
 
 # 3. Database accessible
