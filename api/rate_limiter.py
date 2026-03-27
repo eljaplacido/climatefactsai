@@ -105,7 +105,7 @@ class UsageTracker:
             )
             VALUES (
                 :user_id, :usage_type, :resource_id, :resource_url,
-                :ip_address, :user_agent, :metadata::jsonb
+                :ip_address, :user_agent, CAST(:metadata AS jsonb)
             )
         """
 
@@ -370,7 +370,14 @@ def check_premium_feature(user_tier: str, feature: str) -> bool:
         user_tier: Subscription tier string (freemium, basic, professional, enterprise)
         feature: Feature name to check
     """
-    tier = user_tier if isinstance(user_tier, str) else str(user_tier)
+    # Support both string tier and full user dict
+    if isinstance(user_tier, dict):
+        tier = user_tier.get("subscription_tier", "freemium")
+    elif isinstance(user_tier, str):
+        tier = user_tier
+    else:
+        tier = str(user_tier)
+    tier = tier.lower()
 
     premium_features = {
         "url_analysis": ["standard", "basic", "professional", "enterprise"],
