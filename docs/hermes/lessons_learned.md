@@ -1,0 +1,70 @@
+# 📜 Lessons Learned & Insights
+
+This document is maintained by the Hermes agent. It stores the project's historical knowledge, preventing agents from repeating past mistakes and preserving long-term progress context.
+
+## 2026
+
+### 2026-04-29 — Live Launch + Visualization Layer
+
+The 2026-04-28 audit was a paper-only sweep — code was reviewed and patched but the stack was never brought up to verify end-to-end. The 2026-04-29 session ran `docker compose up` against a fresh data volume and immediately uncovered ~7 schema and runtime bugs the prior pass missed. Fixed:
+
+- **DB schema didn't actually apply on a fresh volume.** Compose mounted only `init.sql`, so `chat_sessions`, `entities`, `user_usage`, `articles.insight_summary`, `articles.enriched_excerpt`, and `source_profiles.reliability_tier` were all missing. **Fix:** new `infrastructure/database/db-init.sh` applies init + 02 + 03 + 04_countries_seed + every numbered migration in `migrations/versions/`; pre-creates `vector`, `uuid-ossp`, `pg_trgm`. **Rule:** every schema change must be reachable from `db-init.sh`. Fresh-volume launch is the integration test.
+- **`articles.country_code` FK to `countries` silently drops seed inserts.** Only ~52 country rows existed → seed_full_global landed 49 countries instead of the targeted 198. **Fix:** `infrastructure/database/04_countries_seed.sql` generated from `forecast_service.COUNTRY_NAMES` (200 entries, deterministic flag emoji). After seed: 3795 articles across 189 countries. **Rule:** when REGION_COUNTRIES grows, regenerate 04_countries_seed.sql.
+- **HTTPException → 500 inside BaseHTTPMiddleware.dispatch.** A 429 raised inside `RateLimitMiddleware` was wrapped by starlette's TaskGroup and surfaced to the client as a 500 — anonymous URL analysis appeared broken. **Fix:** wrap `_dispatch` in a try/except that converts HTTPException to a JSONResponse. **Rule:** any new BaseHTTPMiddleware that raises HTTPException must follow the same pattern.
+- **Pydantic v2 strict response_model rejects implicit UUID coercion.** `URLAnalysisDetail.analysis_id: str` rejected the `uuid.UUID` value coming back from psycopg2 with a 500 — even though the row was valid. **Fix:** cast `str(result["analysis_id"])` in the response factory. **Rule:** any UUID column going into a `str` field needs an explicit cast.
+- **Anonymous user_id sentinel string failed UUID column.** UsageTracker passed `"anonymous"` to `user_usage.user_id` (uuid). Error was swallowed; rate-limit gate silently disabled for anon. **Fix:** `_coerce_user_uuid()` returns None for non-UUID input; `log_usage`/`get_usage_count` short-circuit; anon traffic falls back to IP-based limiter as designed. **Rule:** never pass arbitrary strings to UUID columns; coerce explicitly.
+- **Map-query topic separator drift.** LLM emits `"renewable energy"` (space), seed tags use `"renewable-energy"` (hyphen), `content_category` uses `"renewable_energy"` (underscore). The `:topic = ANY(a.tags)` filter matched none of them → "0 articles" answers despite 995 in DB. **Fix:** generate every separator variant and match against `tags && variants OR content_category = ANY(variants)`. **Rule:** any topic filter that crosses LLM output ↔ stored data must normalize separators.
+- **`/api/v2/sources` selected `source_profiles.reliability_tier` — a column only on `source_credibility`.** 500'd until added. **Fix:** ALTER TABLE in `apply_all_migrations.sql` so fresh DBs get it. **Rule:** when copying SQL between tables, verify column existence on the actual target.
+
+**Visualization layer landed in the same session:**
+
+- `/api/deep-search` and `/compare` now return `methodology` (queries_run, weather_used, synthesis_model, embedding_model, sources_consulted) and `clarification_needed` (3 LLM-suggested scope refinements when results are empty). Compare also returns `comparative_analysis_structured` with summary/similarities/differences/evidence_strength/common_gaps.
+- Three new frontend components: `MethodologyDrawer.tsx`, `CompareCharts.tsx` (Recharts), `ClarificationChips.tsx`. Wired into deep-search page; AgenticAssistant chat also renders chips inline when API surfaces them. Cited-article links open `target=_blank` so chat history isn't wiped.
+- Map: countries with `article_count === 0` route clicks to `/suggest-source?country=XX` (new tab) instead of opening an empty country panel.
+
+**Lesson on agentic skill design:** the pre-launch audit narrative ("production-ready") created false confidence. The real test was always going to be the first `docker compose up` against a fresh volume. From now on, treat fresh-stack launch as the audit's exit criterion, not a separate task.
+
+### 2026-04-28 — Production Audit & Polish
+
+End-to-end audit of all platform surfaces. Fixed worldwide coverage gaps, stale prompts, hardcoded model names, fabricated URL-analysis scores. See `memory/production_audit_2026_04.md` for the full punch list.
+
+### General Insights
+
+- **REGION_COUNTRIES ↔ COUNTRY_COORDS drift is the silent killer.** `api/map_routes.py:230` lists countries by region; `src/backend/app/domains/content/forecast_service.py` holds capital coords. When they fall out of sync, `/api/map/country/{cc}/climate-data`, `/api/forecast/country/{cc}`, and the temperature-anomaly map layer all silently fail or 404 for the missing countries — but no test catches it because the regions test only verifies REGION_COUNTRIES, not coord coverage. **Rule:** every code added to REGION_COUNTRIES must also land in `COUNTRY_COORDS` and `COUNTRY_NAMES` in the same PR. As of 2026-04-28 these dicts hold 198/199/200 entries respectively and are aligned.
+
+- **Hardcoded model names rot fast.** `api/main.py:386` had `claude-sonnet-4-20250514` — a model name from May 2025. By April 2026 it was 11 months stale. Same pattern would have hit `chat_routes.py` if not caught. **Rule:** all LLM model names go through env vars (`ANTHROPIC_MODEL`, `DEEPSEEK_MODEL`) with sensible current defaults. Never inline the dated model string.
+
+- **System prompts hardcode counts at your peril.** `chat_routes.py` system prompt said "136 countries" and "277 sources". As ingestion scales, those numbers drift and the assistant lies to users. **Rule:** when a number can change, fetch it live (TTL-cached). `_get_platform_metrics()` does this with a 10-minute cache against the `articles` table.
+
+- **Anonymous URL analysis without verification is misleading.** `url_analysis_routes.py` previously returned `reliability_score=50, MEDIUM` for every URL because the full verification pipeline wasn't being invoked from the synchronous handler. Users saw a "MEDIUM credibility" badge that was completely fabricated. **Rule:** scoring fields exposed to the UI must reflect *something real*. The current heuristic uses text length + claim count + average claim importance. The full claim-by-claim verification still runs as a separate Celery pipeline; the synchronous response is now labelled "preliminary" in the code comment.
+
+- **Tier naming alias `basic` ≡ `standard` is fragile.** `rate_limiter.py:82` does `TIER_LIMITS["basic"] = TIER_LIMITS["standard"]`. Most code paths read both, but new code that only checks one of them will misbehave. **Rule:** always use `TIER_LIMITS.get(tier, TIER_LIMITS["freemium"])` rather than `TIER_LIMITS[tier]` directly, so unknown tiers fall through safely.
+
+- **REGION_COUNTRIES.asia includes middle_east intentionally.** UN definition of Asia includes Middle Eastern countries. The two regions overlap on AE/SA/IL/JO/LB/IQ/IR/QA/KW/OM/BH/YE/SY/PS. This is a hierarchical relationship, not a bug. Filtering by `region=asia` returns Middle Eastern coverage too.
+
+- **`localhost:5400` is the correct frontend → API URL.** Docker maps internal API:8000 to host:5400, frontend 3000 → 5300. CORS_ORIGINS in `api/main.py` defaults to `localhost:3000,5173,5300` — these are the *frontend* origins, not the API host. Don't add 5400 to CORS_ORIGINS.
+
+- **`api/main.py` has a UTF-8 BOM at byte 0.** Pre-existing. Python's tokenizer handles it transparently. `ast.parse()` from a string read with default encoding errors out, but `open(..., encoding='utf-8-sig')` fixes that. Don't try to "fix" the BOM — IDE saves can re-introduce it; downstream behavior is correct.
+
+- **PageTranslator + MutationObserver = full-page translation works.** `src/frontend/src/components/PageTranslator.tsx` walks all text nodes, batches via 300ms debounce to `/api/translate/`. Don't try to translate per-component — the global walker already covers dynamic content.
+
+- **AgenticAssistant routes by `currentPage` + `currentArticleId`**, not by URL pattern matching inside the assistant. `ContextualAssistant.tsx` does the URL → page-name mapping. To add a new mode, extend `MODE_LABELS` and `EXAMPLE_QUERIES`/`PAGE_HELP` in `AgenticAssistant.tsx` and update `ContextualAssistant` to recognize the new path.
+
+- **DeepSeek-only for intelligence, Anthropic-optional for translation.** `llm_client.py` is the gateway for claim extraction, fact-checking, RAG synthesis, chat. `api/main.py` translation tries Anthropic first (longer context windows) and falls back to DeepSeek. Don't introduce Anthropic into the intelligence pipeline — it would split the cost/latency profile.
+
+### Bug History
+
+- **Worldwide weather coverage was broken for ~24 countries (2026-04-28)**: `COUNTRY_COORDS` was missing Bhutan, Maldives, Belize, Bahamas, Barbados, Kosovo, San Marino, and 18 African nations (Benin, Burundi, Cape Verde, CAR, Comoros, Congo, Djibouti, Eq. Guinea, Gabon, Gambia, Guinea, Guinea-Bissau, Lesotho, Liberia, Mauritania, Mauritius, Eswatini, Togo, Sierra Leone). `/api/forecast/country/{cc}` returned "Unsupported country", `/api/map/country/{cc}/climate-data` 404'd, temperature-anomaly map layer silently skipped them. **Fix:** added all to COUNTRY_COORDS + COUNTRY_NAMES, made climate-data graceful (empty payload instead of 404), added debug log when temp-anomaly skips. **Prevention:** if a country is in REGION_COUNTRIES, add it to both dicts in the same change.
+
+- **URL analysis fabricated credibility scores (2026-04-28)**: `url_analysis_routes.py:491-493` hardcoded `reliability_score = 50; overall_credibility = 'MEDIUM'` regardless of input. **Fix:** replaced with text-length + claim-count + avg-importance heuristic. **Prevention:** never expose a numeric score field to UI without it being computed from input data.
+
+- **Stale platform stats in chat system prompt (2026-04-28)**: chat_routes.py said "136 countries" and "277 sources" — values from initial seed, no longer accurate. **Fix:** added `_get_platform_metrics()` with 10-min TTL cache that pulls live counts. **Prevention:** any factual claim in a system prompt should either be derived from live data or be intentionally vague ("a curated set of sources").
+
+- **Outdated Anthropic model `claude-sonnet-4-20250514` (2026-04-28)**: hardcoded model name was 11 months stale. **Fix:** env-driven via `ANTHROPIC_MODEL` with current default. **Prevention:** never inline a dated model string. Use `os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5")` pattern.
+
+- **`rss_adapter.py` comment said "9 international sources" but dict had 13 (2026-04-28)**: cosmetic doc drift, but signals lack of review discipline. **Fix:** changed comment to non-numerical phrasing. **Prevention:** if you add to a dict, count it before re-asserting count in a comment.
+
+- **`AgenticAssistant.tsx` imported unused `X` icon (2026-04-28)**: minor lint warning. **Fix:** removed import. **Prevention:** run `npm run lint` before merging frontend changes.
+
+---
+> **Note to Agents**: Always append your findings and insights to this file after completing significant refactoring, debugging, or feature implementation.

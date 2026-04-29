@@ -366,6 +366,23 @@ export interface DeepSearchWeatherContext {
   }[];
 }
 
+export interface DeepSearchMethodology {
+  queries_run?: { layer: string; scope?: Record<string, any>; hits?: number; skipped?: boolean }[];
+  weather_used?: boolean;
+  synthesis_model?: string;
+  embedding_model?: string;
+  external_provider_configured?: boolean;
+  sources_consulted?: string[];
+}
+
+export interface ComparativeAnalysisStructured {
+  summary: string;
+  similarities: string[];
+  differences: string[];
+  evidence_strength: "balanced" | "topic_a_stronger" | "topic_b_stronger" | "weak" | string;
+  common_gaps: string[];
+}
+
 export interface DeepSearchResult {
   query: string;
   answer: string;
@@ -374,6 +391,8 @@ export interface DeepSearchResult {
   external_sources_count: number;
   weather_context?: DeepSearchWeatherContext;
   filters: Record<string, any>;
+  methodology?: DeepSearchMethodology;
+  clarification_needed?: string[];
   searched_at: string;
 }
 
@@ -383,6 +402,7 @@ export interface CompareResult {
   result_a: DeepSearchResult;
   result_b: DeepSearchResult;
   comparative_analysis: string;
+  comparative_analysis_structured?: ComparativeAnalysisStructured;
   compared_at: string;
 }
 

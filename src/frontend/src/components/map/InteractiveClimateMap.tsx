@@ -267,7 +267,8 @@ export default function InteractiveClimateMap({
       const stat = statsMap[cc];
       const name = stat?.country_name || feature.properties?.name || cc;
 
-      // Tooltip
+      // Tooltip \u2014 for countries with no coverage, surface the suggest-source CTA
+      // so users can contribute rather than seeing a dead "No data" tile.
       const tooltipContent = stat
         ? `<div class="text-xs">
             <strong class="text-sm">${name}</strong><br/>
@@ -275,7 +276,11 @@ export default function InteractiveClimateMap({
             ${stat.avg_credibility_score != null ? ` | Credibility: ${stat.avg_credibility_score}` : ""}
             ${stat.temperature_anomaly != null ? `<br/>Temp anomaly: ${stat.temperature_anomaly > 0 ? "+" : ""}${stat.temperature_anomaly}\u00B0C` : ""}
           </div>`
-        : `<div class="text-xs"><strong class="text-sm">${name}</strong><br/>No data</div>`;
+        : `<div class="text-xs">
+            <strong class="text-sm">${name}</strong><br/>
+            <span class="text-amber-300">No coverage yet</span><br/>
+            <span class="text-slate-300">Click to suggest a source</span>
+          </div>`;
 
       layer.bindTooltip(tooltipContent, {
         sticky: true,
@@ -285,9 +290,18 @@ export default function InteractiveClimateMap({
           "!bg-slate-900 !text-white !border-none !rounded-lg !shadow-lg !px-3 !py-2",
       });
 
-      // Click
+      // Click — for countries with no coverage, route to the suggest-source flow
+      // (in a new tab so the user keeps their map context). Otherwise open the
+      // country panel as usual.
       layer.on("click", () => {
-        if (cc) onCountryClick(cc);
+        if (!cc) return;
+        if (!stat || stat.article_count === 0) {
+          if (typeof window !== "undefined") {
+            window.open(`/suggest-source?country=${cc}`, "_blank", "noopener");
+          }
+          return;
+        }
+        onCountryClick(cc);
       });
 
       // Hover highlight

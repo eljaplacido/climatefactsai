@@ -6,6 +6,9 @@ import CountrySelector from "@/components/CountrySelector";
 import type { DeepSearchResult, CompareResult } from "@/types";
 import { Search, GitCompareArrows, Loader2, ExternalLink, BookOpen, Cloud, CheckCircle } from "lucide-react";
 import TranslatableText from "@/components/TranslatableText";
+import MethodologyDrawer from "@/components/MethodologyDrawer";
+import CompareCharts from "@/components/CompareCharts";
+import ClarificationChips from "@/components/ClarificationChips";
 
 type Mode = "search" | "compare";
 
@@ -313,6 +316,26 @@ export default function DeepSearchPage() {
             </div>
           )}
 
+          {/* Clarification chips when search returned no results */}
+          {searchResult.clarification_needed && searchResult.clarification_needed.length > 0 && (
+            <ClarificationChips
+              suggestions={searchResult.clarification_needed}
+              onPick={(s) => {
+                setQuery(s);
+                // brief defer so state lands before search fires
+                setTimeout(() => handleSearch(), 0);
+              }}
+            />
+          )}
+
+          {/* Methodology drawer — How this was answered */}
+          <MethodologyDrawer
+            methodology={searchResult.methodology}
+            internalCount={searchResult.internal_articles_count}
+            externalCount={searchResult.external_sources_count}
+            filters={searchResult.filters}
+          />
+
           {/* Citations */}
           <div className="bg-white rounded-lg border p-6">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">
@@ -360,12 +383,35 @@ export default function DeepSearchPage() {
       {/* Compare Results */}
       {compareResult && !loading && (
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-          {/* Comparative Analysis */}
-          <div className="bg-white rounded-lg border p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Comparative Analysis</h2>
-            <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">
-              <TranslatableText text={compareResult.comparative_analysis} as="div" maxLength={5000} />
+          {/* Visual comparative analysis (preferred when structured data is present) */}
+          {compareResult.comparative_analysis_structured ? (
+            <div className="bg-white rounded-lg border p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Comparative Analysis</h2>
+              <CompareCharts data={compareResult} />
             </div>
+          ) : (
+            <div className="bg-white rounded-lg border p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Comparative Analysis</h2>
+              <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">
+                <TranslatableText text={compareResult.comparative_analysis} as="div" maxLength={5000} />
+              </div>
+            </div>
+          )}
+
+          {/* Methodology drawers — one per side */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <MethodologyDrawer
+              methodology={compareResult.result_a.methodology}
+              internalCount={compareResult.result_a.internal_articles_count}
+              externalCount={compareResult.result_a.external_sources_count}
+              filters={compareResult.result_a.filters}
+            />
+            <MethodologyDrawer
+              methodology={compareResult.result_b.methodology}
+              internalCount={compareResult.result_b.internal_articles_count}
+              externalCount={compareResult.result_b.external_sources_count}
+              filters={compareResult.result_b.filters}
+            />
           </div>
 
           {/* Side by side */}

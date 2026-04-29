@@ -19,6 +19,7 @@ interface Message {
   content: string;
   highlighted_countries?: string[];
   cited_articles?: { article_id: string; title: string }[];
+  clarification_needed?: string[];
   mode?: string;
 }
 
@@ -153,10 +154,11 @@ export default function AgenticAssistant({
   const modeInfo = MODE_LABELS[mode] || MODE_LABELS.general;
   const ModeIcon = modeInfo.icon;
 
-  const handleSend = async () => {
-    if (!input.trim() || loading) return;
+  const handleSend = async (overrideText?: string) => {
+    const text = (overrideText ?? input).trim();
+    if (!text || loading) return;
 
-    const userMessage: Message = { role: "user", content: input.trim() };
+    const userMessage: Message = { role: "user", content: text };
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setLoading(true);
@@ -229,6 +231,12 @@ export default function AgenticAssistant({
           .map((h: any) => h?.country_code)
           .filter((cc: any): cc is string => typeof cc === "string" && cc.length > 0);
         onHighlightCountries?.(assistantMessage.highlighted_countries || []);
+      }
+
+      if (Array.isArray(data.clarification_needed) && data.clarification_needed.length > 0) {
+        assistantMessage.clarification_needed = data.clarification_needed
+          .filter((s: any): s is string => typeof s === "string" && s.length > 0)
+          .slice(0, 5);
       }
 
       const rawSources = Array.isArray(data.sources)
@@ -366,7 +374,10 @@ export default function AgenticAssistant({
                         <a
                           key={a.article_id}
                           href={`/articles/${a.article_id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className="block text-xs text-teal-400 hover:text-teal-300 hover:underline truncate"
+                          title="Opens in a new tab so this chat session is preserved"
                         >
                           {a.title}
                         </a>
@@ -386,6 +397,25 @@ export default function AgenticAssistant({
                         ))}
                       </div>
                     )}
+                  {msg.clarification_needed && msg.clarification_needed.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-amber-700/40">
+                      <p className="text-[10px] uppercase tracking-wider text-amber-300 mb-1.5">
+                        Try a more specific query
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {msg.clarification_needed.map((s) => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => handleSend(s)}
+                            className="px-2 py-1 rounded-full bg-amber-900/30 hover:bg-amber-800/50 text-amber-100 text-[11px] border border-amber-800/60 transition-colors"
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
