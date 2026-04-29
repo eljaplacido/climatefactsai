@@ -73,7 +73,20 @@ class DeepSearchResponse(BaseModel):
     external_sources_count: int
     weather_context: Optional[WeatherContextResponse] = None
     filters: dict = {}
+    # Methodology: how the answer was assembled. Frontend renders in
+    # the "How this was answered" drawer.
+    methodology: Optional[dict] = None
+    # Scope refinement chips when the search returned zero results.
+    clarification_needed: Optional[List[str]] = None
     searched_at: str
+
+
+class ComparativeAnalysisStructured(BaseModel):
+    summary: str
+    similarities: List[str]
+    differences: List[str]
+    evidence_strength: str
+    common_gaps: List[str]
 
 
 class CompareResponse(BaseModel):
@@ -82,6 +95,9 @@ class CompareResponse(BaseModel):
     result_a: DeepSearchResponse
     result_b: DeepSearchResponse
     comparative_analysis: str
+    # Structured equivalent for visual rendering. Frontend prefers this
+    # when present and falls back to the markdown blob otherwise.
+    comparative_analysis_structured: Optional[ComparativeAnalysisStructured] = None
     compared_at: str
 
 

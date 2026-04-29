@@ -101,17 +101,44 @@ class DeepSearchService:
             weather_context=weather_context,
         )
 
+        internal_count = len(internal_results or [])
+        external_count = len(perplexity_results.get("citations", []))
+
+        # Methodology: how the answer was assembled. Surfaced in the UI's
+        # "How this was answered" drawer so users can audit our pipeline.
+        methodology = {
+            "queries_run": [
+                {"layer": "internal_corpus", "scope": {"country": country, "category": category}, "hits": internal_count},
+                {"layer": "perplexity_external", "skipped": not bool(self.perplexity_key), "hits": external_count},
+            ],
+            "weather_used": bool(weather_context),
+            "synthesis_model": "anthropic" if self.anthropic_key else ("deepseek" if os.getenv("DEEPSEEK_API_KEY") else "none"),
+            "embedding_model": "onnx-minilm",
+            "external_provider_configured": bool(self.perplexity_key),
+            "sources_consulted": sorted({c.get("source_name") for c in citations if c.get("source_name")}),
+        }
+
+        # Clarification: when the corpus + external search both miss, suggest
+        # scope refinements the user can pick. Cheap to compute (one LLM call)
+        # and only fires when both sides return zero — so it doesn't add cost
+        # to the happy path.
+        clarification_needed: Optional[List[str]] = None
+        if internal_count == 0 and external_count == 0:
+            clarification_needed = await self._suggest_scope_refinements(query, country)
+
         return {
             "query": query,
             "answer": synthesis,
             "citations": citations,
-            "internal_articles_count": len(internal_results or []),
-            "external_sources_count": len(perplexity_results.get("citations", [])),
+            "internal_articles_count": internal_count,
+            "external_sources_count": external_count,
             "weather_context": weather_context,
             "filters": {
                 "country": country,
                 "category": category,
             },
+            "methodology": methodology,
+            "clarification_needed": clarification_needed,
             "searched_at": datetime.utcnow().isoformat(),
         }
 
@@ -157,6 +184,9 @@ class DeepSearchService:
         comparative = await self._generate_comparison(
             query_a, query_b, result_a, result_b
         )
+        comparative_structured = await self._generate_comparison_structured(
+            query_a, query_b, result_a, result_b
+        )
 
         return {
             "query_a": query_a,
@@ -164,6 +194,7 @@ class DeepSearchService:
             "result_a": result_a,
             "result_b": result_b,
             "comparative_analysis": comparative,
+            "comparative_analysis_structured": comparative_structured,
             "compared_at": datetime.utcnow().isoformat(),
         }
 
@@ -650,6 +681,160 @@ Be concise and factual. Use markdown."""
             if candidate not in skip_words:
                 return candidate
 
+        return None
+
+    async def _suggest_scope_refinements(
+        self, query: str, country: Optional[str]
+    ) -> Optional[List[str]]:
+        """Suggest 3 specific scope refinements when a search returns no results.
+
+        Triggered only on the empty-result path so it doesn't add cost to the
+        happy path. Frontend renders these as clickable chips that re-submit
+        the query with the refinement appended.
+        """
+        deepseek_key = os.getenv("DEEPSEEK_API_KEY")
+        if not deepseek_key and not self.anthropic_key:
+            return None
+
+        prompt = (
+            f"User query: \"{query}\"\n"
+            f"Country filter applied: {country or 'none'}\n\n"
+            "This query returned zero results. Suggest exactly 3 specific scope "
+            "refinements the user could click to retry. Each refinement should "
+            "be a short noun phrase that narrows the query (a country, a "
+            "timeframe, a specific technology, or an industry sub-segment). "
+            "Return ONLY a JSON array of 3 strings, no prose. Example: "
+            "[\"Spain (last 12 months)\", \"Italy offshore wind\", \"Greece solar 2024\"]."
+        )
+
+        try:
+            if deepseek_key:
+                from openai import OpenAI as OpenAIClient
+                client = OpenAIClient(
+                    api_key=deepseek_key,
+                    base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+                    timeout=10.0,
+                )
+                resp = client.chat.completions.create(
+                    model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+                    messages=[
+                        {"role": "system", "content": "Return only valid JSON arrays of 3 short strings."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=200,
+                    temperature=0.4,
+                )
+                raw = resp.choices[0].message.content.strip()
+            else:
+                import anthropic
+                client = anthropic.Anthropic(api_key=self.anthropic_key, timeout=10.0)
+                msg = client.messages.create(
+                    model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5"),
+                    max_tokens=200,
+                    temperature=0.4,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                raw = msg.content[0].text.strip() if msg.content else ""
+
+            # Strip ```json fences if present
+            if raw.startswith("```"):
+                raw = raw.split("```", 2)[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+                raw = raw.strip()
+
+            import json as _json
+            parsed = _json.loads(raw)
+            if isinstance(parsed, list) and all(isinstance(x, str) for x in parsed):
+                return parsed[:3]
+        except Exception as e:
+            logger.warning(f"Scope refinement suggestion failed: {e}")
+        return None
+
+    async def _generate_comparison_structured(
+        self,
+        query_a: str,
+        query_b: str,
+        result_a: Dict,
+        result_b: Dict,
+    ) -> Optional[Dict[str, Any]]:
+        """Structured comparative analysis (similarities/differences/strength).
+
+        Frontend prefers this over the markdown blob when present.
+        """
+        deepseek_key = os.getenv("DEEPSEEK_API_KEY")
+        if not deepseek_key and not self.anthropic_key:
+            return None
+
+        prompt = f"""Compare these two climate research topics and return ONLY a JSON object.
+
+TOPIC A: "{query_a}"
+- internal_articles: {result_a.get('internal_articles_count', 0)}
+- external_sources: {result_a.get('external_sources_count', 0)}
+- answer summary: {(result_a.get('answer') or '')[:400]}
+
+TOPIC B: "{query_b}"
+- internal_articles: {result_b.get('internal_articles_count', 0)}
+- external_sources: {result_b.get('external_sources_count', 0)}
+- answer summary: {(result_b.get('answer') or '')[:400]}
+
+Return JSON with exactly these keys:
+{{
+  "summary": "<two-sentence overview>",
+  "similarities": ["<short bullet>", ...3-5 items],
+  "differences": ["<short bullet>", ...3-5 items],
+  "evidence_strength": "balanced" | "topic_a_stronger" | "topic_b_stronger" | "weak",
+  "common_gaps": ["<short bullet>", ...0-3 items]
+}}
+No prose outside the JSON."""
+
+        try:
+            if deepseek_key:
+                from openai import OpenAI as OpenAIClient
+                client = OpenAIClient(
+                    api_key=deepseek_key,
+                    base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+                    timeout=15.0,
+                )
+                resp = client.chat.completions.create(
+                    model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+                    messages=[
+                        {"role": "system", "content": "Return only valid JSON. No prose, no code fences."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=1000,
+                    temperature=0.2,
+                )
+                raw = resp.choices[0].message.content.strip()
+            else:
+                import anthropic
+                client = anthropic.Anthropic(api_key=self.anthropic_key, timeout=15.0)
+                msg = client.messages.create(
+                    model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5"),
+                    max_tokens=1000,
+                    temperature=0.2,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                raw = msg.content[0].text.strip() if msg.content else ""
+
+            if raw.startswith("```"):
+                raw = raw.split("```", 2)[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+                raw = raw.strip()
+
+            import json as _json
+            parsed = _json.loads(raw)
+            if isinstance(parsed, dict):
+                return {
+                    "summary": str(parsed.get("summary", ""))[:500],
+                    "similarities": [str(x) for x in (parsed.get("similarities") or [])][:5],
+                    "differences": [str(x) for x in (parsed.get("differences") or [])][:5],
+                    "evidence_strength": str(parsed.get("evidence_strength", "balanced")),
+                    "common_gaps": [str(x) for x in (parsed.get("common_gaps") or [])][:3],
+                }
+        except Exception as e:
+            logger.warning(f"Structured comparison failed: {e}")
         return None
 
     def _has_weather_keywords(self, text: str) -> bool:
