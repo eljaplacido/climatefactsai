@@ -289,6 +289,44 @@ cur.execute("""
     FROM claims c WHERE c.claim_id NOT IN (SELECT claim_id FROM fact_checks)
 """)
 
+# Backfill source_profiles so /api/v2/sources (Sources page) renders.
+# Idempotent: ON CONFLICT DO UPDATE keeps counts fresh.
+cur.execute("""
+INSERT INTO source_profiles (source_name, source_domain, credibility_score, source_type, total_articles_analyzed, average_reliability_score, reliability_tier, country_code, description)
+SELECT
+  src.source_name,
+  CASE
+    WHEN src.real_host IS NOT NULL AND src.real_host <> 'clilens.ai' THEN src.real_host
+    ELSE LOWER(REGEXP_REPLACE(src.source_name, '[^a-zA-Z0-9]+', '-', 'g')) || '.example.org'
+  END,
+  COALESCE(src.cred_score, src.avg_reliability::int, 50),
+  COALESCE(src.source_type, 'news_website'),
+  src.article_count,
+  src.avg_reliability,
+  COALESCE(src.reliability_tier, 'public'),
+  src.country_code,
+  CASE WHEN src.source_type IS NOT NULL THEN 'Climate news source' ELSE 'Source aggregated from article corpus' END
+FROM (
+  SELECT
+    a.source_name,
+    SPLIT_PART(REGEXP_REPLACE(MIN(a.url), '^https?://(www\\.)?', ''), '/', 1) AS real_host,
+    MAX(sc.overall_score)::int AS cred_score,
+    MIN(sc.source_type) AS source_type,
+    COUNT(*) AS article_count,
+    AVG(NULLIF(a.reliability_score,0)) AS avg_reliability,
+    MIN(sc.reliability_tier) AS reliability_tier,
+    MAX(a.country_code) AS country_code
+  FROM articles a
+  LEFT JOIN source_credibility sc ON LOWER(a.source_name) = LOWER(sc.source_name)
+  WHERE a.source_name IS NOT NULL AND a.source_name <> ''
+  GROUP BY a.source_name
+) src
+ON CONFLICT (source_name) DO UPDATE SET
+  total_articles_analyzed = EXCLUDED.total_articles_analyzed,
+  average_reliability_score = EXCLUDED.average_reliability_score,
+  last_updated_at = NOW();
+""")
+
 cur.execute("SELECT count(*) as t FROM articles")
 ta = cur.fetchone()["t"]
 cur.execute("SELECT count(DISTINCT country_code) as c FROM articles WHERE country_code IS NOT NULL")

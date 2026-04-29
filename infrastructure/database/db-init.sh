@@ -30,6 +30,8 @@ apply() {
 apply "$SQL_DIR/init.sql"
 apply "$SQL_DIR/02_countries_and_translations.sql"
 apply "$SQL_DIR/03_users_and_subscriptions.sql"
+# Reference data: full 198-country seed (matches forecast_service.COUNTRY_NAMES)
+apply "$SQL_DIR/04_countries_seed.sql"
 
 # Numbered migrations (chat_sessions, entities, knowledge graph, etc.)
 shopt -s nullglob

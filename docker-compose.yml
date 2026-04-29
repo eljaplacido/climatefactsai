@@ -99,6 +99,7 @@ services:
       - ./infrastructure/database/init.sql:/docker-entrypoint-initdb.d/sql/init.sql:ro
       - ./infrastructure/database/02_countries_and_translations.sql:/docker-entrypoint-initdb.d/sql/02_countries_and_translations.sql:ro
       - ./infrastructure/database/03_users_and_subscriptions.sql:/docker-entrypoint-initdb.d/sql/03_users_and_subscriptions.sql:ro
+      - ./infrastructure/database/04_countries_seed.sql:/docker-entrypoint-initdb.d/sql/04_countries_seed.sql:ro
       - ./migrations/versions:/docker-entrypoint-initdb.d/sql/migrations:ro
     networks:
       - climatenews-network

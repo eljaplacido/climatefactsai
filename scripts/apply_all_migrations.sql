@@ -119,6 +119,10 @@ CREATE INDEX IF NOT EXISTS idx_source_profiles_domain ON source_profiles(source_
 CREATE INDEX IF NOT EXISTS idx_source_profiles_name ON source_profiles(source_name);
 CREATE INDEX IF NOT EXISTS idx_source_profiles_credibility ON source_profiles(credibility_score DESC);
 
+-- /api/v2/sources reads reliability_tier from source_profiles for tier gating
+ALTER TABLE source_profiles ADD COLUMN IF NOT EXISTS reliability_tier VARCHAR(20) DEFAULT 'public';
+CREATE INDEX IF NOT EXISTS idx_source_profiles_reliability_tier ON source_profiles(reliability_tier);
+
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS source_profile_id UUID REFERENCES source_profiles(source_id);
 CREATE INDEX IF NOT EXISTS idx_articles_source_profile ON articles(source_profile_id);
 
