@@ -57,6 +57,9 @@ class CountryStats(BaseModel):
     avg_credibility_score: Optional[float] = None
     top_sources: List[str] = []
     region: Optional[str] = None
+    temperature_anomaly: Optional[float] = None
+    climate_risk_score: Optional[float] = None
+    source_count: Optional[int] = None
 
 
 class TopicDensityItem(BaseModel):
@@ -167,20 +170,34 @@ class CountryClimateData(BaseModel):
 
 
 class CountryComparison(BaseModel):
-    """Comparison metrics for one country."""
+    """Comparison metrics for one country — includes green transition dimensions."""
     country_code: str
     country_name: str
     article_count: int = 0
     source_count: int = 0
     avg_credibility: Optional[float] = None
     top_topics: List[str] = []
+    topic_count: Optional[int] = None
     climate_risk_score: Optional[float] = None
+    climate_risk: Optional[float] = None  # frontend-compatible alias
+    category_breakdown: Optional[Dict[str, int]] = None
+    # Green-transition dimensions (0–10 score derived from article coverage)
+    green_transition_score: Optional[float] = None
+    renewable_energy_score: Optional[float] = None
+    cleantech_score: Optional[float] = None
+    circular_economy_score: Optional[float] = None
+    resource_efficiency_score: Optional[float] = None
+    regenerative_score: Optional[float] = None
+    sustainability_score: Optional[float] = None
 
 
 class CompareResponse(BaseModel):
     """Response for /compare endpoint."""
     countries: List[CountryComparison] = []
     comparison_summary: Optional[str] = None
+    # Convenience keys for frontend two-country compare view
+    country_a: Optional[CountryComparison] = None
+    country_b: Optional[CountryComparison] = None
 
 
 class TimelineEntry(BaseModel):
@@ -196,6 +213,8 @@ class TemperatureAnomalyItem(BaseModel):
     trend: Optional[str] = None
     current_temp: Optional[float] = None
     historical_avg: Optional[float] = None
+    current_precipitation_mm: Optional[float] = None
+    historical_precipitation_avg_mm: Optional[float] = None
 
 
 class ClimateRiskItem(BaseModel):
@@ -207,17 +226,50 @@ class ClimateRiskItem(BaseModel):
     top_risks: List[str] = []
 
 
-# Region → country code mapping for region-based queries
+# Region → country code mapping for region-based queries (comprehensive — 80%+ of world)
 REGION_COUNTRIES = {
-    "europe": ["FI", "SE", "NO", "DK", "IS", "GB", "IE", "FR", "DE", "NL", "BE", "LU",
-               "CH", "AT", "LI", "ES", "PT", "IT", "MT", "GR", "CY", "TR", "PL", "CZ",
-               "SK", "HU", "SI", "RO", "BG", "HR", "RS", "BA", "ME", "MK", "AL", "XK",
-               "EE", "LV", "LT", "UA", "MD", "BY", "GE", "AM", "AZ"],
-    "north_america": ["US", "CA", "MX"],
-    "latin_america": ["BR", "AR", "CO", "CL", "PE", "EC", "VE", "UY", "PY", "BO", "CR", "PA"],
-    "africa": ["KE", "NG", "ZA", "GH", "TZ", "UG", "RW", "ET", "EG", "MA", "SN", "ZM", "MW", "MZ"],
-    "asia": ["CN", "IN", "JP", "KR", "ID", "TH", "VN", "PH", "SG", "MY", "BD", "PK", "AU", "NZ", "TW"],
-    "middle_east": ["AE", "SA", "IL", "JO", "LB", "IQ", "IR", "QA", "KW", "OM", "BH"],
+    "europe": [
+        "FI", "SE", "NO", "DK", "IS", "GB", "IE", "FR", "DE", "NL", "BE", "LU",
+        "CH", "AT", "LI", "ES", "PT", "IT", "MT", "GR", "CY", "TR", "PL", "CZ",
+        "SK", "HU", "SI", "RO", "BG", "HR", "RS", "BA", "ME", "MK", "AL", "XK",
+        "EE", "LV", "LT", "UA", "MD", "BY", "GE", "AM", "AZ", "RU", "MC", "AD",
+        "SM", "VA",
+    ],
+    "north_america": ["US", "CA", "MX", "GL"],
+    "central_america": [
+        "GT", "HN", "SV", "NI", "CR", "PA", "BZ",
+        "CU", "DO", "HT", "JM", "TT", "BS", "BB",
+        "AG", "GD", "DM", "KN", "LC", "VC",
+    ],
+    "latin_america": [
+        "BR", "AR", "CO", "CL", "PE", "EC", "VE", "UY", "PY", "BO",
+        "CR", "PA", "GT", "HN", "SV", "NI", "CU", "DO", "HT", "JM",
+        "TT", "GY", "SR", "BS", "BB", "BZ",
+    ],
+    "africa": [
+        "DZ", "AO", "BJ", "BW", "BF", "BI", "CV", "CM", "CF", "TD",
+        "KM", "CG", "CD", "CI", "DJ", "EG", "GQ", "ER", "SZ", "ET",
+        "GA", "GM", "GH", "GN", "GW", "KE", "LS", "LR", "LY", "MG",
+        "MW", "ML", "MR", "MU", "MA", "MZ", "NA", "NE", "NG", "RW",
+        "SN", "SL", "SO", "ZA", "SS", "SD", "TZ", "TG", "TN", "UG",
+        "ZM", "ZW", "ST", "SC", "EH",
+    ],
+    "asia": [
+        "AF", "BD", "BT", "BN", "KH", "CN", "IN", "ID", "IR", "IQ",
+        "IL", "JP", "JO", "KZ", "KW", "KG", "LA", "LB", "MY", "MV",
+        "MN", "MM", "NP", "PK", "PH", "QA", "SA", "SG", "KR", "LK",
+        "SY", "TW", "TJ", "TH", "TL", "TM", "AE", "UZ", "VN", "YE",
+        "OM", "BH", "PS", "GE", "AM", "AZ",
+    ],
+    "middle_east": [
+        "AE", "SA", "IL", "JO", "LB", "IQ", "IR", "QA", "KW", "OM",
+        "BH", "YE", "SY", "PS",
+    ],
+    "oceania": [
+        "AU", "NZ", "PG", "FJ", "WS", "SB", "TO", "VU",
+        "KI", "MH", "FM", "NR", "PW", "TV",
+    ],
+    "central_asia": ["KZ", "UZ", "TM", "KG", "TJ"],
 }
 
 
@@ -245,15 +297,21 @@ def _country_region(cc: str) -> Optional[str]:
 @router.get("/country-stats", response_model=List[CountryStats])
 async def get_country_stats(
     category: Optional[str] = Query(default=None, description="Filter by content category"),
+    categories: Optional[str] = Query(default=None, description="Comma-separated content categories"),
     source: Optional[str] = Query(default=None, description="Filter by source name"),
     reliability_min: Optional[int] = Query(default=None, ge=0, le=100, description="Min reliability score"),
+    credibility: Optional[str] = Query(default=None, description="Credibility tier: HIGH, MEDIUM, LOW, All"),
     region: Optional[str] = Query(default=None, description="Filter by region: europe, africa, asia, etc."),
+    date_from: Optional[str] = Query(default=None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(default=None, description="End date YYYY-MM-DD"),
+    month: Optional[str] = Query(default=None, description="Filter by month YYYY-MM"),
+    keyword: Optional[str] = Query(default=None, description="Full-text keyword search"),
 ):
     """
     Get per-country article counts, top topics, sources, and credibility.
 
     Supports filtering by: content category, source name, minimum reliability,
-    and geographic region (europe, africa, asia, latin_america, middle_east, north_america).
+    credibility tier, date range, month, keyword, and geographic region.
     """
     db = get_postgres()
 
@@ -264,15 +322,38 @@ async def get_country_stats(
         if category:
             conditions.append("a.content_category = :category")
             params["category"] = category.lower()
+        if categories:
+            cat_list = [c.strip().lower() for c in categories.split(",") if c.strip()]
+            if cat_list:
+                conditions.append("a.content_category = ANY(:cat_list)")
+                params["cat_list"] = cat_list
         if source:
             conditions.append("LOWER(a.source_name) = LOWER(:source)")
             params["source"] = source
         if reliability_min is not None:
             conditions.append("COALESCE(a.reliability_score, 0) >= :rel_min")
             params["rel_min"] = reliability_min
+        if credibility and credibility.upper() != "ALL":
+            conditions.append("a.overall_credibility = :cred")
+            params["cred"] = credibility.upper()
         if region and region in REGION_COUNTRIES:
             conditions.append("a.country_code = ANY(:region_codes)")
             params["region_codes"] = REGION_COUNTRIES[region]
+        if date_from:
+            conditions.append("a.published_date >= :date_from::date")
+            params["date_from"] = date_from
+        if date_to:
+            conditions.append("a.published_date <= :date_to::date")
+            params["date_to"] = date_to
+        if month:
+            conditions.append("to_char(a.published_date, 'YYYY-MM') = :month")
+            params["month"] = month
+        if keyword:
+            conditions.append(
+                "to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,''))"
+                " @@ plainto_tsquery('english', :keyword)"
+            )
+            params["keyword"] = keyword
 
         where = " AND ".join(conditions)
 
@@ -280,6 +361,7 @@ async def get_country_stats(
             SELECT
                 a.country_code,
                 COUNT(*) as article_count,
+                COUNT(DISTINCT a.source_name) as source_count,
                 MAX(a.created_at) as last_updated,
                 AVG(a.reliability_score) as avg_reliability
             FROM articles a
@@ -289,6 +371,30 @@ async def get_country_stats(
         """, params)
 
         country_names = _get_country_names(db)
+
+        # Batch-fetch climate risk data for all countries
+        risk_map: Dict[str, float] = {}
+        try:
+            risk_rows = db.execute_query("""
+                SELECT a.country_code,
+                       COUNT(c.claim_id) as claim_cnt,
+                       COUNT(CASE WHEN fc.verification_status
+                             IN ('FALSE','MISLEADING','LACKS_CONTEXT','DISPUTED','UNVERIFIED')
+                             THEN 1 END) as risky_cnt
+                FROM articles a
+                JOIN claims c ON c.article_id = a.article_id
+                LEFT JOIN fact_checks fc ON fc.claim_id = c.claim_id
+                WHERE a.country_code IS NOT NULL
+                GROUP BY a.country_code
+            """)
+            for rr in (risk_rows or []):
+                cc_r = rr["country_code"]
+                tc = rr.get("claim_cnt", 0) or 0
+                rc = rr.get("risky_cnt", 0) or 0
+                ratio = rc / tc if tc > 0 else 0
+                risk_map[cc_r] = round(min(100.0, math.log1p(tc) * 10 + ratio * 50), 1)
+        except Exception:
+            pass
 
         stats = []
         for row in (rows or []):
@@ -315,11 +421,13 @@ async def get_country_stats(
                 country_code=cc,
                 country_name=country_names.get(cc, cc),
                 article_count=row.get("article_count", 0),
+                source_count=row.get("source_count", 0),
                 top_topics=top_topics,
                 top_sources=top_sources,
                 last_updated=str(row["last_updated"]) if row.get("last_updated") else None,
                 avg_credibility_score=round(float(row["avg_reliability"]), 1) if row.get("avg_reliability") else None,
                 region=_country_region(cc),
+                climate_risk_score=risk_map.get(cc),
             ))
 
         return stats
@@ -765,7 +873,8 @@ async def _fetch_current_weather(lat: float, lon: float) -> Optional[Dict[str, A
         url = (
             f"https://api.open-meteo.com/v1/forecast"
             f"?latitude={lat}&longitude={lon}"
-            f"&current=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m"
+            f"&current=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,weather_code"
+            f"&daily=precipitation_sum&forecast_days=1"
             f"&timezone=auto"
         )
         async with httpx.AsyncClient(timeout=10) as client:
@@ -773,11 +882,14 @@ async def _fetch_current_weather(lat: float, lon: float) -> Optional[Dict[str, A
             resp.raise_for_status()
             data = resp.json()
         current = data.get("current", {})
+        daily = data.get("daily", {})
+        daily_precip = (daily.get("precipitation_sum") or [None])[0]
         result = {
             "temperature_c": current.get("temperature_2m"),
             "humidity_pct": current.get("relative_humidity_2m"),
-            "precipitation_mm": current.get("precipitation"),
+            "precipitation_mm": daily_precip if daily_precip is not None else current.get("precipitation"),
             "wind_speed_kmh": current.get("wind_speed_10m"),
+            "weather_code": current.get("weather_code"),
         }
         _cache_set(cache_key, result)
         return result
@@ -1210,7 +1322,9 @@ async def get_country_climate_data(cc: str):
     cc = cc.upper()
     coords = COUNTRY_COORDS.get(cc)
     if not coords:
-        raise HTTPException(status_code=404, detail=f"No coordinates for country {cc}")
+        # Return an empty payload rather than 404 so the UI can render
+        # an article-only view for countries without coordinate data.
+        return CountryClimateData(country_code=cc)
 
     lat, lon = coords["lat"], coords["lon"]
     today = date.today()
@@ -1311,6 +1425,14 @@ async def compare_countries(
             """, {"cc": cc})
             top_topics = [r["tag"] for r in (topic_rows or [])]
 
+            # Category breakdown (sustainability dimensions)
+            cat_rows = db.execute_query("""
+                SELECT content_category, COUNT(*) as cnt
+                FROM articles WHERE country_code = :cc AND content_category IS NOT NULL
+                GROUP BY content_category ORDER BY cnt DESC
+            """, {"cc": cc})
+            category_breakdown = {r["content_category"]: r["cnt"] for r in (cat_rows or [])}
+
             # Climate risk score (normalised 0-10)
             risk_rows = db.execute_query("""
                 SELECT COUNT(c.claim_id) as total_claims,
@@ -1328,6 +1450,10 @@ async def compare_countries(
                 # Score: base from claim volume + penalty for disputed ratio
                 risk_score = round(min(10.0, (tc / 5.0) + (disp / max(tc, 1)) * 5), 1)
 
+            # Green transition dimension scores (0-10 scale, 2 articles/point)
+            def _cat_score(cat: str) -> float:
+                return round(min(10.0, category_breakdown.get(cat, 0) / 2.0), 1)
+
             results.append(CountryComparison(
                 country_code=cc,
                 country_name=country_names.get(cc, cc),
@@ -1335,7 +1461,17 @@ async def compare_countries(
                 source_count=s.get("src_cnt", 0),
                 avg_credibility=round(float(s["avg_cred"]), 1) if s.get("avg_cred") else None,
                 top_topics=top_topics,
+                topic_count=len(top_topics),
                 climate_risk_score=risk_score,
+                climate_risk=risk_score,
+                category_breakdown=category_breakdown if category_breakdown else None,
+                green_transition_score=_cat_score("green_transition"),
+                renewable_energy_score=_cat_score("renewable_energy"),
+                cleantech_score=_cat_score("cleantech"),
+                circular_economy_score=_cat_score("circular_economy"),
+                resource_efficiency_score=_cat_score("resource_efficiency"),
+                regenerative_score=_cat_score("regenerative_economy"),
+                sustainability_score=_cat_score("sustainability"),
             ))
         except Exception as e:
             logger.warning(f"Compare failed for {cc}: {e}")
@@ -1364,7 +1500,12 @@ async def compare_countries(
                 f"({highest_risk.climate_risk_score}/10)."
             )
 
-    return CompareResponse(countries=results, comparison_summary=summary)
+    return CompareResponse(
+        countries=results,
+        comparison_summary=summary,
+        country_a=results[0] if results else None,
+        country_b=results[1] if len(results) > 1 else None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1449,36 +1590,42 @@ async def get_temperature_anomaly_layer():
     hist_start = date(today.year - 1, today.month, 1).isoformat()
     hist_end = date(today.year - 1, today.month, min(28, today.day)).isoformat()
 
-    for cc in active_codes:
+    import asyncio
+
+    async def _fetch_anomaly_for(cc: str) -> Optional[TemperatureAnomalyItem]:
         coords = COUNTRY_COORDS.get(cc)
         if not coords:
-            continue
-
+            logger.debug(f"Skipping temperature anomaly for {cc}: no coordinates registered")
+            return None
         lat, lon = coords["lat"], coords["lon"]
         current_wx = await _fetch_current_weather(lat, lon)
         hist = await _fetch_historical_weather(lat, lon, hist_start, hist_end)
-
         current_temp = current_wx.get("temperature_c") if current_wx else None
+        current_precip = current_wx.get("precipitation_mm") if current_wx else None
         hist_avg = hist.get("temperature_avg") if hist else None
+        hist_precip = hist.get("precipitation_avg") if hist else None
         anomaly = None
         trend = None
-
         if current_temp is not None and hist_avg is not None:
             anomaly = round(current_temp - hist_avg, 1)
-            if anomaly > 1.0:
-                trend = "warmer"
-            elif anomaly < -1.0:
-                trend = "cooler"
-            else:
-                trend = "normal"
+            trend = "warmer" if anomaly > 1.0 else ("cooler" if anomaly < -1.0 else "normal")
+        return TemperatureAnomalyItem(
+            country_code=cc, anomaly_celsius=anomaly,
+            trend=trend, current_temp=current_temp, historical_avg=hist_avg,
+            current_precipitation_mm=current_precip,
+            historical_precipitation_avg_mm=hist_precip,
+        )
 
-        results.append(TemperatureAnomalyItem(
-            country_code=cc,
-            anomaly_celsius=anomaly,
-            trend=trend,
-            current_temp=current_temp,
-            historical_avg=hist_avg,
-        ))
+    # Fetch all countries concurrently (batches of 10 to avoid flooding)
+    for i in range(0, len(active_codes), 10):
+        batch = active_codes[i:i+10]
+        batch_results = await asyncio.gather(
+            *[_fetch_anomaly_for(cc) for cc in batch],
+            return_exceptions=True,
+        )
+        for item in batch_results:
+            if isinstance(item, TemperatureAnomalyItem):
+                results.append(item)
 
     _cache_set(cache_key, results)
     return results

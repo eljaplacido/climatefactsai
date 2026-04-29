@@ -68,6 +68,17 @@ class ProductionReadinessFakeDB:
         if "schema_migrations" in sql_lower and "select" in sql_lower:
             return self.schema_migrations
 
+        # Climate forecasts cache — prevents real external API calls in ForecastService
+        if "from climate_forecasts" in sql_lower:
+            return [{
+                "source_name": "Open-Meteo",
+                "temperature_avg": 8.5,
+                "precipitation_mm": 2.3,
+                "wind_speed_ms": 4.2,
+                "confidence": 0.85,
+                "fetched_at": self.now.isoformat(),
+            }]
+
         if "from articles" in sql_lower or "from articles\n" in sql_lower:
             return self.articles
 
@@ -228,8 +239,14 @@ class TestAgenticAPIEndpointCoverage:
     def setup_client(self):
         from fastapi.testclient import TestClient
         from api.main import app, get_db
+        import shared.database as _shared_db
         app.dependency_overrides[get_db] = override_get_db
+        _orig_pg = _shared_db._postgres_client
+        _shared_db._postgres_client = fake_db
         self.client = TestClient(app)
+        yield
+        _shared_db._postgres_client = _orig_pg
+        app.dependency_overrides.clear()
 
     REQUIRED_ENDPOINT_PATTERNS = [
         ("/api/articles", "GET", "Article listing"),
@@ -241,8 +258,8 @@ class TestAgenticAPIEndpointCoverage:
         ("/api/feed/preferences", "GET", "Feed preferences"),
         ("/api/chat", "POST", "Chat/Q&A"),
         ("/api/deep-search", "POST", "Deep search"),
-        ("/api/translations/list", "GET", "Translations"),
-        ("/api/sources", "GET", "Source listing"),
+        ("/api/translations/languages", "GET", "Translations"),
+        ("/api/v2/sources", "GET", "Source listing"),
         ("/api/forecasts", "GET", "Forecasts"),
     ]
 
@@ -320,8 +337,14 @@ class TestVisualizationEndpoints:
     def setup_client(self):
         from fastapi.testclient import TestClient
         from api.main import app, get_db
+        import shared.database as _shared_db
         app.dependency_overrides[get_db] = override_get_db
+        _orig_pg = _shared_db._postgres_client
+        _shared_db._postgres_client = fake_db
         self.client = TestClient(app)
+        yield
+        _shared_db._postgres_client = _orig_pg
+        app.dependency_overrides.clear()
 
     def test_map_country_stats_returns_structured_data(self):
         resp = self.client.get("/api/map/country-stats")
@@ -352,8 +375,14 @@ class TestClimateResearcherJourney:
     def setup_client(self):
         from fastapi.testclient import TestClient
         from api.main import app, get_db
+        import shared.database as _shared_db
         app.dependency_overrides[get_db] = override_get_db
+        _orig_pg = _shared_db._postgres_client
+        _shared_db._postgres_client = fake_db
         self.client = TestClient(app)
+        yield
+        _shared_db._postgres_client = _orig_pg
+        app.dependency_overrides.clear()
 
     def test_search_with_filters(self):
         resp = self.client.get("/api/search?q=climate&country=FI&credibility=HIGH")
@@ -377,8 +406,14 @@ class TestCasualReaderJourney:
     def setup_client(self):
         from fastapi.testclient import TestClient
         from api.main import app, get_db
+        import shared.database as _shared_db
         app.dependency_overrides[get_db] = override_get_db
+        _orig_pg = _shared_db._postgres_client
+        _shared_db._postgres_client = fake_db
         self.client = TestClient(app)
+        yield
+        _shared_db._postgres_client = _orig_pg
+        app.dependency_overrides.clear()
 
     def test_homepage_articles_load(self):
         resp = self.client.get("/api/articles?limit=10")
@@ -396,8 +431,14 @@ class TestAdminOperatorJourney:
     def setup_client(self):
         from fastapi.testclient import TestClient
         from api.main import app, get_db
+        import shared.database as _shared_db
         app.dependency_overrides[get_db] = override_get_db
+        _orig_pg = _shared_db._postgres_client
+        _shared_db._postgres_client = fake_db
         self.client = TestClient(app)
+        yield
+        _shared_db._postgres_client = _orig_pg
+        app.dependency_overrides.clear()
 
     def test_analytics_endpoint(self):
         resp = self.client.get("/api/analytics/dashboard")

@@ -1146,23 +1146,26 @@ class TestFrontendGlobalCoords:
 
     def test_map_page_has_global_coordinates(self):
         from pathlib import Path
-        map_page = (Path(REPO_ROOT) / "src" / "frontend" / "src" / "app" / "map" / "page.tsx").read_text()
+        # Global country codes live in InteractiveClimateMap.tsx as ISO numeric → alpha2 mappings
+        map_component = (
+            Path(REPO_ROOT) / "src" / "frontend" / "src" / "components" / "map" / "InteractiveClimateMap.tsx"
+        ).read_text()
 
-        # Africa
-        for cc in ["KE", "NG", "ZA", "EG", "GH"]:
-            assert f"{cc}:" in map_page, f"Missing {cc} coordinates in map page"
+        # Africa  (ISO numeric → alpha2 format)
+        for numeric, cc in [("404", "KE"), ("566", "NG"), ("710", "ZA"), ("818", "EG"), ("288", "GH")]:
+            assert f'"{numeric}":"{cc}"' in map_component, f"Missing {cc} country mapping in map component"
 
         # Latin America
-        for cc in ["BR", "AR", "CO", "CL", "MX"]:
-            assert f"{cc}:" in map_page, f"Missing {cc} coordinates in map page"
+        for numeric, cc in [("76", "BR"), ("32", "AR"), ("170", "CO"), ("152", "CL"), ("484", "MX")]:
+            assert f'"{numeric}":"{cc}"' in map_component, f"Missing {cc} country mapping in map component"
 
         # Asia
-        for cc in ["CN", "IN", "JP", "ID", "AU"]:
-            assert f"{cc}:" in map_page, f"Missing {cc} coordinates in map page"
+        for numeric, cc in [("156", "CN"), ("356", "IN"), ("392", "JP"), ("360", "ID"), ("36", "AU")]:
+            assert f'"{numeric}":"{cc}"' in map_component, f"Missing {cc} country mapping in map component"
 
         # Middle East
-        for cc in ["AE", "SA", "IL", "QA"]:
-            assert f"{cc}:" in map_page, f"Missing {cc} coordinates in map page"
+        for numeric, cc in [("784", "AE"), ("682", "SA"), ("376", "IL"), ("634", "QA")]:
+            assert f'"{numeric}":"{cc}"' in map_component, f"Missing {cc} country mapping in map component"
 
     def test_europe_map_component_has_world_atlas(self):
         from pathlib import Path

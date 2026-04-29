@@ -4,28 +4,28 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Globe, Home, Search, Sparkles, BookOpen, User,
-  Languages, MapPin, FileText, Menu, X, BarChart3,
+  Globe, Home, Search, Sparkles, BookOpen,
+  MapPin, FileText, Menu, X, BarChart3,
   Shield, Info, LogOut, LayoutDashboard, Rss, Settings,
-  Crown, LogIn, UserPlus,
+  LogIn, UserPlus, Lightbulb, Loader2, Sun, Moon, Monitor,
 } from "lucide-react";
 import {
   SUPPORTED_LANGUAGES,
-  detectBrowserLanguage,
-  setLanguage,
-  loadTranslations,
+  getFlagEmoji,
   type LanguageCode,
 } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n-context";
 import { useAuth } from "@/lib/auth";
 
 const NAV_ITEMS = [
-  { href: "/", label: "News", icon: Home },
-  { href: "/map", label: "Map", icon: Globe },
-  { href: "/search", label: "Search", icon: Search },
-  { href: "/deep-search", label: "Deep Search", icon: Sparkles },
-  { href: "/analyze", label: "Analyze", icon: FileText },
-  { href: "/research", label: "Research", icon: BookOpen },
-  { href: "/sources", label: "Sources", icon: Shield },
+  { href: "/", labelKey: "nav.news", fallback: "News", icon: Home },
+  { href: "/map", labelKey: "nav.map", fallback: "Map", icon: Globe },
+  { href: "/search", labelKey: "nav.search", fallback: "Search", icon: Search },
+  { href: "/deep-search", labelKey: "nav.deep_search", fallback: "Deep Search", icon: Sparkles },
+  { href: "/analyze", labelKey: "nav.analyze", fallback: "Analyze", icon: FileText },
+  { href: "/research", labelKey: "nav.research", fallback: "Research", icon: BookOpen },
+  { href: "/sources", labelKey: "nav.sources", fallback: "Sources", icon: Shield },
+  { href: "/suggest-source", labelKey: "nav.suggest", fallback: "Suggest", icon: Lightbulb },
 ];
 
 const TIER_COLORS: Record<string, string> = {
@@ -45,17 +45,47 @@ const TIER_LABELS: Record<string, string> = {
 export default function GlobalNav() {
   const pathname = usePathname();
   const [langOpen, setLangOpen] = useState(false);
-  const [currentLang, setCurrentLang] = useState<LanguageCode>("en");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const langRef = useRef<HTMLDivElement>(null);
   const { user, isLoggedIn, loading: authLoading, logout } = useAuth();
+  const { locale, setLocale, t, isTranslating } = useI18n();
+  const [theme, setTheme] = useState<"light" | "dark" | "auto">("light");
 
-  // Close user menu on outside click
+  // Initialize theme from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem("clilens_theme") as "light" | "dark" | "auto" | null;
+    if (saved) {
+      setTheme(saved);
+      applyTheme(saved);
+    }
+  }, []);
+
+  function applyTheme(t: "light" | "dark" | "auto") {
+    const root = document.documentElement;
+    if (t === "dark" || (t === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+  }
+
+  function cycleTheme() {
+    const next = theme === "light" ? "dark" : theme === "dark" ? "auto" : "light";
+    setTheme(next);
+    localStorage.setItem("clilens_theme", next);
+    applyTheme(next);
+  }
+
+  // Close menus on outside click
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
         setUserMenuOpen(false);
+      }
+      if (langRef.current && !langRef.current.contains(e.target as Node)) {
+        setLangOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -67,20 +97,11 @@ export default function GlobalNav() {
   const isStandalone = standalone.some((p) => pathname?.startsWith(p));
 
   useEffect(() => {
-    const detected = detectBrowserLanguage();
-    setCurrentLang(detected);
-    setLanguage(detected);
-    loadTranslations(detected);
-  }, []);
-
-  useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
 
   function handleLangChange(code: LanguageCode) {
-    setCurrentLang(code);
-    setLanguage(code);
-    loadTranslations(code);
+    setLocale(code);
     setLangOpen(false);
   }
 
@@ -107,7 +128,7 @@ export default function GlobalNav() {
 
           {/* Desktop nav */}
           <nav className="hidden lg:flex items-center space-x-0.5">
-            {NAV_ITEMS.map(({ href, label, icon: Icon }) => (
+            {NAV_ITEMS.map(({ href, labelKey, fallback, icon: Icon }) => (
               <Link
                 key={href}
                 href={href}
@@ -118,43 +139,54 @@ export default function GlobalNav() {
                 }`}
               >
                 <Icon className="h-4 w-4" />
-                <span>{label}</span>
+                <span>{t(labelKey) !== labelKey.split(".").pop() ? t(labelKey) : fallback}</span>
               </Link>
             ))}
           </nav>
 
           {/* Right controls */}
           <div className="flex items-center space-x-1">
-            {/* Language selector */}
-            <div className="relative">
+            {/* Theme toggle */}
+            <button
+              onClick={cycleTheme}
+              className="flex items-center px-2 py-1.5 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-md transition-colors"
+              title={`Theme: ${theme}`}
+            >
+              {theme === "light" ? <Sun className="h-4 w-4" /> : theme === "dark" ? <Moon className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
+            </button>
+
+            {/* Language selector with globe icon and flag emoji */}
+            <div className="relative" ref={langRef}>
               <button
                 onClick={() => setLangOpen(!langOpen)}
-                className="flex items-center space-x-1 px-2 py-1.5 text-xs text-gray-500 hover:bg-gray-50 rounded-md transition-colors"
-                aria-label="Select language"
+                className="flex items-center space-x-1.5 px-2 py-1.5 text-xs text-gray-500 hover:bg-gray-50 rounded-md transition-colors"
+                aria-label={t("label.language")}
               >
-                <Languages className="h-3.5 w-3.5" />
-                <span className="uppercase font-semibold">{currentLang}</span>
+                {isTranslating ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Globe className="h-3.5 w-3.5" />
+                )}
+                <span className="uppercase font-semibold">{locale}</span>
               </button>
               {langOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setLangOpen(false)} />
-                  <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-72 overflow-y-auto">
-                    {SUPPORTED_LANGUAGES.map((lang) => (
-                      <button
-                        key={lang.code}
-                        onClick={() => handleLangChange(lang.code)}
-                        className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center justify-between transition-colors ${
-                          currentLang === lang.code
-                            ? "bg-teal-50 text-teal-700 font-medium"
-                            : "text-gray-700"
-                        }`}
-                      >
-                        <span>{lang.name}</span>
-                        <span className="text-[10px] text-gray-400 uppercase">{lang.code}</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
+                <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto py-1">
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <button
+                      key={lang.code}
+                      onClick={() => handleLangChange(lang.code)}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2.5 transition-colors ${
+                        locale === lang.code
+                          ? "bg-teal-50 text-teal-700 font-medium"
+                          : "text-gray-700"
+                      }`}
+                    >
+                      <span className="text-base w-6 text-center">{getFlagEmoji(lang.flag)}</span>
+                      <span className="flex-1">{lang.name}</span>
+                      <span className="text-[10px] text-gray-400 uppercase font-mono">{lang.code}</span>
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
 
@@ -162,7 +194,7 @@ export default function GlobalNav() {
             <Link
               href="/admin/analytics"
               className="hidden md:flex items-center px-2 py-1.5 text-gray-500 hover:bg-gray-50 rounded-md transition-colors"
-              title="Analytics"
+              title={t("nav.analytics")}
             >
               <BarChart3 className="h-4 w-4" />
             </Link>
@@ -171,7 +203,7 @@ export default function GlobalNav() {
             <Link
               href="/about"
               className="hidden md:flex items-center px-2 py-1.5 text-gray-500 hover:bg-gray-50 rounded-md transition-colors"
-              title="About"
+              title={t("nav.about")}
             >
               <Info className="h-4 w-4" />
             </Link>
@@ -200,15 +232,15 @@ export default function GlobalNav() {
                         </div>
                         <Link href="/dashboard" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                           <LayoutDashboard className="h-4 w-4 text-gray-400" />
-                          Dashboard
+                          {t("nav.dashboard")}
                         </Link>
                         <Link href="/feed" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                           <Rss className="h-4 w-4 text-gray-400" />
-                          My Feed
+                          {t("nav.my_feed")}
                         </Link>
                         <Link href="/dashboard/settings" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                           <Settings className="h-4 w-4 text-gray-400" />
-                          Settings
+                          {t("nav.settings")}
                         </Link>
                         <div className="border-t border-gray-100 mt-1 pt-1">
                           <button
@@ -216,7 +248,7 @@ export default function GlobalNav() {
                             className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
                           >
                             <LogOut className="h-4 w-4" />
-                            Sign Out
+                            {t("nav.sign_out")}
                           </button>
                         </div>
                       </div>
@@ -229,14 +261,14 @@ export default function GlobalNav() {
                       className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md transition-colors font-medium"
                     >
                       <LogIn className="h-4 w-4" />
-                      Sign In
+                      {t("nav.sign_in")}
                     </Link>
                     <Link
                       href="/signup"
                       className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-white bg-teal-600 hover:bg-teal-700 rounded-md transition-colors font-medium"
                     >
                       <UserPlus className="h-4 w-4" />
-                      Sign Up
+                      {t("nav.sign_up")}
                     </Link>
                   </div>
                 )}
@@ -257,7 +289,7 @@ export default function GlobalNav() {
         {/* Mobile menu */}
         {mobileOpen && (
           <nav className="lg:hidden border-t border-gray-100 py-2 space-y-0.5 pb-3">
-            {NAV_ITEMS.map(({ href, label, icon: Icon }) => (
+            {NAV_ITEMS.map(({ href, labelKey, fallback, icon: Icon }) => (
               <Link
                 key={href}
                 href={href}
@@ -268,17 +300,17 @@ export default function GlobalNav() {
                 }`}
               >
                 <Icon className="h-5 w-5" />
-                <span>{label}</span>
+                <span>{t(labelKey) !== labelKey.split(".").pop() ? t(labelKey) : fallback}</span>
               </Link>
             ))}
             <div className="border-t border-gray-100 mt-2 pt-2">
               <Link href="/admin/analytics" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
                 <BarChart3 className="h-5 w-5" />
-                <span>Analytics</span>
+                <span>{t("nav.analytics")}</span>
               </Link>
               <Link href="/about" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
                 <Info className="h-5 w-5" />
-                <span>About</span>
+                <span>{t("nav.about")}</span>
               </Link>
             </div>
             {/* Mobile auth section */}
@@ -301,29 +333,29 @@ export default function GlobalNav() {
                     </div>
                     <Link href="/dashboard" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
                       <LayoutDashboard className="h-5 w-5" />
-                      <span>Dashboard</span>
+                      <span>{t("nav.dashboard")}</span>
                     </Link>
                     <Link href="/feed" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
                       <Rss className="h-5 w-5" />
-                      <span>My Feed</span>
+                      <span>{t("nav.my_feed")}</span>
                     </Link>
                     <button
                       onClick={logout}
                       className="w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-red-600 hover:bg-red-50"
                     >
                       <LogOut className="h-5 w-5" />
-                      <span>Sign Out</span>
+                      <span>{t("nav.sign_out")}</span>
                     </button>
                   </>
                 ) : (
                   <>
                     <Link href="/login" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
                       <LogIn className="h-5 w-5" />
-                      <span>Sign In</span>
+                      <span>{t("nav.sign_in")}</span>
                     </Link>
                     <Link href="/signup" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-white bg-teal-600 hover:bg-teal-700 mt-1">
                       <UserPlus className="h-5 w-5" />
-                      <span>Sign Up</span>
+                      <span>{t("nav.sign_up")}</span>
                     </Link>
                   </>
                 )}

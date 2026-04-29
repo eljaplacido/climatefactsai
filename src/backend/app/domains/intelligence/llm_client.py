@@ -1,9 +1,10 @@
 """
-Unified LLM client for CliLens.AI — DeepSeek only.
+Unified LLM client for CliLens.AI intelligence services — DeepSeek primary.
 
-All LLM calls go through DeepSeek's OpenAI-compatible API.
-Anthropic/Claude is NOT used. This module provides a single
-interface for all intelligence services.
+All claim extraction, fact-checking, RAG synthesis, and chat responses go
+through DeepSeek's OpenAI-compatible API. Translation (api/main.py) may
+optionally fall back to Anthropic Claude when ANTHROPIC_API_KEY is set,
+but the core intelligence pipeline is DeepSeek-only.
 """
 
 import os

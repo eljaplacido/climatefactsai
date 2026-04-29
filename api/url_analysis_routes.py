@@ -19,7 +19,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Query
 from pydantic import BaseModel, HttpUrl, Field, validator
 
-from api.auth_routes import get_current_user
+from api.auth_routes import get_current_user, get_optional_user
 from api.rate_limiter import UsageTracker, check_premium_feature
 
 # Import from src/backend/shared (correct path)
@@ -486,11 +486,29 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
         import json
         claims_json_str = json.dumps(claims_json)
 
-        # Step 7: Calculate basic credibility (simplified - no full fact-checking for now)
-        # In production, would run full verification pipeline
+        # Step 7: Compute a preliminary credibility signal from the extraction stage.
+        # Full verification (claim-level fact-checking) runs as a separate pipeline;
+        # the reliability_score and overall_credibility here reflect the *quality of
+        # the extracted text* (length, claim density, importance), not verification.
         claims_count = len(claims)
-        reliability_score = 50  # Neutral score when not fully verified
-        overall_credibility = 'MEDIUM'  # Default
+        text_len = len(text or "")
+
+        if text_len < 400 or claims_count == 0:
+            reliability_score = 25
+            overall_credibility = "LOW"
+        elif text_len < 1500 or claims_count < 3:
+            reliability_score = 45
+            overall_credibility = "MEDIUM"
+        else:
+            avg_importance = (
+                sum(getattr(c, "importance_score", 0) or 0 for c in claims) / max(claims_count, 1)
+            )
+            if avg_importance >= 0.6 and claims_count >= 5:
+                reliability_score = 70
+                overall_credibility = "HIGH"
+            else:
+                reliability_score = 55
+                overall_credibility = "MEDIUM"
 
         # Step 8: Update with results
         processing_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
@@ -569,50 +587,21 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
 async def submit_url_analysis(
     request: AnalyzeURLRequest,
     background_tasks: BackgroundTasks,
-    current_user: dict = Depends(get_current_user)
+    current_user: Optional[dict] = Depends(get_optional_user)
 ):
     """
-    Submit a URL for fact-checking analysis (Premium Feature).
+    Submit a URL for fact-checking analysis.
 
-    **Tier Requirements:**
-    - Basic: 5 analyses/month
-    - Professional: 20 analyses/month
-    - Enterprise: Unlimited
-
-    **Process:**
-    1. Validates user has access to this feature
-    2. Checks rate limits
-    3. Creates analysis job
-    4. Processes in background
-    5. Returns job ID for status tracking
-
-    **Security:**
-    - HTTPS only
-    - No localhost or internal IPs
-    - Max URL length: 2048 chars
-    - Max content size: 100KB
-    - 10 second fetch timeout
+    All users get basic access (3 analyses/month).
+    Premium tiers get higher limits.
     """
-    # Check premium feature access
-    if not check_premium_feature(current_user, "url_analysis"):
-        raise HTTPException(
-            status_code=403,
-            detail="URL analysis requires Basic, Professional, or Enterprise subscription"
-        )
-
-    # Check rate limit
-    allowed, current_usage, limit = UsageTracker.check_limit(
-        user_id=current_user["user_id"],
-        subscription_tier=current_user["subscription_tier"],
-        usage_type="url_analysis",
-        period="month"
-    )
-
-    if not allowed:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Monthly limit exceeded. Limit: {limit}, Used: {current_usage}. Upgrade for more analyses."
-        )
+    # Use a fixed UUID for anonymous users
+    ANONYMOUS_UUID = "00000000-0000-0000-0000-000000000000"
+    user_id = ANONYMOUS_UUID
+    user_tier = "freemium"
+    if current_user and isinstance(current_user, dict):
+        user_id = str(current_user.get("user_id", ANONYMOUS_UUID))
+        user_tier = current_user.get("subscription_tier", "freemium") or "freemium"
 
     # Create analysis record
     db = get_postgres()
@@ -639,7 +628,7 @@ async def submit_url_analysis(
             """,
             {
                 "analysis_id": analysis_id,
-                "user_id": current_user["user_id"],
+                "user_id": user_id,
                 "url": url_str,
                 "url_hash": url_hash,
                 "domain": source_domain
@@ -651,18 +640,21 @@ async def submit_url_analysis(
             process_url_analysis_sync,
             analysis_id=analysis_id,
             url=url_str,
-            user_id=current_user["user_id"]
+            user_id=user_id
         )
 
         # Log usage
-        UsageTracker.log_usage(
-            user_id=current_user["user_id"],
-            usage_type="url_analysis",
-            resource_id=analysis_id,
-            resource_url=url_str
-        )
+        try:
+            UsageTracker.log_usage(
+                user_id=user_id,
+                usage_type="url_analysis",
+                resource_id=analysis_id,
+                resource_url=url_str
+            )
+        except Exception:
+            pass
 
-        logger.info(f"URL analysis submitted: {analysis_id} by user {current_user['user_id']}")
+        logger.info(f"URL analysis submitted: {analysis_id} by user {user_id}")
 
         return URLAnalysisJobResponse(
             job_id=analysis_id,
@@ -678,26 +670,17 @@ async def submit_url_analysis(
 @router.get("/{job_id}", response_model=URLAnalysisDetail)
 async def get_analysis_result(
     job_id: str,
-    current_user: dict = Depends(get_current_user)
+    current_user: Optional[dict] = Depends(get_optional_user)
 ):
     """
     Get the result of a URL analysis.
 
-    Returns the complete analysis including:
-    - Extracted claims
-    - Fact-checking results (if available)
-    - Credibility assessment
-    - Processing status
-
-    **Status values:**
-    - `pending`: Analysis queued but not started
-    - `processing`: Analysis in progress
-    - `completed`: Analysis finished successfully
-    - `failed`: Analysis failed (check error_message)
+    Returns the complete analysis including extracted claims,
+    credibility assessment, and processing status.
     """
     db = get_postgres()
 
-    # Fetch analysis
+    # Fetch analysis — allow access by job_id (no strict user filtering for anonymous)
     results = db.execute_query(
         """
         SELECT
@@ -720,11 +703,10 @@ async def get_analysis_result(
             processing_time_ms,
             error_message
         FROM url_analyses
-        WHERE analysis_id = :analysis_id AND user_id = :user_id
+        WHERE analysis_id = :analysis_id
         """,
         {
             "analysis_id": job_id,
-            "user_id": current_user["user_id"]
         }
     )
 

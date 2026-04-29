@@ -18,7 +18,8 @@ logger = get_logger(__name__)
 CARBON_BRIEF_RSS = "https://www.carbonbrief.org/feed/"
 EEA_RSS = "https://www.eea.europa.eu/api/rss"
 
-# Global climate news feeds — 9 international sources
+# Global climate news feeds — international sources used as a fallback when the
+# rss_feed_registry table is empty or unreachable.
 GLOBAL_CLIMATE_FEEDS = {
     "Grist": {
         "url": "https://grist.org/feed/",

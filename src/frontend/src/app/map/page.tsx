@@ -124,6 +124,35 @@ export default function MapPage() {
     fetchCountryStats();
   }, [fetchCountryStats]);
 
+  // Fetch layer-specific data when switching to temp anomaly layer
+  useEffect(() => {
+    if (activeLayer !== "temperature_anomaly") return;
+    // Check if we already have anomaly data
+    if (countryStats.some((s) => s.temperature_anomaly != null)) return;
+
+    async function fetchTempAnomalies() {
+      try {
+        const res = await fetch(`${API_BASE}/api/map/layers/temperature-anomaly`);
+        if (!res.ok) return;
+        const data: { country_code: string; anomaly_celsius: number | null; current_temp: number | null }[] =
+          await res.json();
+        if (!data.length) return;
+        const anomalyMap = Object.fromEntries(
+          data.map((d) => [d.country_code, d.anomaly_celsius])
+        );
+        setCountryStats((prev) =>
+          prev.map((s) => ({
+            ...s,
+            temperature_anomaly: anomalyMap[s.country_code] ?? s.temperature_anomaly,
+          }))
+        );
+      } catch {
+        // silently fail
+      }
+    }
+    fetchTempAnomalies();
+  }, [activeLayer, countryStats]);
+
   // Handlers
   function handleCountryClick(cc: string) {
     setSelectedCountry(cc === selectedCountry ? null : cc);

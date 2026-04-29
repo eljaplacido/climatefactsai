@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime, date
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 # Ensure project root and shared backend package are importable when running locally
@@ -339,7 +340,88 @@ app.include_router(chat_router)
 from api.saved_query_routes import router as saved_query_router
 app.include_router(saved_query_router)
 
-logger.info("Loaded Chat and Saved Query routers")
+# Include source suggestion routes (user-submitted source suggestions)
+from api.source_suggestion_routes import router as source_suggestion_router
+app.include_router(source_suggestion_router)
+
+# Include green transition routes (per-country sustainability intelligence)
+from api.green_transition_routes import router as green_transition_router
+app.include_router(green_transition_router)
+
+logger.info("Loaded Chat, Saved Query, and Green Transition routers")
+
+
+# ---------------------------------------------------------------------------
+# Generic text translation endpoint (used by frontend i18n-context)
+# ---------------------------------------------------------------------------
+
+class GenericTranslateRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=10000)
+    target_language: str = Field(..., min_length=2, max_length=5)
+
+@app.post("/api/translate/")
+@app.post("/api/translate")
+async def translate_text_generic(
+    request: GenericTranslateRequest,
+    current_user: Optional[dict] = Depends(get_optional_user),
+):
+    """Translate arbitrary text to a target language using DeepSeek or Anthropic."""
+    target = request.target_language.lower()[:2]
+    if target == "en":
+        return {"translated_text": request.text, "source_language": "en", "target_language": "en"}
+
+    prompt = (
+        f"Translate the following text to {target}. "
+        "Return ONLY the translated text, nothing else.\n\n"
+        f"{request.text}"
+    )
+
+    # Try Anthropic first
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    if anthropic_key:
+        try:
+            import anthropic
+            client = anthropic.Anthropic(api_key=anthropic_key)
+            message = client.messages.create(
+                model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5"),
+                max_tokens=2000,
+                temperature=0.1,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            if message.content:
+                return {
+                    "translated_text": message.content[0].text.strip(),
+                    "source_language": "en",
+                    "target_language": target,
+                }
+        except Exception as e:
+            logger.warning(f"Anthropic translation failed: {e}")
+
+    # Fallback to DeepSeek
+    deepseek_key = os.getenv("DEEPSEEK_API_KEY")
+    if deepseek_key:
+        try:
+            from openai import OpenAI as OpenAIClient
+            client = OpenAIClient(
+                api_key=deepseek_key,
+                base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+            )
+            response = client.chat.completions.create(
+                model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=2000,
+                temperature=0.1,
+            )
+            return {
+                "translated_text": response.choices[0].message.content.strip(),
+                "source_language": "en",
+                "target_language": target,
+            }
+        except Exception as e:
+            logger.warning(f"DeepSeek translation failed: {e}")
+
+    raise HTTPException(status_code=503, detail="Translation service unavailable")
+
 
 # Basic health check
 @app.get("/healthz")

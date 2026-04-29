@@ -60,26 +60,25 @@ class TestClaimExtractionPipeline:
 
     def test_extract_claims_returns_structured_output(self, mock_anthropic_response):
         """ClaimExtractor should return list of AtomicClaim objects."""
-        with patch("anthropic.Anthropic") as mock_anthropic:
-            mock_client = MagicMock()
-            mock_client.messages.create.return_value = mock_anthropic_response
-            mock_anthropic.return_value = mock_client
+        mock_json = (
+            '[{"claim_text": "Finland temperature rose 2.3C", "claim_type": "factual",'
+            ' "claim_category": "statistical", "importance_score": 0.9,'
+            ' "claim_context": "Average temperature increase"}]'
+        )
+        with patch("app.domains.intelligence.services._deepseek_chat", return_value=mock_json):
+            from app.domains.intelligence.services import ClaimExtractor
+            extractor = ClaimExtractor()
 
-            with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}):
-                from app.domains.intelligence.services import ClaimExtractor
-                extractor = ClaimExtractor()
-                extractor.client = mock_client
+            claims = asyncio.run(extractor.decompose_claims(
+                "Finland temperature rose 2.3C since pre-industrial times. "
+                "The government committed to carbon neutrality by 2035. "
+                "Arctic amplification is accelerating warming in the region."
+            ))
 
-                claims = asyncio.run(extractor.decompose_claims(
-                    "Finland temperature rose 2.3C since pre-industrial times. "
-                    "The government committed to carbon neutrality by 2035. "
-                    "Arctic amplification is accelerating warming in the region."
-                ))
-
-                assert isinstance(claims, list)
-                assert len(claims) >= 1
-                assert hasattr(claims[0], "claim_text")
-                assert hasattr(claims[0], "claim_category")
+            assert isinstance(claims, list)
+            assert len(claims) >= 1
+            assert hasattr(claims[0], "claim_text")
+            assert hasattr(claims[0], "claim_category")
 
     def test_extract_claims_handles_short_text(self):
         """Should return empty list for text too short."""

@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request, Header
 from pydantic import BaseModel, Field
 import stripe
 
-from api.auth_routes import get_current_user
+from api.auth_routes import get_current_user, get_optional_user
 from shared.database import get_postgres
 from shared.logger import setup_logging
 
@@ -73,52 +73,66 @@ class PaymentHistoryItem(BaseModel):
 
 @router.get("/current", response_model=SubscriptionInfo)
 async def get_current_subscription(
-    current_user: dict = Depends(get_current_user)
+    current_user: Optional[dict] = Depends(get_optional_user)
 ):
     """
     Get current subscription information.
 
     Returns details about the user's active subscription including
     billing period, status, and Stripe identifiers.
+    Returns a freemium default when no user is authenticated, no
+    subscription row exists, or the subscriptions table has not been created yet.
     """
-    db = get_postgres()
-
-    result = db.execute_query(
-        """
-        SELECT
-            subscription_tier,
-            subscription_status,
-            stripe_customer_id,
-            stripe_subscription_id,
-            subscription_start_date,
-            subscription_end_date,
-            cancel_at_period_end
-        FROM subscriptions
-        WHERE user_id = :user_id
-        ORDER BY created_at DESC
-        LIMIT 1
-        """,
-        params={"user_id": current_user["user_id"]}
+    freemium_default = SubscriptionInfo(
+        tier="freemium",
+        status="active",
+        cancel_at_period_end=False,
     )
 
-    if not result:
-        # User has no subscription (freemium)
-        return SubscriptionInfo(
-            tier="freemium",
-            status="active",
-            cancel_at_period_end=False
+    if not current_user:
+        return freemium_default
+
+    freemium_default.tier = current_user.get("subscription_tier", "freemium") or "freemium"
+    freemium_default.stripe_customer_id = current_user.get("stripe_customer_id")
+
+    try:
+        db = get_postgres()
+
+        result = db.execute_query(
+            """
+            SELECT
+                subscription_tier,
+                subscription_status,
+                stripe_customer_id,
+                stripe_subscription_id,
+                subscription_start_date,
+                subscription_end_date,
+                cancel_at_period_end
+            FROM subscriptions
+            WHERE user_id = :user_id
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            params={"user_id": current_user["user_id"]}
         )
 
-    row = result[0]
-    return SubscriptionInfo(
-        tier=row["subscription_tier"],
-        status=row["subscription_status"],
-        current_period_start=row.get("subscription_start_date"),
-        current_period_end=row.get("subscription_end_date"),
-        cancel_at_period_end=row.get("cancel_at_period_end", False),
-        stripe_customer_id=row.get("stripe_customer_id"),
-        stripe_subscription_id=row.get("stripe_subscription_id")
-    )
+        if not result:
+            return freemium_default
+
+        row = result[0]
+        return SubscriptionInfo(
+            tier=row.get("subscription_tier") or "freemium",
+            status=row.get("subscription_status") or "active",
+            current_period_start=row.get("subscription_start_date"),
+            current_period_end=row.get("subscription_end_date"),
+            cancel_at_period_end=row.get("cancel_at_period_end", False),
+            stripe_customer_id=row.get("stripe_customer_id"),
+            stripe_subscription_id=row.get("stripe_subscription_id")
+        )
+
+    except Exception as e:
+        logger.warning(f"Failed to query subscription for user {current_user.get('user_id')}: {e}")
+        return freemium_default
 
 
 @router.post("/create")
@@ -465,40 +479,50 @@ async def cancel_subscription(
 @router.get("/history", response_model=List[PaymentHistoryItem])
 async def get_payment_history(
     limit: int = 20,
-    current_user: dict = Depends(get_current_user)
+    current_user: Optional[dict] = Depends(get_optional_user)
 ):
     """
     Get payment history for the user.
 
     Returns list of past invoices and payments.
+    Returns an empty list if no user is authenticated, no payment
+    history exists, or the payment_history table has not been created yet.
     """
-    db = get_postgres()
+    if not current_user:
+        return []
 
-    results = db.execute_query(
-        """
-        SELECT
-            id, amount, currency, status,
-            description, invoice_url, created_at
-        FROM payment_history
-        WHERE user_id = :user_id
-        ORDER BY created_at DESC
-        LIMIT :lim
-        """,
-        params={"user_id": current_user["user_id"], "lim": limit}
-    )
+    try:
+        db = get_postgres()
 
-    return [
-        PaymentHistoryItem(
-            id=row["id"],
-            amount=float(row["amount"]) / 100,  # Convert cents to dollars
-            currency=row["currency"],
-            status=row["status"],
-            description=row.get("description", ""),
-            invoice_url=row.get("invoice_url"),
-            created_at=row["created_at"]
+        results = db.execute_query(
+            """
+            SELECT
+                id, amount, currency, status,
+                description, invoice_url, created_at
+            FROM payment_history
+            WHERE user_id = :user_id
+            ORDER BY created_at DESC
+            LIMIT :lim
+            """,
+            params={"user_id": current_user["user_id"], "lim": limit}
         )
-        for row in (results or [])
-    ]
+
+        return [
+            PaymentHistoryItem(
+                id=row["id"],
+                amount=float(row.get("amount", 0)) / 100,  # Convert cents to dollars
+                currency=row.get("currency", "usd"),
+                status=row.get("status", "unknown"),
+                description=row.get("description", ""),
+                invoice_url=row.get("invoice_url"),
+                created_at=row["created_at"]
+            )
+            for row in (results or [])
+        ]
+
+    except Exception as e:
+        logger.warning(f"Failed to query payment history for user {current_user.get('user_id')}: {e}")
+        return []
 
 
 # =============================================================================

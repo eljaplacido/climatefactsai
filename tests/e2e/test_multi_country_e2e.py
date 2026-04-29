@@ -93,7 +93,7 @@ class TestMultiCountryDispatch:
 
             result = scheduled_multi_country_ingestion.apply().get(timeout=10)
 
-            assert result["countries_dispatched"] == 10
+            assert result["countries_dispatched"] == 20
 
     def test_country_specific_max_articles(self):
         """Each country dispatch should respect MAX_ARTICLES_PER_COUNTRY."""

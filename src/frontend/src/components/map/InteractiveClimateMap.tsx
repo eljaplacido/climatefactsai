@@ -206,13 +206,19 @@ export default function InteractiveClimateMap({
           world.objects.countries
         ) as unknown as GeoJSON.FeatureCollection;
 
-        // Attach alpha-2 country code as property
-        for (const feat of countries.features) {
+        // Countries that wrap around the antimeridian (180 longitude) cause
+        // rendering artefacts — they render as lines spanning the whole map.
+        // Antarctica is also excluded since it adds no editorial value.
+        const SKIP_COUNTRIES = new Set(["RU", "FJ", "AQ"]);
+
+        // Attach alpha-2 country code as property and filter problematic entries
+        countries.features = countries.features.filter((feat) => {
           const cc = resolveCC(String((feat as any).id ?? ""));
           feat.properties = feat.properties || {};
           feat.properties.cc = cc;
           feat.properties.name = feat.properties.name || cc;
-        }
+          return !SKIP_COUNTRIES.has(cc);
+        });
 
         if (!cancelled) {
           setGeoData(countries);

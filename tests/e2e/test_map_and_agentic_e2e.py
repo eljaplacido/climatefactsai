@@ -240,12 +240,24 @@ def map_client():
 
     app.dependency_overrides[get_db] = override_db
 
-    # Map routes use get_postgres() directly, so patch it too
-    with patch("api.map_routes.get_postgres", return_value=db):
-        with TestClient(app) as c:
-            yield c
+    # Patch the global postgres singleton so ALL modules get the mock.
+    import shared.database as _shared_db
+    _orig_pg = _shared_db._postgres_client
+    _shared_db._postgres_client = db
 
-    app.dependency_overrides.clear()
+    # Mock LLM client so _llm_parse_query / _llm_generate_map_answer return instantly.
+    from unittest.mock import MagicMock, patch
+    llm_mock = MagicMock()
+    llm_mock.chat.completions.create.return_value = MagicMock(
+        choices=[MagicMock(message=MagicMock(content="{}"))]
+    )
+    try:
+        with patch("app.domains.intelligence.llm_client.get_llm_client", return_value=(llm_mock, "test-model")):
+            with TestClient(app) as c:
+                yield c
+    finally:
+        _shared_db._postgres_client = _orig_pg
+        app.dependency_overrides.clear()
 
 
 # ============================================================================

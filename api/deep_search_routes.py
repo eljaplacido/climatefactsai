@@ -108,31 +108,23 @@ class ArticleWeatherContext(BaseModel):
 @router.post("/", response_model=DeepSearchResponse)
 async def deep_search(
     request: DeepSearchRequest,
-    current_user: Any = Depends(get_current_user),
+    current_user: Any = Depends(get_optional_user),
 ):
     """
     Perform a deep research search combining internal corpus + external sources.
 
-    Requires Professional or Enterprise subscription.
     Uses Perplexity AI for external search and pgvector for internal corpus.
     Synthesizes a unified answer with citations and credibility indicators.
+    All users get basic access; premium tiers get higher limits.
     """
-    user_tier = (
-        current_user.get("subscription_tier")
-        if isinstance(current_user, dict)
-        else getattr(current_user, "subscription_tier", "freemium")
-    )
-    user_id = (
-        current_user.get("user_id")
-        if isinstance(current_user, dict)
-        else getattr(current_user, "user_id", None)
-    )
-
-    if not check_premium_feature(user_tier, "deep_search"):
-        raise HTTPException(
-            status_code=403,
-            detail="Deep search requires Professional or Enterprise subscription."
-        )
+    user_tier = "freemium"
+    user_id = None
+    if current_user and isinstance(current_user, dict):
+        user_tier = current_user.get("subscription_tier", "freemium") or "freemium"
+        user_id = current_user.get("user_id")
+    elif current_user:
+        user_tier = getattr(current_user, "subscription_tier", "freemium") or "freemium"
+        user_id = getattr(current_user, "user_id", None)
 
     # Check discovery query quota
     if user_id:
@@ -189,30 +181,22 @@ async def deep_search(
 @router.post("/compare", response_model=CompareResponse)
 async def compare_topics(
     request: CompareRequest,
-    current_user: Any = Depends(get_current_user),
+    current_user: Any = Depends(get_optional_user),
 ):
     """
     Compare two climate topics side by side.
 
     Performs deep search on both topics and generates a comparative analysis.
-    Requires Professional or Enterprise subscription. Counts as 2 discovery queries.
+    All users get basic access; premium tiers get higher limits.
     """
-    user_tier = (
-        current_user.get("subscription_tier")
-        if isinstance(current_user, dict)
-        else getattr(current_user, "subscription_tier", "freemium")
-    )
-    user_id = (
-        current_user.get("user_id")
-        if isinstance(current_user, dict)
-        else getattr(current_user, "user_id", None)
-    )
-
-    if not check_premium_feature(user_tier, "deep_search"):
-        raise HTTPException(
-            status_code=403,
-            detail="Comparative analysis requires Professional or Enterprise subscription."
-        )
+    user_tier = "freemium"
+    user_id = None
+    if current_user and isinstance(current_user, dict):
+        user_tier = current_user.get("subscription_tier", "freemium") or "freemium"
+        user_id = current_user.get("user_id")
+    elif current_user:
+        user_tier = getattr(current_user, "subscription_tier", "freemium") or "freemium"
+        user_id = getattr(current_user, "user_id", None)
 
     db = get_postgres()
 
@@ -228,8 +212,11 @@ async def compare_topics(
 
         # Log usage (counts as 2 queries)
         if user_id:
-            UsageTracker.log_usage(str(user_id), "discovery_query", resource_url=f"compare:{request.query_a[:50]}")
-            UsageTracker.log_usage(str(user_id), "discovery_query", resource_url=f"compare:{request.query_b[:50]}")
+            try:
+                UsageTracker.log_usage(str(user_id), "discovery_query", resource_url=f"compare:{request.query_a[:50]}")
+                UsageTracker.log_usage(str(user_id), "discovery_query", resource_url=f"compare:{request.query_b[:50]}")
+            except Exception as usage_err:
+                logger.warning(f"Usage tracking failed for compare: {usage_err}")
 
         return CompareResponse(**result)
 

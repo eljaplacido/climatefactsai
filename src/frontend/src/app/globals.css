@@ -8,6 +8,12 @@
   --background-end-rgb: 255, 255, 255;
 }
 
+.dark {
+  --foreground-rgb: 226, 232, 240;
+  --background-start-rgb: 15, 23, 42;
+  --background-end-rgb: 30, 41, 59;
+}
+
 body {
   color: rgb(var(--foreground-rgb));
   background: linear-gradient(
@@ -17,6 +23,19 @@ body {
     )
     rgb(var(--background-start-rgb));
 }
+
+/* Dark mode overrides for common elements */
+.dark body { background-color: rgb(15, 23, 42); color: rgb(226, 232, 240); }
+.dark .bg-white { background-color: rgb(30, 41, 59) !important; }
+.dark .bg-gray-50 { background-color: rgb(15, 23, 42) !important; }
+.dark .text-gray-900 { color: rgb(241, 245, 249) !important; }
+.dark .text-gray-700 { color: rgb(203, 213, 225) !important; }
+.dark .text-gray-600 { color: rgb(148, 163, 184) !important; }
+.dark .text-gray-500 { color: rgb(100, 116, 139) !important; }
+.dark .border-gray-200 { border-color: rgb(51, 65, 85) !important; }
+.dark .border-gray-100 { border-color: rgb(30, 41, 59) !important; }
+.dark header.bg-white { background-color: rgb(30, 41, 59) !important; border-color: rgb(51, 65, 85) !important; }
+.dark .shadow-sm { box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.2) !important; }
 
 /* Smooth transitions for interactive elements */
 @layer utilities {

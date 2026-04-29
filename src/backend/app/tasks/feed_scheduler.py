@@ -5,7 +5,7 @@ Celery task that queries user_feed_preferences, respects tier-based
 frequency limits, and dispatches per-country discovery tasks.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from app.core.celery_app import app
@@ -60,7 +60,7 @@ def get_pending_feed_updates(tier_frequency: Optional[str] = None) -> list[dict]
     rows = db.execute_query(query) or []
 
     pending = []
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     for row in rows:
         freq = row.get("update_frequency", "daily")
@@ -77,6 +77,9 @@ def get_pending_feed_updates(tier_frequency: Optional[str] = None) -> list[dict]
         if last_updated:
             if isinstance(last_updated, str):
                 last_updated = datetime.fromisoformat(last_updated)
+            # Ensure both datetimes are timezone-aware for comparison
+            if last_updated.tzinfo is None:
+                last_updated = last_updated.replace(tzinfo=timezone.utc)
             if now - last_updated < timedelta(hours=interval_hours):
                 continue  # Not yet due
 

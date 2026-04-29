@@ -5,8 +5,8 @@ Provides Celery settings and configuration for the modular monolith.
 Replaces Kafka message queuing with Redis/Celery task queue.
 """
 
-from typing import Dict, Any
-from pydantic_settings import BaseSettings
+from typing import Dict, Any, List
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
 
@@ -15,126 +15,88 @@ class CelerySettings(BaseSettings):
 
     This configuration replaces the Kafka-based message queue with Redis/Celery
     for asynchronous task processing in the modular monolith architecture.
+
+    Environment variables are read with the ``CELERY_`` prefix, so the field
+    ``broker_url`` maps to the env var ``CELERY_BROKER_URL``.
     """
+
+    model_config = SettingsConfigDict(
+        env_prefix="CELERY_",
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
     # Broker and backend
     broker_url: str = Field(
         default="redis://localhost:6379/0",
-        env="CELERY_BROKER_URL",
-        description="Redis URL for Celery message broker"
+        description="Redis URL for Celery message broker",
     )
     result_backend: str = Field(
         default="redis://localhost:6379/1",
-        env="CELERY_RESULT_BACKEND",
-        description="Redis URL for Celery result storage"
+        description="Redis URL for Celery result storage",
     )
 
     # Serialization
-    task_serializer: str = Field(
-        default="json",
-        env="CELERY_TASK_SERIALIZER"
-    )
-    result_serializer: str = Field(
-        default="json",
-        env="CELERY_RESULT_SERIALIZER"
-    )
-    accept_content: list[str] = Field(
-        default=["json"],
-        env="CELERY_ACCEPT_CONTENT"
-    )
+    task_serializer: str = Field(default="json")
+    result_serializer: str = Field(default="json")
+    accept_content: List[str] = Field(default=["json"])
 
     # Timezone
-    timezone: str = Field(default="UTC", env="CELERY_TIMEZONE")
-    enable_utc: bool = Field(default=True, env="CELERY_ENABLE_UTC")
+    timezone: str = Field(default="UTC")
+    enable_utc: bool = Field(default=True)
 
     # Worker settings
     worker_concurrency: int = Field(
         default=4,
-        env="CELERY_WORKER_CONCURRENCY",
-        description="Number of concurrent worker processes"
+        description="Number of concurrent worker processes",
     )
     worker_prefetch_multiplier: int = Field(
         default=4,
-        env="CELERY_WORKER_PREFETCH_MULTIPLIER",
-        description="Number of tasks to prefetch per worker"
+        description="Number of tasks to prefetch per worker",
     )
     worker_max_tasks_per_child: int = Field(
         default=1000,
-        env="CELERY_WORKER_MAX_TASKS_PER_CHILD",
-        description="Max tasks before worker restarts (memory leak prevention)"
+        description="Max tasks before worker restarts (memory leak prevention)",
     )
 
     # Task execution
     task_acks_late: bool = Field(
         default=True,
-        env="CELERY_TASK_ACKS_LATE",
-        description="Acknowledge task after execution (not on receipt)"
+        description="Acknowledge task after execution (not on receipt)",
     )
     task_reject_on_worker_lost: bool = Field(
         default=True,
-        env="CELERY_TASK_REJECT_ON_WORKER_LOST",
-        description="Requeue task if worker crashes"
+        description="Requeue task if worker crashes",
     )
     task_time_limit: int = Field(
         default=3600,
-        env="CELERY_TASK_TIME_LIMIT",
-        description="Hard time limit in seconds (1 hour)"
+        description="Hard time limit in seconds (1 hour)",
     )
     task_soft_time_limit: int = Field(
         default=3300,
-        env="CELERY_TASK_SOFT_TIME_LIMIT",
-        description="Soft time limit in seconds (55 minutes)"
+        description="Soft time limit in seconds (55 minutes)",
     )
     task_default_rate_limit: str = Field(
         default="100/m",
-        env="CELERY_TASK_DEFAULT_RATE_LIMIT",
-        description="Default rate limit (100 tasks per minute)"
+        description="Default rate limit (100 tasks per minute)",
     )
 
     # Queue names
-    queue_ingestion: str = Field(
-        default="ingestion_queue",
-        env="CELERY_QUEUE_INGESTION"
-    )
-    queue_processing: str = Field(
-        default="processing_queue",
-        env="CELERY_QUEUE_PROCESSING"
-    )
-    queue_video: str = Field(
-        default="video_queue",
-        env="CELERY_QUEUE_VIDEO"
-    )
-    queue_publication: str = Field(
-        default="publication_queue",
-        env="CELERY_QUEUE_PUBLICATION"
-    )
-    queue_priority: str = Field(
-        default="priority_queue",
-        env="CELERY_QUEUE_PRIORITY"
-    )
-    queue_scheduled_ingestion: str = Field(
-        default="scheduled_ingestion_queue",
-        env="CELERY_QUEUE_SCHEDULED_INGESTION"
-    )
+    queue_ingestion: str = Field(default="ingestion_queue")
+    queue_processing: str = Field(default="processing_queue")
+    queue_video: str = Field(default="video_queue")
+    queue_publication: str = Field(default="publication_queue")
+    queue_priority: str = Field(default="priority_queue")
+    queue_scheduled_ingestion: str = Field(default="scheduled_ingestion_queue")
 
     # Monitoring
     send_task_events: bool = Field(
         default=True,
-        description="Send task events for monitoring (Flower, etc.)"
+        description="Send task events for monitoring (Flower, etc.)",
     )
-    send_task_sent_event: bool = Field(
-        default=True,
-        description="Send task-sent events"
-    )
-    track_started: bool = Field(
-        default=True,
-        description="Track when tasks start"
-    )
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-        extra = "ignore"  # Allow extra env vars without validation errors
+    send_task_sent_event: bool = Field(default=True, description="Send task-sent events")
+    track_started: bool = Field(default=True, description="Track when tasks start")
 
 
 def get_celery_config() -> Dict[str, Any]:

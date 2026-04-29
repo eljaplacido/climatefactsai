@@ -61,13 +61,28 @@ interface FeedPreferences {
   country_codes: string[]
   update_frequency: string
   keywords: string[]
+  source_types: string[]
   last_updated_at: string | null
 }
+
+const SOURCE_TYPES = [
+  { id: 'climate_news', label: 'Climate News', desc: 'Breaking climate stories from major outlets' },
+  { id: 'weather_anomalies', label: 'Weather Anomalies', desc: 'Extreme weather events and forecasts' },
+  { id: 'research_releases', label: 'Research & Science', desc: 'Academic papers and scientific reports' },
+  { id: 'industrial_reports', label: 'Industry & ESG', desc: 'Corporate sustainability and ESG reports' },
+  { id: 'policy_updates', label: 'Policy & Regulation', desc: 'Government climate policies and legislation' },
+  { id: 'green_transition', label: 'Green Transition', desc: 'Renewable energy, cleantech, circular economy' },
+  { id: 'sustainability_data', label: 'Sustainability Data', desc: 'Environmental metrics and indicators' },
+  { id: 'ngo_reports', label: 'NGO & Think Tanks', desc: 'Reports from environmental organizations' },
+]
 
 export default function FeedPage() {
   const [preferences, setPreferences] = useState<FeedPreferences | null>(null)
   const [feedStatus, setFeedStatus] = useState<FeedStatus[]>([])
   const [selectedCountries, setSelectedCountries] = useState<string[]>([])
+  const [selectedSourceTypes, setSelectedSourceTypes] = useState<string[]>(
+    ['climate_news', 'weather_anomalies', 'research_releases']
+  )
   const [keywords, setKeywords] = useState('')
   const [updateFrequency, setUpdateFrequency] = useState('daily')
   const [loading, setLoading] = useState(true)
@@ -93,6 +108,7 @@ export default function FeedPage() {
         setSelectedCountries(data.country_codes || [])
         setKeywords((data.keywords || []).join(', '))
         if (data.update_frequency) setUpdateFrequency(data.update_frequency)
+        if (data.source_types?.length) setSelectedSourceTypes(data.source_types)
       }
     } catch (e) {
       console.error('Failed to fetch preferences', e)
@@ -132,7 +148,7 @@ export default function FeedPage() {
       const res = await fetch(`${API_URL}/api/feed/preferences`, {
         method: 'PUT',
         headers,
-        body: JSON.stringify({ country_codes: selectedCountries, keywords: kw, update_frequency: updateFrequency }),
+        body: JSON.stringify({ country_codes: selectedCountries, keywords: kw, update_frequency: updateFrequency, source_types: selectedSourceTypes }),
       })
       if (res.ok) {
         const data = await res.json()
@@ -257,6 +273,42 @@ export default function FeedPage() {
           className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clilens-primary"
         />
         <p className="mt-1 text-xs text-gray-400">Comma-separated keywords to filter articles</p>
+      </section>
+
+      {/* Source Types */}
+      <section className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+          <Globe className="h-5 w-5 text-clilens-primary" />
+          Source Types
+        </h2>
+        <p className="text-sm text-gray-500 mb-3">
+          Choose what kinds of climate intelligence you want in your feed.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {SOURCE_TYPES.map((st) => {
+            const isSelected = selectedSourceTypes.includes(st.id)
+            return (
+              <button
+                key={st.id}
+                onClick={() =>
+                  setSelectedSourceTypes((prev) =>
+                    isSelected ? prev.filter((t) => t !== st.id) : [...prev, st.id]
+                  )
+                }
+                className={`flex flex-col items-start px-3 py-2.5 rounded-lg border text-left transition-all ${
+                  isSelected
+                    ? 'border-clilens-primary bg-teal-50 ring-1 ring-clilens-primary'
+                    : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+              >
+                <span className={`text-sm font-medium ${isSelected ? 'text-clilens-primary' : 'text-gray-700'}`}>
+                  {st.label}
+                </span>
+                <span className="text-xs text-gray-400 mt-0.5">{st.desc}</span>
+              </button>
+            )
+          })}
+        </div>
       </section>
 
       {/* Update Frequency */}

@@ -183,9 +183,12 @@ async def ask_general_question(
         except Exception as e:
             logger.warning(f"Cynefin classification failed: {e}")
 
+    # Resolve live platform metrics so the system prompt stays accurate
+    platform_metrics = _get_platform_metrics(db)
+
     # Generate answer
     answer_data = await _generate_answer(
-        request.question, context_text, sources, history
+        request.question, context_text, sources, history, platform_metrics
     )
 
     # Store message
@@ -387,7 +390,27 @@ def _search_relevant_articles(
     )
 
     if not rows:
-        # Fallback: recent articles if no full-text match
+        # Fallback 2: ILIKE keyword search
+        keywords = [w.strip() for w in question.split() if len(w.strip()) > 2][:4]
+        if keywords:
+            ilike_parts = " OR ".join(
+                f"LOWER(a.title) LIKE :kw{i} OR LOWER(a.excerpt) LIKE :kw{i}"
+                for i in range(len(keywords))
+            )
+            ilike_params: dict = {"limit": 10}
+            for i, kw in enumerate(keywords):
+                ilike_params[f"kw{i}"] = f"%{kw.lower()}%"
+            rows = db.execute_query(
+                f"""SELECT a.article_id, a.title, a.source_name, a.overall_credibility,
+                           0.15 AS relevance
+                    FROM articles a
+                    WHERE ({ilike_parts})
+                    ORDER BY a.published_date DESC NULLS LAST LIMIT :limit""",
+                ilike_params,
+            )
+
+    if not rows:
+        # Fallback 3: recent articles
         rows = db.execute_query(
             f"""SELECT a.article_id, a.title, a.source_name, a.overall_credibility,
                        0.1 AS relevance
@@ -476,6 +499,44 @@ def _build_multi_article_context(db, sources: List[ChatSource]) -> str:
     return "\n---\n".join(parts)
 
 
+_METRICS_CACHE: dict = {"value": None, "ts": 0.0}
+
+
+def _get_platform_metrics(db) -> dict:
+    """Return live country/source counts (cached for 10 minutes)."""
+    import time as _time
+
+    now = _time.time()
+    cached = _METRICS_CACHE.get("value")
+    if cached and (now - _METRICS_CACHE.get("ts", 0)) < 600:
+        return cached
+
+    metrics = {"country_count": 0, "source_count": 0}
+    try:
+        country_rows = db.execute_query(
+            "SELECT COUNT(DISTINCT country_code) AS c FROM articles "
+            "WHERE country_code IS NOT NULL AND country_code <> ''"
+        )
+        if country_rows:
+            metrics["country_count"] = int(country_rows[0].get("c") or 0)
+    except Exception:
+        pass
+
+    try:
+        source_rows = db.execute_query(
+            "SELECT COUNT(DISTINCT source_name) AS c FROM articles "
+            "WHERE source_name IS NOT NULL AND source_name <> ''"
+        )
+        if source_rows:
+            metrics["source_count"] = int(source_rows[0].get("c") or 0)
+    except Exception:
+        pass
+
+    _METRICS_CACHE["value"] = metrics
+    _METRICS_CACHE["ts"] = now
+    return metrics
+
+
 def _get_session_history(db, session_id: str, limit: int = 5) -> List[dict]:
     """Get recent messages from a session for multi-turn context."""
     try:
@@ -491,7 +552,8 @@ def _get_session_history(db, session_id: str, limit: int = 5) -> List[dict]:
 
 
 async def _generate_answer(
-    question: str, context: str, sources: List[ChatSource], history: List[dict]
+    question: str, context: str, sources: List[ChatSource], history: List[dict],
+    platform_metrics: Optional[dict] = None,
 ) -> dict:
     """Generate an answer using the LLM with article context."""
     try:
@@ -516,21 +578,59 @@ async def _generate_answer(
             if turns:
                 history_text = "\nCONVERSATION HISTORY:\n" + "\n".join(turns) + "\n---\n"
 
-        system_prompt = (
-            "You are CliLens.AI's climate intelligence assistant. You answer questions "
-            "about climate news using ONLY the article data provided below. Cite specific "
-            "articles and their credibility ratings. If articles have verified claims, "
-            "reference them. If no relevant information is found, say so honestly. "
-            "For failed analyses, explain what happened. Be concise and use markdown."
+        metrics = platform_metrics or {}
+        country_count = metrics.get("country_count") or 0
+        source_count = metrics.get("source_count") or 0
+        country_phrase = (
+            f"{country_count}+ countries" if country_count
+            else "190+ tracked countries"
+        )
+        source_phrase = (
+            f"{source_count} registered sources" if source_count
+            else "a curated set of registered sources"
         )
 
-        user_prompt = f"""RELEVANT ARTICLES:
+        system_prompt = (
+            "You are CliLens.AI's climate intelligence assistant. You help users understand "
+            "climate news, platform features, and analysis results.\n\n"
+            "CAPABILITIES:\n"
+            "- Answer climate questions using article data provided below\n"
+            "- Explain transparency scores, credibility ratings, and verification processes\n"
+            "- Guide users through platform features (Map, Deep Search, Feed, Sources, Analysis)\n"
+            "- Compare countries' climate coverage and risk profiles\n"
+            "- Explain what different metrics mean (confidence intervals, reliability breakdown)\n\n"
+            "PLATFORM FEATURES you can explain:\n"
+            f"- **Climate Map**: Interactive map covering {country_phrase} with layers for "
+            "article density, temperature anomaly, climate risk, and source diversity. Filters by date, "
+            "source, category, region.\n"
+            "- **Deep Search**: AI-powered research combining the internal corpus + Perplexity external sources. "
+            "Compare mode for side-by-side topic analysis. Weather context is auto-injected for climate queries.\n"
+            "- **My Feed**: Personalized feed with source type selection (news, weather, research, "
+            "industry, policy, NGO). Configurable update frequency.\n"
+            "- **Transparency Reports**: Full breakdown of article analysis — methodology, reliability, "
+            "confidence intervals, evidence chains, source profiles.\n"
+            "- **URL Analysis**: Submit any URL for AI fact-checking and claim extraction.\n"
+            f"- **Sources**: {source_phrase} across categories (news, government, research, NGO, weather data, industry). "
+            "Users can suggest new sources via /suggest-source.\n"
+            "- **Green Transition**: Per-country scores across 7 dimensions (renewable energy, cleantech, "
+            "circular economy, resource efficiency, regenerative economy, sustainability, overall transition).\n"
+            "- **Translation**: Interface available in 11+ languages with auto-translation.\n\n"
+            "RESPONSE STYLE: Be concise, use markdown, cite specific articles by name and credibility. "
+            "When explaining features, be practical and give step-by-step guidance."
+        )
+
+        user_prompt = f"""RELEVANT ARTICLES FROM DATABASE:
 {context}
 {history_text}
 USER QUESTION: {question}
 
-Answer based on the articles above. Cite sources by name. If an article's analysis failed,
-explain that the scoring is unavailable and why. Format using markdown."""
+Instructions:
+- If the user asks about articles/news: answer using the article data above, cite sources by name and credibility.
+- If the user asks about platform features: explain clearly with step-by-step guidance.
+- If the user asks for analysis help: explain what the scores mean and how to interpret them.
+- If the user asks to compare countries: use any country data from articles above.
+- If no relevant articles are found, acknowledge this and suggest using Deep Search or adjusting filters.
+- Format using markdown with headers, bullet points, and bold for key terms."""
 
         response = client.chat.completions.create(
             model=model,

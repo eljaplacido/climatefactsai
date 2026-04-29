@@ -9,6 +9,7 @@ import type { Article } from "../types";
 import CredibilityGauge from "./CredibilityGauge";
 import BookmarkButton from "./BookmarkButton";
 import Markdown from "./Markdown";
+import TranslatableText from "./TranslatableText";
 
 interface ArticleCardProps {
   article: Article;
@@ -112,7 +113,7 @@ function ArticleCard({ article }: ArticleCardProps) {
         </div>
 
         <h3 className="text-xl font-bold text-gray-900 mb-3 group-hover:text-clilens-primary transition-colors line-clamp-2">
-          {article.title}
+          <TranslatableText text={article.title} />
         </h3>
 
         {/* Enriched excerpt (full paragraph) or fallback to basic excerpt */}

@@ -35,6 +35,7 @@ os.environ.setdefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 from api.main import app, get_db  # noqa: E402
+from api.auth_routes import get_db as auth_get_db  # noqa: E402
 
 
 # =============================================================================
@@ -408,17 +409,36 @@ def fake_db():
 def client(fake_db):
     """
     Provide a TestClient with the database dependency overridden to use FakeDB.
+
+    Overrides both main.get_db and auth_routes.get_db (used by get_optional_user).
+    Also patches api.map_routes.get_postgres and api.translation_routes.get_postgres
+    for routes that call get_postgres() directly rather than via FastAPI DI.
     """
 
     def override_db():
         yield fake_db
 
     app.dependency_overrides[get_db] = override_db
+    # auth_routes defines its own get_db used by get_optional_user
+    app.dependency_overrides[auth_get_db] = lambda: fake_db
 
-    with TestClient(app) as test_client:
-        yield test_client
+    # Patch the global singleton so ALL modules get the mock when they call get_postgres().
+    # This covers every api/* module that does `from shared.database import get_postgres`
+    # and calls get_postgres() directly (rate_limiter, search_routes, chat_routes, etc.).
+    postgres_mock = MagicMock()
+    postgres_mock.execute_query.return_value = []
+    postgres_mock.execute_update.return_value = None
+    postgres_mock.execute_scalar.return_value = 0
 
-    app.dependency_overrides.clear()
+    import shared.database as _shared_db
+    _orig_pg = _shared_db._postgres_client
+    _shared_db._postgres_client = postgres_mock
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        _shared_db._postgres_client = _orig_pg
+        app.dependency_overrides.clear()
 
 
 # =============================================================================

@@ -330,32 +330,28 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 client_ip = request.client.host if request.client else "unknown"
                 self._check_ip_rate_limit(client_ip, "search", max_per_day=15)
 
-        # For URL analysis
+        # For URL analysis — allow all users with rate limiting
         elif request.url.path.startswith("/api/analyze-url") and request.method == "POST":
-            if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Authentication required for URL analysis"
-                )
-
-            user_id = str(user.get("user_id"))
-            subscription_tier = user.get("subscription_tier", "freemium")
-
-            if subscription_tier == "freemium":
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="URL analysis is not available on the free tier. Upgrade to access this feature."
-                )
-
-            allowed, current, limit = UsageTracker.check_limit(
-                user_id, subscription_tier, "url_analysis", "month"
-            )
-
-            if not allowed:
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"Monthly URL analysis limit exceeded ({current}/{limit}). Upgrade for more analyses."
-                )
+            if user:
+                user_id = str(user.get("user_id"))
+                subscription_tier = user.get("subscription_tier", "freemium")
+                try:
+                    allowed, current, limit = UsageTracker.check_limit(
+                        user_id, subscription_tier, "url_analysis", "month"
+                    )
+                    if not allowed:
+                        raise HTTPException(
+                            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                            detail=f"Monthly URL analysis limit exceeded ({current}/{limit})."
+                        )
+                except HTTPException:
+                    raise
+                except Exception:
+                    pass
+            else:
+                # IP-based rate limiting for unauthenticated users
+                client_ip = request.client.host if request.client else "unknown"
+                self._check_ip_rate_limit(client_ip, "url_analysis", max_per_day=5)
 
         response = await call_next(request)
 

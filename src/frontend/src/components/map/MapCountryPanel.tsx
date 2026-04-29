@@ -113,7 +113,16 @@ export default function MapCountryPanel({
         `${API_BASE}/api/map/country/${countryCode}/detail`
       );
       if (res.ok) {
-        setDetail(await res.json());
+        const data = await res.json();
+        // Normalize potentially null fields to prevent Object.keys crashes
+        if (data) {
+          data.category_breakdown = data.category_breakdown || {};
+          data.sources = data.sources || [];
+          data.article_count = data.article_count ?? 0;
+          data.avg_credibility = data.avg_credibility ?? 0;
+          data.climate_risk_score = data.climate_risk_score ?? 0;
+        }
+        setDetail(data);
       }
     } catch (err) {
       console.error("Failed to fetch country detail:", err);
@@ -207,6 +216,15 @@ export default function MapCountryPanel({
     }
   }
 
+  // Safely access nested detail properties with null guards
+  const categoryBreakdown = detail?.category_breakdown || {};
+  const avgCredibility = detail?.avg_credibility ?? 0;
+  const articleCount = detail?.article_count ?? 0;
+  const climateRiskScore = detail?.climate_risk_score ?? 0;
+  const sources = detail?.sources || [];
+  const weather = detail?.weather;
+  const tempAnomaly = detail?.temperature_anomaly;
+
   return (
     <div className="absolute top-0 right-0 z-[1000] w-96 h-full">
       <div className="h-full bg-slate-800/95 backdrop-blur-sm border-l border-slate-700 shadow-2xl flex flex-col animate-slide-in-right">
@@ -254,8 +272,9 @@ export default function MapCountryPanel({
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
           {detailLoading && activeTab === "overview" ? (
-            <div className="flex items-center justify-center py-16">
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
               <Loader2 className="h-6 w-6 animate-spin text-teal-500" />
+              <p className="text-xs text-slate-400">Loading country data...</p>
             </div>
           ) : (
             <>
@@ -263,7 +282,7 @@ export default function MapCountryPanel({
               {activeTab === "overview" && detail && (
                 <div className="p-4 space-y-4">
                   {/* Weather card */}
-                  {detail.weather && (
+                  {weather && (
                     <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
                       <h4 className="text-xs font-semibold text-slate-300 mb-2 flex items-center gap-1.5">
                         Current Weather
@@ -272,21 +291,21 @@ export default function MapCountryPanel({
                         <div className="text-center">
                           <Thermometer className="h-4 w-4 text-orange-400 mx-auto mb-1" />
                           <p className="text-lg font-bold text-slate-100">
-                            {detail.weather.temperature_c != null
-                              ? `${detail.weather.temperature_c}\u00B0C`
+                            {weather.temperature_c != null
+                              ? `${weather.temperature_c}\u00B0C`
                               : "--"}
                           </p>
                           <span className="text-[10px] text-slate-400">
-                            {detail.weather.weather_code != null
-                              ? WEATHER_CODES[detail.weather.weather_code] || "Unknown"
+                            {weather.weather_code != null
+                              ? WEATHER_CODES[weather.weather_code] || "Unknown"
                               : "Temperature"}
                           </span>
                         </div>
                         <div className="text-center">
                           <Droplets className="h-4 w-4 text-blue-400 mx-auto mb-1" />
                           <p className="text-lg font-bold text-slate-100">
-                            {detail.weather.precipitation_mm != null
-                              ? `${detail.weather.precipitation_mm}mm`
+                            {weather.precipitation_mm != null
+                              ? `${weather.precipitation_mm}mm`
                               : "--"}
                           </p>
                           <span className="text-[10px] text-slate-400">Precipitation</span>
@@ -294,8 +313,8 @@ export default function MapCountryPanel({
                         <div className="text-center">
                           <Wind className="h-4 w-4 text-slate-400 mx-auto mb-1" />
                           <p className="text-lg font-bold text-slate-100">
-                            {detail.weather.wind_speed_kmh != null
-                              ? `${detail.weather.wind_speed_kmh}km/h`
+                            {weather.wind_speed_kmh != null
+                              ? `${weather.wind_speed_kmh}km/h`
                               : "--"}
                           </p>
                           <span className="text-[10px] text-slate-400">Wind</span>
@@ -305,25 +324,25 @@ export default function MapCountryPanel({
                   )}
 
                   {/* Temperature anomaly */}
-                  {detail.temperature_anomaly && (
+                  {tempAnomaly && (
                     <div
                       className={`rounded-lg px-3 py-2 border text-sm ${
-                        detail.temperature_anomaly.is_anomalous
+                        tempAnomaly.is_anomalous
                           ? "bg-amber-500/10 border-amber-500/30 text-amber-300"
                           : "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
                       }`}
                     >
                       <div className="flex items-center gap-1.5">
-                        {detail.temperature_anomaly.is_anomalous && (
+                        {tempAnomaly.is_anomalous && (
                           <AlertTriangle className="h-4 w-4" />
                         )}
                         <span className="font-medium text-sm">
-                          {detail.temperature_anomaly.deviation_c > 0 ? "+" : ""}
-                          {detail.temperature_anomaly.deviation_c}{"\u00B0C"} vs historical
+                          {(tempAnomaly.deviation_c ?? 0) > 0 ? "+" : ""}
+                          {tempAnomaly.deviation_c ?? 0}{"\u00B0C"} vs historical
                         </span>
                       </div>
                       <p className="text-xs mt-0.5 opacity-80">
-                        {detail.temperature_anomaly.description}
+                        {tempAnomaly.description ?? ""}
                       </p>
                     </div>
                   )}
@@ -336,14 +355,14 @@ export default function MapCountryPanel({
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <p className="text-2xl font-bold text-slate-100">
-                          {detail.article_count}
+                          {articleCount}
                         </p>
                         <p className="text-[10px] text-slate-400">Total articles</p>
                       </div>
                       <div>
                         <div className="flex items-center gap-1.5">
                           <p className="text-2xl font-bold text-slate-100">
-                            {detail.avg_credibility.toFixed(0)}
+                            {avgCredibility.toFixed(0)}
                           </p>
                           <span className="text-xs text-slate-400">/100</span>
                         </div>
@@ -356,24 +375,24 @@ export default function MapCountryPanel({
                       <div className="w-full h-2 bg-slate-600 rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full transition-all duration-500 ${
-                            detail.avg_credibility >= 75
+                            avgCredibility >= 75
                               ? "bg-emerald-500"
-                              : detail.avg_credibility >= 50
+                              : avgCredibility >= 50
                               ? "bg-amber-500"
                               : "bg-red-500"
                           }`}
-                          style={{ width: `${detail.avg_credibility}%` }}
+                          style={{ width: `${avgCredibility}%` }}
                         />
                       </div>
                     </div>
 
                     {/* Category breakdown */}
-                    {Object.keys(detail.category_breakdown).length > 0 && (
+                    {Object.keys(categoryBreakdown).length > 0 && (
                       <div className="mt-3 space-y-1.5">
                         <p className="text-[10px] text-slate-400 uppercase tracking-wider">
                           Category breakdown
                         </p>
-                        {Object.entries(detail.category_breakdown)
+                        {Object.entries(categoryBreakdown)
                           .sort(([, a], [, b]) => b - a)
                           .map(([cat, count]) => (
                             <div key={cat} className="flex items-center gap-2">
@@ -384,7 +403,7 @@ export default function MapCountryPanel({
                                 <div
                                   className="h-full bg-teal-500 rounded-full"
                                   style={{
-                                    width: `${(count / detail.article_count) * 100}%`,
+                                    width: `${articleCount > 0 ? (count / articleCount) * 100 : 0}%`,
                                   }}
                                 />
                               </div>
@@ -398,7 +417,7 @@ export default function MapCountryPanel({
                   </div>
 
                   {/* Climate risk score */}
-                  {detail.climate_risk_score > 0 && (
+                  {climateRiskScore > 0 && (
                     <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
                       <h4 className="text-xs font-semibold text-slate-300 mb-2 flex items-center gap-1.5">
                         <Shield className="h-3.5 w-3.5" />
@@ -406,29 +425,29 @@ export default function MapCountryPanel({
                       </h4>
                       <div className="flex items-center gap-3">
                         <p className="text-3xl font-bold text-slate-100">
-                          {detail.climate_risk_score}
+                          {climateRiskScore}
                         </p>
                         <div className="flex-1">
                           <div className="w-full h-3 bg-slate-600 rounded-full overflow-hidden">
                             <div
                               className={`h-full rounded-full transition-all duration-500 ${
-                                detail.climate_risk_score > 75
+                                climateRiskScore > 75
                                   ? "bg-red-500"
-                                  : detail.climate_risk_score > 50
+                                  : climateRiskScore > 50
                                   ? "bg-orange-500"
-                                  : detail.climate_risk_score > 25
+                                  : climateRiskScore > 25
                                   ? "bg-yellow-500"
                                   : "bg-emerald-500"
                               }`}
-                              style={{ width: `${detail.climate_risk_score}%` }}
+                              style={{ width: `${climateRiskScore}%` }}
                             />
                           </div>
                           <p className="text-[10px] text-slate-500 mt-0.5">
-                            {detail.climate_risk_score > 75
+                            {climateRiskScore > 75
                               ? "Very High"
-                              : detail.climate_risk_score > 50
+                              : climateRiskScore > 50
                               ? "High"
-                              : detail.climate_risk_score > 25
+                              : climateRiskScore > 25
                               ? "Moderate"
                               : "Low"}{" "}
                             risk
@@ -522,9 +541,9 @@ export default function MapCountryPanel({
               {/* Sources Tab */}
               {activeTab === "sources" && (
                 <div className="p-4">
-                  {detail?.sources && detail.sources.length > 0 ? (
+                  {sources.length > 0 ? (
                     <div className="space-y-2">
-                      {detail.sources.map((source) => (
+                      {sources.map((source) => (
                         <div
                           key={source.source_name}
                           className="p-3 bg-slate-700/50 rounded-lg border border-slate-600"
@@ -612,7 +631,7 @@ export default function MapCountryPanel({
                             <p>Articles: {compareData.country_a?.article_count ?? "-"}</p>
                             <p>Sources: {compareData.country_a?.source_count ?? "-"}</p>
                             <p>Credibility: {compareData.country_a?.avg_credibility?.toFixed(0) ?? "-"}</p>
-                            <p>Risk: {compareData.country_a?.climate_risk ?? "-"}</p>
+                            <p>Risk: {compareData.country_a?.climate_risk_score?.toFixed(1) ?? "-"}/10</p>
                           </div>
                         </div>
 
@@ -625,18 +644,69 @@ export default function MapCountryPanel({
                             <p>Articles: {compareData.country_b?.article_count ?? "-"}</p>
                             <p>Sources: {compareData.country_b?.source_count ?? "-"}</p>
                             <p>Credibility: {compareData.country_b?.avg_credibility?.toFixed(0) ?? "-"}</p>
-                            <p>Risk: {compareData.country_b?.climate_risk ?? "-"}</p>
+                            <p>Risk: {compareData.country_b?.climate_risk_score?.toFixed(1) ?? "-"}/10</p>
                           </div>
                         </div>
                       </div>
 
-                      {/* Radar chart */}
+                      {/* Green Transition Scorecard */}
+                      {compareData.country_a && compareData.country_b && (
+                        <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
+                          <h4 className="text-xs font-semibold text-slate-300 mb-2.5">
+                            Green Transition Dimensions
+                          </h4>
+                          <div className="space-y-2">
+                            {[
+                              { label: "Green Transition", ka: "green_transition_score" },
+                              { label: "Renewable Energy", ka: "renewable_energy_score" },
+                              { label: "Cleantech", ka: "cleantech_score" },
+                              { label: "Circular Economy", ka: "circular_economy_score" },
+                              { label: "Resource Efficiency", ka: "resource_efficiency_score" },
+                              { label: "Regenerative", ka: "regenerative_score" },
+                              { label: "Sustainability", ka: "sustainability_score" },
+                            ].map(({ label, ka }) => {
+                              const a: number = compareData.country_a[ka] ?? 0;
+                              const b: number = compareData.country_b[ka] ?? 0;
+                              return (
+                                <div key={ka}>
+                                  <p className="text-[10px] text-slate-400 mb-0.5">{label}</p>
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    <div className="flex items-center gap-1">
+                                      <div className="flex-1 h-1.5 bg-slate-600 rounded-full overflow-hidden">
+                                        <div className="h-full bg-teal-500 rounded-full transition-all duration-500" style={{ width: `${a * 10}%` }} />
+                                      </div>
+                                      <span className="text-[9px] text-teal-400 w-5 text-right">{a.toFixed(1)}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <div className="flex-1 h-1.5 bg-slate-600 rounded-full overflow-hidden">
+                                        <div className="h-full bg-violet-500 rounded-full transition-all duration-500" style={{ width: `${b * 10}%` }} />
+                                      </div>
+                                      <span className="text-[9px] text-violet-400 w-5 text-right">{b.toFixed(1)}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="flex justify-between mt-2 pt-2 border-t border-slate-600">
+                            <span className="text-[9px] text-teal-400 flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-teal-500 inline-block" /> {countryCode}
+                            </span>
+                            <span className="text-[9px] text-slate-400">score /10</span>
+                            <span className="text-[9px] text-violet-400 flex items-center gap-1">
+                              {compareCountry} <span className="w-2 h-2 rounded-full bg-violet-500 inline-block" />
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Radar chart — green-transition expanded axes */}
                       {compareData.country_a && compareData.country_b && (
                         <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
                           <h4 className="text-xs font-semibold text-slate-300 mb-2">
                             Comparison Radar
                           </h4>
-                          <ResponsiveContainer width="100%" height={220}>
+                          <ResponsiveContainer width="100%" height={230}>
                             <RadarChart
                               data={[
                                 {
@@ -645,36 +715,46 @@ export default function MapCountryPanel({
                                   b: Math.min(100, (compareData.country_b.article_count / Math.max(compareData.country_a.article_count, compareData.country_b.article_count, 1)) * 100),
                                 },
                                 {
-                                  axis: "Sources",
-                                  a: Math.min(100, (compareData.country_a.source_count / Math.max(compareData.country_a.source_count, compareData.country_b.source_count, 1)) * 100),
-                                  b: Math.min(100, (compareData.country_b.source_count / Math.max(compareData.country_a.source_count, compareData.country_b.source_count, 1)) * 100),
-                                },
-                                {
                                   axis: "Credibility",
                                   a: compareData.country_a.avg_credibility ?? 0,
                                   b: compareData.country_b.avg_credibility ?? 0,
                                 },
                                 {
-                                  axis: "Topics",
-                                  a: compareData.country_a.topic_count ?? 0,
-                                  b: compareData.country_b.topic_count ?? 0,
+                                  axis: "Green Trans.",
+                                  a: (compareData.country_a.green_transition_score ?? 0) * 10,
+                                  b: (compareData.country_b.green_transition_score ?? 0) * 10,
                                 },
                                 {
-                                  axis: "Risk",
-                                  a: compareData.country_a.climate_risk ?? 0,
-                                  b: compareData.country_b.climate_risk ?? 0,
+                                  axis: "Renewable",
+                                  a: (compareData.country_a.renewable_energy_score ?? 0) * 10,
+                                  b: (compareData.country_b.renewable_energy_score ?? 0) * 10,
+                                },
+                                {
+                                  axis: "Circular",
+                                  a: (compareData.country_a.circular_economy_score ?? 0) * 10,
+                                  b: (compareData.country_b.circular_economy_score ?? 0) * 10,
+                                },
+                                {
+                                  axis: "Resource Eff.",
+                                  a: (compareData.country_a.resource_efficiency_score ?? 0) * 10,
+                                  b: (compareData.country_b.resource_efficiency_score ?? 0) * 10,
+                                },
+                                {
+                                  axis: "Climate Risk",
+                                  a: (compareData.country_a.climate_risk_score ?? 0) * 10,
+                                  b: (compareData.country_b.climate_risk_score ?? 0) * 10,
                                 },
                               ]}
                             >
                               <PolarGrid stroke="#475569" />
                               <PolarAngleAxis
                                 dataKey="axis"
-                                tick={{ fill: "#94a3b8", fontSize: 10 }}
+                                tick={{ fill: "#94a3b8", fontSize: 9 }}
                               />
                               <PolarRadiusAxis
                                 angle={30}
                                 domain={[0, 100]}
-                                tick={{ fill: "#64748b", fontSize: 8 }}
+                                tick={{ fill: "#64748b", fontSize: 7 }}
                               />
                               <Radar
                                 name={countryCode}
@@ -693,6 +773,13 @@ export default function MapCountryPanel({
                             </RadarChart>
                           </ResponsiveContainer>
                         </div>
+                      )}
+
+                      {/* Comparison summary */}
+                      {compareData.comparison_summary && (
+                        <p className="text-xs text-slate-400 bg-slate-700/30 rounded-lg p-2.5 border border-slate-600">
+                          {compareData.comparison_summary}
+                        </p>
                       )}
                     </div>
                   )}

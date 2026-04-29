@@ -1,12 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import CountrySelector from "@/components/CountrySelector";
 import type { DeepSearchResult, CompareResult } from "@/types";
-import { Search, GitCompareArrows, Loader2, ExternalLink, BookOpen, Cloud } from "lucide-react";
+import { Search, GitCompareArrows, Loader2, ExternalLink, BookOpen, Cloud, CheckCircle } from "lucide-react";
+import TranslatableText from "@/components/TranslatableText";
 
 type Mode = "search" | "compare";
+
+const SEARCH_STEPS = [
+  { label: "Searching internal article corpus", duration: 3 },
+  { label: "Querying external research sources", duration: 8 },
+  { label: "Fetching weather & climate data", duration: 4 },
+  { label: "Synthesizing answer with AI", duration: 12 },
+];
+
+const COMPARE_STEPS = [
+  { label: "Researching Topic A", duration: 8 },
+  { label: "Researching Topic B", duration: 8 },
+  { label: "Generating comparative analysis", duration: 10 },
+];
 
 export default function DeepSearchPage() {
   const [mode, setMode] = useState<Mode>("search");
@@ -19,6 +33,40 @@ export default function DeepSearchPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchResult, setSearchResult] = useState<DeepSearchResult | null>(null);
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
+  const [activeStep, setActiveStep] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Progress timer
+  useEffect(() => {
+    if (loading) {
+      setActiveStep(0);
+      setElapsedSeconds(0);
+      timerRef.current = setInterval(() => {
+        setElapsedSeconds((s) => s + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [loading]);
+
+  // Advance progress steps based on elapsed time
+  useEffect(() => {
+    if (!loading) return;
+    const steps = mode === "compare" ? COMPARE_STEPS : SEARCH_STEPS;
+    let cumulative = 0;
+    for (let i = 0; i < steps.length; i++) {
+      cumulative += steps[i].duration;
+      if (elapsedSeconds < cumulative) {
+        setActiveStep(i);
+        return;
+      }
+    }
+    setActiveStep(steps.length - 1);
+  }, [elapsedSeconds, loading, mode]);
 
   const handleSearch = async () => {
     if (!query.trim()) return;
@@ -180,13 +228,63 @@ export default function DeepSearchPage() {
         </div>
       )}
 
-      {/* Loading */}
-      {loading && (
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-clilens-teal-600 mx-auto mb-3" />
-          <p className="text-gray-600">Searching across internal corpus and external sources...</p>
-        </div>
-      )}
+      {/* Loading with progress steps */}
+      {loading && (() => {
+        const steps = mode === "compare" ? COMPARE_STEPS : SEARCH_STEPS;
+        const totalEstimate = steps.reduce((s, st) => s + st.duration, 0);
+        const progressPct = Math.min(95, Math.round((elapsedSeconds / totalEstimate) * 100));
+        return (
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="h-5 w-5 animate-spin text-clilens-teal-600" />
+                  <h3 className="text-base font-semibold text-gray-900">
+                    {mode === "compare" ? "Comparing topics..." : "Analyzing your query..."}
+                  </h3>
+                </div>
+                <span className="text-sm text-gray-500">
+                  ~{Math.max(0, totalEstimate - elapsedSeconds)}s remaining
+                </span>
+              </div>
+
+              {/* Progress bar */}
+              <div className="w-full bg-gray-100 rounded-full h-2 mb-5 overflow-hidden">
+                <div
+                  className="h-2 rounded-full bg-gradient-to-r from-clilens-teal-400 to-clilens-teal-600 transition-all duration-1000"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+
+              {/* Steps */}
+              <div className="space-y-2.5">
+                {steps.map((step, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    {i < activeStep ? (
+                      <CheckCircle className="h-4 w-4 text-emerald-500 flex-shrink-0" />
+                    ) : i === activeStep ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-clilens-teal-600 flex-shrink-0" />
+                    ) : (
+                      <div className="h-4 w-4 rounded-full border-2 border-gray-300 flex-shrink-0" />
+                    )}
+                    <span className={`text-sm ${
+                      i < activeStep ? "text-emerald-700 font-medium" :
+                      i === activeStep ? "text-gray-900 font-medium" :
+                      "text-gray-400"
+                    }`}>
+                      {step.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-xs text-gray-400 mt-4">
+                You can navigate to other pages &mdash; results will appear when you return.
+              </p>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Search Results */}
       {searchResult && !loading && (
@@ -195,7 +293,7 @@ export default function DeepSearchPage() {
           <div className="bg-white rounded-lg border p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Research Summary</h2>
             <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">
-              {searchResult.answer}
+              <TranslatableText text={searchResult.answer} as="div" maxLength={5000} />
             </div>
           </div>
 
@@ -266,7 +364,7 @@ export default function DeepSearchPage() {
           <div className="bg-white rounded-lg border p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Comparative Analysis</h2>
             <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">
-              {compareResult.comparative_analysis}
+              <TranslatableText text={compareResult.comparative_analysis} as="div" maxLength={5000} />
             </div>
           </div>
 

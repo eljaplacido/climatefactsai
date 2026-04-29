@@ -37,7 +37,7 @@ class DeepSearchService:
         self.db = db
         self.embedding_service = EmbeddingService(db)
         self.perplexity_key = os.getenv("PERPLEXITY_API_KEY")
-        self.anthropic_key = None  # Anthropic disabled — DeepSeek only
+        self.anthropic_key = os.getenv("ANTHROPIC_API_KEY")
 
     async def search(
         self,
@@ -125,11 +125,34 @@ class DeepSearchService:
         Compare two topics/queries side by side.
 
         Returns results for both queries plus a comparative analysis.
+        If one side fails, partial results are still returned.
         """
-        result_a, result_b = await asyncio.gather(
+        raw_a, raw_b = await asyncio.gather(
             self.search(query_a, country=country, include_weather=True, limit=5),
             self.search(query_b, country=country, include_weather=True, limit=5),
+            return_exceptions=True,
         )
+
+        empty_result = {
+            "query": "",
+            "answer": "Search failed for this topic.",
+            "citations": [],
+            "internal_articles_count": 0,
+            "external_sources_count": 0,
+            "weather_context": None,
+            "filters": {},
+            "searched_at": datetime.utcnow().isoformat(),
+        }
+
+        result_a: Dict[str, Any] = empty_result.copy() if isinstance(raw_a, Exception) else raw_a
+        result_b: Dict[str, Any] = empty_result.copy() if isinstance(raw_b, Exception) else raw_b
+
+        if isinstance(raw_a, Exception):
+            result_a["query"] = query_a
+            logger.warning(f"Compare side A failed: {raw_a}")
+        if isinstance(raw_b, Exception):
+            result_b["query"] = query_b
+            logger.warning(f"Compare side B failed: {raw_b}")
 
         comparative = await self._generate_comparison(
             query_a, query_b, result_a, result_b
@@ -212,36 +235,84 @@ class DeepSearchService:
                 fts_params["country"] = country.upper()
 
             fts_where = " AND ".join(fts_filters) if fts_filters else "TRUE"
-            fts_sql = f"""
-                SELECT a.article_id, a.title, a.source_name, a.country_code,
-                       a.content_category, a.overall_credibility, a.reliability_score,
-                       a.published_date, a.excerpt,
-                       ts_rank(
-                           to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'')),
-                           plainto_tsquery('english', :query)
-                       ) AS text_rank
-                FROM articles a
-                WHERE to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,''))
-                      @@ plainto_tsquery('english', :query)
-                  AND {fts_where}
-                ORDER BY text_rank DESC LIMIT :limit
-            """
-            try:
-                rows = self.db.execute_query(fts_sql, fts_params)
-                for r in (rows or []):
-                    results.append({
-                        "article_id": str(r["article_id"]),
-                        "title": r.get("title", ""),
-                        "source_name": r.get("source_name", ""),
-                        "country_code": r.get("country_code"),
-                        "overall_credibility": r.get("overall_credibility"),
-                        "reliability_score": r.get("reliability_score"),
-                        "published_date": str(r["published_date"]) if r.get("published_date") else None,
-                        "excerpt": r.get("excerpt"),
-                        "relevance_score": round(float(r.get("text_rank", 0)), 4),
-                    })
-            except Exception as e:
-                logger.error(f"FTS fallback search failed: {e}")
+
+            # Try websearch_to_tsquery first (supports OR/phrase), fall back to plainto
+            for tsq_func in ["websearch_to_tsquery", "plainto_tsquery"]:
+                if results:
+                    break
+                fts_sql = f"""
+                    SELECT a.article_id, a.title, a.source_name, a.country_code,
+                           a.content_category, a.overall_credibility, a.reliability_score,
+                           a.published_date, a.excerpt,
+                           ts_rank(
+                               to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'')),
+                               {tsq_func}('english', :query)
+                           ) AS text_rank
+                    FROM articles a
+                    WHERE to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,''))
+                          @@ {tsq_func}('english', :query)
+                      AND {fts_where}
+                    ORDER BY text_rank DESC LIMIT :limit
+                """
+                try:
+                    rows = self.db.execute_query(fts_sql, fts_params)
+                    for r in (rows or []):
+                        results.append({
+                            "article_id": str(r["article_id"]),
+                            "title": r.get("title", ""),
+                            "source_name": r.get("source_name", ""),
+                            "country_code": r.get("country_code"),
+                            "overall_credibility": r.get("overall_credibility"),
+                            "reliability_score": r.get("reliability_score"),
+                            "published_date": str(r["published_date"]) if r.get("published_date") else None,
+                            "excerpt": r.get("excerpt"),
+                            "relevance_score": round(float(r.get("text_rank", 0)), 4),
+                        })
+                except Exception as e:
+                    logger.warning(f"FTS search ({tsq_func}) failed: {e}")
+
+        # Final fallback: ILIKE keyword search if FTS found nothing
+        if not results:
+            # Split query into keywords and search with ILIKE
+            keywords = [w.strip() for w in query.split() if len(w.strip()) > 2][:4]
+            if keywords:
+                ilike_conditions = " OR ".join(
+                    f"LOWER(a.title) LIKE :kw{i} OR LOWER(a.excerpt) LIKE :kw{i}"
+                    for i in range(len(keywords))
+                )
+                ilike_params: Dict[str, Any] = {"limit": limit}
+                for i, kw in enumerate(keywords):
+                    ilike_params[f"kw{i}"] = f"%{kw.lower()}%"
+                if country:
+                    ilike_params["country"] = country.upper()
+
+                country_clause = "AND a.country_code = :country" if country else ""
+                ilike_sql = f"""
+                    SELECT a.article_id, a.title, a.source_name, a.country_code,
+                           a.content_category, a.overall_credibility, a.reliability_score,
+                           a.published_date, a.excerpt,
+                           0.1 AS text_rank
+                    FROM articles a
+                    WHERE ({ilike_conditions}) {country_clause}
+                    ORDER BY a.published_date DESC NULLS LAST
+                    LIMIT :limit
+                """
+                try:
+                    rows = self.db.execute_query(ilike_sql, ilike_params)
+                    for r in (rows or []):
+                        results.append({
+                            "article_id": str(r["article_id"]),
+                            "title": r.get("title", ""),
+                            "source_name": r.get("source_name", ""),
+                            "country_code": r.get("country_code"),
+                            "overall_credibility": r.get("overall_credibility"),
+                            "reliability_score": r.get("reliability_score"),
+                            "published_date": str(r["published_date"]) if r.get("published_date") else None,
+                            "excerpt": r.get("excerpt"),
+                            "relevance_score": 0.1,
+                        })
+                except Exception as e:
+                    logger.warning(f"ILIKE fallback search failed: {e}")
 
         return results
 
@@ -250,6 +321,9 @@ class DeepSearchService:
     ) -> Dict[str, Any]:
         """Search external sources via Perplexity Sonar."""
         if not self.perplexity_key:
+            logger.warning(
+                "PERPLEXITY_API_KEY not configured; deep search will skip external citations."
+            )
             return {"answer": "", "citations": []}
 
         country_context = f" Focus on {country} region." if country else ""
@@ -293,9 +367,15 @@ class DeepSearchService:
     async def _get_weather_context(
         self, query: str, country: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
-        """Get weather context relevant to the query."""
+        """Get weather context relevant to the query.
+
+        Uses the explicitly requested country, or tries to extract a country
+        code from the query text, before falling back to a global context.
+        """
         retriever = OpenMeteoEvidenceRetriever()
-        cc = country or "FI"
+        cc = country or self._extract_country_from_query(query)
+        if not cc:
+            return None
         evidence_list = await retriever.retrieve(query, cc)
 
         if not evidence_list:
@@ -364,9 +444,9 @@ Use markdown formatting. Be factual and concise."""
         if self.anthropic_key:
             try:
                 import anthropic
-                client = anthropic.Anthropic(api_key=self.anthropic_key)
+                client = anthropic.Anthropic(api_key=self.anthropic_key, timeout=15.0)
                 message = client.messages.create(
-                    model="claude-3-5-sonnet-20240620",
+                    model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5"),
                     max_tokens=1500,
                     temperature=0.2,
                     system="You are CliLens.AI's research assistant. Synthesize climate research from multiple sources with emphasis on source credibility and data accuracy.",
@@ -385,6 +465,7 @@ Use markdown formatting. Be factual and concise."""
                 client = OpenAIClient(
                     api_key=deepseek_key,
                     base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+                    timeout=15.0,
                 )
                 response = client.chat.completions.create(
                     model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
@@ -439,9 +520,9 @@ Be concise and factual. Use markdown."""
         if self.anthropic_key:
             try:
                 import anthropic
-                client = anthropic.Anthropic(api_key=self.anthropic_key)
+                client = anthropic.Anthropic(api_key=self.anthropic_key, timeout=15.0)
                 message = client.messages.create(
-                    model="claude-3-5-sonnet-20240620",
+                    model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5"),
                     max_tokens=1000,
                     temperature=0.2,
                     system="You compare climate topics with factual precision.",
@@ -450,9 +531,126 @@ Be concise and factual. Use markdown."""
                 if message.content:
                     return message.content[0].text.strip()
             except Exception as e:
-                logger.warning(f"Comparison synthesis failed: {e}")
+                logger.warning(f"Comparison synthesis (Claude) failed: {e}")
 
-        return f"Comparison between \"{query_a}\" and \"{query_b}\" requires an LLM provider."
+        # Fallback to DeepSeek
+        deepseek_key = os.getenv("DEEPSEEK_API_KEY")
+        if deepseek_key:
+            try:
+                from openai import OpenAI as OpenAIClient
+                client = OpenAIClient(
+                    api_key=deepseek_key,
+                    base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+                    timeout=15.0,
+                )
+                response = client.chat.completions.create(
+                    model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+                    messages=[
+                        {"role": "system", "content": "You compare climate topics with factual precision."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=1000,
+                    temperature=0.2,
+                )
+                return response.choices[0].message.content.strip()
+            except Exception as e:
+                logger.warning(f"Comparison synthesis (DeepSeek) failed: {e}")
+
+        return f"Comparison between \"{query_a}\" and \"{query_b}\" could not be generated. Both individual analyses are available above."
+
+    @staticmethod
+    def _extract_country_from_query(query: str) -> Optional[str]:
+        """Try to extract a 2-letter country code from the query text.
+
+        Handles explicit codes like 'US', 'DE', common country name mentions,
+        and regional terms like 'southern europe' (returns a representative
+        country for weather context).
+        """
+        import re
+
+        query_lower = query.lower()
+
+        # Regional terms -> representative country code for weather context
+        REGION_TO_CODE = {
+            "southern europe": "ES", "south europe": "ES",
+            "northern europe": "SE", "north europe": "SE",
+            "western europe": "FR", "west europe": "FR",
+            "eastern europe": "PL", "east europe": "PL",
+            "central europe": "DE",
+            "mediterranean": "IT",
+            "iberian peninsula": "ES", "iberia": "ES",
+            "scandinavia": "SE", "nordic": "SE", "nordics": "SE",
+            "balkans": "RS", "balkan": "RS",
+            "southeast asia": "TH", "south east asia": "TH",
+            "east asia": "JP", "eastern asia": "JP",
+            "south asia": "IN", "southern asia": "IN",
+            "central asia": "KZ",
+            "middle east": "SA", "mideast": "SA",
+            "north africa": "EG", "northern africa": "EG",
+            "west africa": "NG", "western africa": "NG",
+            "east africa": "KE", "eastern africa": "KE",
+            "southern africa": "ZA", "south africa": "ZA",
+            "central africa": "CD",
+            "sub-saharan africa": "KE", "subsaharan": "KE",
+            "latin america": "BR", "south america": "BR",
+            "central america": "MX",
+            "caribbean": "JM",
+            "oceania": "AU", "pacific islands": "NZ",
+            "arctic": "NO", "antarctic": "AQ",
+        }
+
+        for region, code in REGION_TO_CODE.items():
+            if region in query_lower:
+                return code
+
+        # Common country name -> code mapping
+        NAME_TO_CODE = {
+            "united states": "US", "usa": "US", "america": "US",
+            "united kingdom": "GB", "uk": "GB", "britain": "GB", "england": "GB",
+            "germany": "DE", "france": "FR", "italy": "IT", "spain": "ES",
+            "canada": "CA", "australia": "AU", "japan": "JP", "china": "CN",
+            "india": "IN", "brazil": "BR", "russia": "RU", "mexico": "MX",
+            "finland": "FI", "sweden": "SE", "norway": "NO", "denmark": "DK",
+            "netherlands": "NL", "belgium": "BE", "austria": "AT",
+            "switzerland": "CH", "portugal": "PT", "greece": "GR",
+            "poland": "PL", "ireland": "IE", "south korea": "KR",
+            "nigeria": "NG", "egypt": "EG",
+            "kenya": "KE", "indonesia": "ID", "philippines": "PH",
+            "turkey": "TR", "argentina": "AR", "colombia": "CO",
+            "chile": "CL", "new zealand": "NZ", "pakistan": "PK",
+            "thailand": "TH", "vietnam": "VN", "malaysia": "MY",
+            "saudi arabia": "SA", "iran": "IR", "iraq": "IQ",
+            "ukraine": "UA", "romania": "RO", "czech republic": "CZ",
+            "hungary": "HU", "croatia": "HR", "serbia": "RS",
+            "bulgaria": "BG", "slovakia": "SK", "slovenia": "SI",
+            "estonia": "EE", "latvia": "LV", "lithuania": "LT",
+            "cyprus": "CY", "malta": "MT", "luxembourg": "LU",
+            "iceland": "IS", "morocco": "MA", "tunisia": "TN",
+            "algeria": "DZ", "ethiopia": "ET", "tanzania": "TZ",
+            "ghana": "GH", "senegal": "SN", "ivory coast": "CI",
+            "peru": "PE", "venezuela": "VE", "ecuador": "EC",
+            "bolivia": "BO", "paraguay": "PY", "uruguay": "UY",
+            "cuba": "CU", "costa rica": "CR", "panama": "PA",
+            "jamaica": "JM", "singapore": "SG", "bangladesh": "BD",
+            "nepal": "NP", "sri lanka": "LK", "myanmar": "MM",
+            "cambodia": "KH", "mongolia": "MN", "kazakhstan": "KZ",
+        }
+
+        for name, code in NAME_TO_CODE.items():
+            if name in query_lower:
+                return code
+
+        # Check for explicit 2-letter code pattern (e.g. "in US", "for DE")
+        code_match = re.search(r'\b([A-Z]{2})\b', query.upper())
+        if code_match:
+            candidate = code_match.group(1)
+            skip_words = {"IN", "IT", "IS", "OR", "AN", "AT", "AS", "IF", "ON",
+                          "TO", "UP", "NO", "SO", "DO", "BY", "OF", "BE", "ME",
+                          "MY", "HE", "WE", "AM", "VS"}
+            if candidate not in skip_words:
+                return candidate
+
+        return None
 
     def _has_weather_keywords(self, text: str) -> bool:
         """Check if text contains weather-related keywords."""
@@ -461,6 +659,8 @@ Be concise and factual. Use markdown."""
             "heatwave", "heat wave", "flood", "drought", "storm", "hurricane",
             "typhoon", "cyclone", "snow", "frost", "ice", "cold wave",
             "forecast", "meteorolog", "climate data", "°c", "celsius",
+            "climate", "warming", "cooling", "solar", "energy",
+            "renewable", "emission", "carbon",
         ]
         text_lower = text.lower()
         return any(kw in text_lower for kw in keywords)
