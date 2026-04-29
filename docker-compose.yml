@@ -95,7 +95,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./infrastructure/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./infrastructure/database/db-init.sh:/docker-entrypoint-initdb.d/db-init.sh:ro
+      - ./infrastructure/database/init.sql:/docker-entrypoint-initdb.d/sql/init.sql:ro
+      - ./infrastructure/database/02_countries_and_translations.sql:/docker-entrypoint-initdb.d/sql/02_countries_and_translations.sql:ro
+      - ./infrastructure/database/03_users_and_subscriptions.sql:/docker-entrypoint-initdb.d/sql/03_users_and_subscriptions.sql:ro
+      - ./migrations/versions:/docker-entrypoint-initdb.d/sql/migrations:ro
     networks:
       - climatenews-network
 
