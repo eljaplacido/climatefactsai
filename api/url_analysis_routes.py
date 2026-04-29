@@ -739,7 +739,7 @@ async def get_analysis_result(
         fact_checks = []
 
     return URLAnalysisDetail(
-        analysis_id=result["analysis_id"],
+        analysis_id=str(result["analysis_id"]),
         submitted_url=result["submitted_url"],
         status=result["status"],
         title=result.get("title"),

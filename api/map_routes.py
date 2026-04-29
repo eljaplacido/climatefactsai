@@ -684,8 +684,25 @@ async def query_map(
         conditions.append("a.content_category = ANY(:cats)")
         params["cats"] = [c.lower() for c in effective_categories]
     if effective_topic:
-        conditions.append(":topic = ANY(a.tags)")
-        params["topic"] = effective_topic.lower()
+        # LLM may emit topics as "renewable energy" (with space), but seed
+        # tags use the hyphenated form "renewable-energy" and content_category
+        # uses underscores ("renewable_energy"). Generate every separator
+        # variant so natural-language queries actually return results.
+        topic_lower = effective_topic.lower().strip()
+        topic_variants = list({
+            topic_lower,
+            topic_lower.replace(" ", "-"),
+            topic_lower.replace(" ", "_"),
+            topic_lower.replace("_", "-"),
+            topic_lower.replace("-", "_"),
+            topic_lower.replace("_", " "),
+            topic_lower.replace("-", " "),
+        })
+        conditions.append(
+            "(a.tags && CAST(:topic_variants AS text[]) "
+            "OR a.content_category = ANY(:topic_variants))"
+        )
+        params["topic_variants"] = topic_variants
     if effective_date_from:
         conditions.append("a.created_at >= :date_from")
         params["date_from"] = effective_date_from
