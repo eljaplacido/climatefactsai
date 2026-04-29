@@ -82,6 +82,22 @@ TIER_LIMITS = {
 TIER_LIMITS["basic"] = TIER_LIMITS["standard"]
 
 
+def _coerce_user_uuid(user_id: Optional[str]) -> Optional[str]:
+    """Return user_id if it looks like a UUID, else None.
+
+    The user_usage.user_id column is UUID-typed, so passing the
+    sentinel string "anonymous" raises InvalidTextRepresentation.
+    Anonymous traffic is rate-limited by IP via _check_ip_rate_limit.
+    """
+    import uuid as _uuid
+    if not user_id or user_id == "anonymous":
+        return None
+    try:
+        return str(_uuid.UUID(str(user_id)))
+    except (ValueError, AttributeError):
+        return None
+
+
 class UsageTracker:
     """Tracks and enforces usage limits"""
 
@@ -96,6 +112,10 @@ class UsageTracker:
         metadata: Optional[dict] = None
     ):
         """Log a usage event to the database"""
+        coerced_uid = _coerce_user_uuid(user_id)
+        if coerced_uid is None:
+            return  # anon usage is tracked via IP, not the user_usage table
+
         db = get_postgres()
 
         query = """
@@ -112,7 +132,7 @@ class UsageTracker:
         import json
 
         db.execute_query(query, params={
-            "user_id": user_id,
+            "user_id": coerced_uid,
             "usage_type": usage_type,
             "resource_id": resource_id,
             "resource_url": resource_url,
@@ -128,6 +148,10 @@ class UsageTracker:
         period: str = "day"  # "day" or "month"
     ) -> int:
         """Get usage count for a user in a time period"""
+        coerced_uid = _coerce_user_uuid(user_id)
+        if coerced_uid is None:
+            return 0  # anon: no per-user count; IP-based limiter applies separately
+
         db = get_postgres()
 
         if period == "day":
@@ -146,7 +170,7 @@ class UsageTracker:
         """
 
         result = db.execute_query(query, params={
-            "user_id": user_id,
+            "user_id": coerced_uid,
             "usage_type": usage_type
         })
 
