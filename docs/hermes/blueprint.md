@@ -2,7 +2,7 @@
 
 This document is maintained by the Hermes agent and represents the recursive long-term memory of the project's architecture, conventions, and state.
 
-_Last full sync: 2026-04-29 (post-launch verification + visualization layer)_
+_Last full sync: 2026-05-05 (chat view-context + mock elimination + GCP cloud project provisioning)_
 
 ## 1. Project Overview
 
@@ -76,7 +76,8 @@ tests/                                # api/, e2e/ (test_green_transition_e2e.py
 
 ## 3. Agentic Workflows
 
-- **Top-level layout** (`src/frontend/src/app/layout.tsx`) renders `<ContextualAssistant />` globally. ContextualAssistant inspects `pathname` and instantiates `<AgenticAssistant />` with the appropriate `currentPage` and `currentArticleId`.
+- **Top-level layout** (`src/frontend/src/app/layout.tsx`) renders `<ContextualAssistant />` globally inside `<ViewContextProvider>` (added 2026-04-30). ContextualAssistant inspects `pathname` and instantiates `<AgenticAssistant />` with the appropriate `currentPage` and `currentArticleId`.
+- **View context layer** (added 2026-04-30): `src/frontend/src/lib/view-context.tsx` exports `ViewContextProvider`, `useViewContext`, `serializeViewContext`. Pages publish what's currently on screen (selected country, compare set, deep-search query/topics, URL-analysis jobId/articleId). AgenticAssistant pulls this state and posts it as a top-level `view_context` field to `/api/chat`, `/api/map/query`, `/api/articles/{id}/ask`. Backend (`api/chat_routes.py:_hydrate_view_context`) resolves IDs server-side (article body+claims, country aggregates, url_analyses row+claims, source_profile) and renders a `CURRENT VIEW` preamble in the system prompt so the LLM binds pronouns ("this article", "this country") to live state. Full spec: `docs/architecture/CHAT_VIEW_CONTEXT.md`.
 - **AgenticAssistant** (`src/frontend/src/components/AgenticAssistant.tsx`) routes requests by mode:
   - `map_intelligence` → `POST /api/map/query` (LLM-parsed filters + answer with article citations)
   - `article_qa` → `POST /api/articles/{id}/ask`
@@ -95,7 +96,20 @@ tests/                                # api/, e2e/ (test_green_transition_e2e.py
 
 ## 4. Current State
 
-**Verified live after 2026-04-29 launch run** — `docker compose up` to a clean stack, full-stack smoke pass, then visualization layer added (see `lessons_learned.md` for fix list).
+**Verified live after 2026-04-29 launch run** — `docker compose up` to a clean stack, full-stack smoke pass, visualization layer added.
+**Updated 2026-04-30** — chat made view-aware, all mock/synthetic data fallbacks deleted from production paths, semantic-layer gap closed (KG entity extraction wired into ingestion), 127 new unit tests passing.
+
+**Production-data discipline (2026-04-30 contract)**
+- No production code path returns synthetic/placeholder data. Missing API keys → `RuntimeError` or `None`, never a fabricated payload.
+- `forecast_service._fetch_copernicus_indicators` returns `None` without CDS key (was: synthetic seasonal sinusoid).
+- `copernicus_adapter.fetch_era5_data` returns `None` until real CDS polling ships (was: placeholder envelope).
+- `tasks/video.render_video_preview` marks jobs `DISABLED` with `video_url=None` (was: fake `videos.climatenews.local` URLs).
+- `content_creation_service.content_creator.analyze_trends` computes from real article tags/countries/sources via Counter; missing API key raises `RuntimeError` (was: `_create_fallback_summary`).
+- `content_creation_service/main.py` refuses to start without `PERPLEXITY_API_KEY` (was: `"demo"` literal accepted).
+- `deep_search_service.methodology.embedding_model` reports `openai:text-embedding-ada-002` only when `OPENAI_API_KEY` is set, else `None` (was: hardcoded `"onnx-minilm"` lie).
+- `scripts/populate_demo_articles.py`, `seed_full_global.py`, `seed_global_articles.py` gated behind `CLILENS_ALLOW_FAKE_SEED=1` AND refuse to run when `ENV=production` / `CLILENS_ENV=production`.
+- Standalone mock API moved to `tests/fixtures/standalone_mock_api.py`; refuses to start unless `CLILENS_ALLOW_MOCK_API=1`.
+- **Rule:** when adding a new feature that depends on an external service, never ship a "fallback" or "demo" payload. Either the dependency is configured or the feature surfaces as disabled/None.
 
 **Country coverage (verified 2026-04-29)**
 - REGION_COUNTRIES: **198 unique codes** across 9 regions (>=100% UN-state coverage)
@@ -138,6 +152,42 @@ tests/                                # api/, e2e/ (test_green_transition_e2e.py
 | Source tiers         | public    | +research      | +scientific  | +scientific|
 | Deep search          | basic     | basic          | full + brief | full + brief |
 | Chat questions/day   | 5         | 25             | unlimited    | unlimited  |
+
+## 5. Cloud Deployment Plan (GCP — provisioned 2026-05-05)
+
+**GCP project**
+- Name: `climatenews`
+- Project ID: `climatenews-495412`
+- Project number: `696885797915`
+- Status: empty shell — no resources, services, or billing alerts configured yet.
+
+**Target deployment shape (proposed, not yet decided)**
+- **API + workers**: Cloud Run for FastAPI (stateless, HTTPS, auto-scale to zero) + Cloud Run Jobs for Celery beat/workers, OR GKE Autopilot if long-running Celery beat with high concurrency wins out. Cloud Run is the cheaper default; revisit if Celery scheduling latency becomes the bottleneck.
+- **Postgres + pgvector**: Cloud SQL for PostgreSQL 16 with the `pgvector` extension (officially supported as of Cloud SQL PG15+). Private IP only; API connects via Cloud SQL Auth Proxy / Cloud SQL connector.
+- **Redis**: Memorystore for Redis (standard tier with replica) for Celery broker + RateLimitMiddleware backing store + `_get_platform_metrics()` cache.
+- **Object storage**: GCS bucket for video previews (when re-enabled), URL-analysis raw HTML snapshots, generated translation cache.
+- **Secrets**: Secret Manager for `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `PERPLEXITY_API_KEY`, `OPENAI_API_KEY`, `JWT_SECRET`, DB password. Mounted into Cloud Run via `--set-secrets`.
+- **CDN + frontend**: Next.js to Cloud Run (SSR + ISR) behind Cloud CDN. Alternative: static export to GCS + CDN if SSR isn't needed for any route — verify, since translation and chat are client-driven.
+- **Observability**: Cloud Logging + Cloud Trace; existing OTel exporter (currently noisy because jaeger:4318 is unreachable) re-pointed to Cloud Trace. Cloud Monitoring dashboards for the rate-limiter tier matrix.
+- **CI/CD**: GitHub Actions → Artifact Registry → Cloud Run via Cloud Deploy. Two environments: `staging` (auto-deploy on `main` push) and `production` (manual approval gate).
+
+**User-tied features & data residency planning**
+- JWT auth already in place; tier matrix lives in `rate_limiter.py`. Cloud move adds: Identity Platform OR Firebase Auth as an SSO option (Google/GitHub/email); existing JWT issuance can sit alongside.
+- Per-user data: `user_usage` (rate-limit counters), `chat_sessions` + `chat_messages`, future: saved deep-search briefs, saved compare snapshots, suggested-source submissions. All currently in the same Postgres — fine for v1; partition into a `user` schema only if compliance requires it.
+- Data residency: pick a single region (recommend `europe-west4` Netherlands) for v1, given expected EU traffic + Dutch Open-Meteo provenance. Document in this blueprint when the decision is finalized.
+- Billing tier upgrades: Stripe Checkout integration is not yet wired. When added, handler should write to `users.tier` AND invalidate `_get_platform_metrics()` + the user's rate-limit window in Redis.
+
+**Migration sequence (when we're ready)**
+1. Provision Cloud SQL + Memorystore in `europe-west4`; export current local Postgres via `pg_dump`, restore into Cloud SQL.
+2. Build & push API + frontend images to Artifact Registry; deploy to Cloud Run staging with secrets mounted.
+3. Run smoke tests against staging URL (same set as `lessons_learned.md` 2026-04-29 launch checklist).
+4. Configure Cloud Scheduler triggers to replace Celery Beat (`feed_scheduler` per-tier cadence).
+5. Cut DNS to production Cloud Run revision; keep local docker-compose stack as a dev / test target.
+
+**Open questions for cloud planning**
+- Do we keep DeepSeek (third-party) or move to Vertex AI Gemini for sovereignty + billing consolidation? Cost per 1M tokens favors DeepSeek today; latency from EU favors Gemini.
+- Celery Beat → Cloud Scheduler migration: per-tier frequency caps need rewriting as cron expressions or as a single coordinator job that fans out.
+- pgvector index strategy at scale: HNSW vs IVFFlat — currently uses default; needs benchmarking against ~50k+ articles target before cutover.
 
 ---
 > **Note to Agents**: Always read this blueprint before beginning a major task. If you make architectural changes, you must update this document.

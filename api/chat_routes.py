@@ -40,6 +40,14 @@ class ChatRequest(BaseModel):
         "general",
         description="Chat mode: general, map_intelligence, research_analysis, article_qa",
     )
+    view_context: Optional[dict] = Field(
+        None,
+        description=(
+            "What the user is currently viewing. Recognised keys: route, "
+            "article_id, country, compare_countries, analysis_id, "
+            "deep_search_query, deep_search_compare, source_id, label."
+        ),
+    )
 
 
 class ChatSource(BaseModel):
@@ -141,13 +149,29 @@ async def ask_general_question(
 
     mode = (request.mode or "general").lower()
 
+    # Hydrate the user's current view (article body, country stats, URL
+    # analysis row, etc.) so the chat can answer "this article" / "this
+    # country" without guessing. The hydrator is purely best-effort: if any
+    # lookup fails the chat still works against the general corpus.
+    view_context = request.view_context or {}
+    # Backwards-compat: lift `country` from the request body into view_context
+    # so old clients that didn't send view_context still get country-aware
+    # answers.
+    if request.country and "country" not in view_context:
+        view_context = {**view_context, "country": request.country}
+    hydrated_view = _hydrate_view_context(db, view_context)
+
+    # If view_context provides a country and the request didn't, use it as a
+    # corpus filter so retrieval matches the user's focus.
+    effective_country = request.country or hydrated_view.get("country_code")
+
     # Use HybridRAGService for retrieval when available, fall back to FTS
     sources = await _hybrid_search_articles(
-        db, request.question, request.country, request.category
+        db, request.question, effective_country, request.category
     )
     if not sources:
         sources = _search_relevant_articles(
-            db, request.question, request.country, request.category
+            db, request.question, effective_country, request.category
         )
 
     # Build context from found articles
@@ -186,9 +210,15 @@ async def ask_general_question(
     # Resolve live platform metrics so the system prompt stays accurate
     platform_metrics = _get_platform_metrics(db)
 
-    # Generate answer
+    # Generate answer with the hydrated view context — this makes pronoun
+    # resolution ("this country", "the article I'm reading") deterministic.
+    # cynefin_classification (when present) steers the answer style:
+    # direct_lookup → terse facts; multi_source_analysis → cross-referenced;
+    # causal_analysis → counterfactual reasoning; rapid_assessment → flagged uncertainty.
     answer_data = await _generate_answer(
-        request.question, context_text, sources, history, platform_metrics
+        request.question, context_text, sources, history, platform_metrics,
+        view_context=hydrated_view,
+        cynefin=cynefin_classification,
     )
 
     # Store message
@@ -551,9 +581,279 @@ def _get_session_history(db, session_id: str, limit: int = 5) -> List[dict]:
         return []
 
 
+def _hydrate_view_context(db, view_context: Optional[dict]) -> dict:
+    """Resolve the client-supplied view context into a richer server-side dict.
+
+    Adds article body / country aggregates / URL-analysis row / source profile
+    so the chat system prompt can reference real platform state. Each lookup
+    is best-effort; failures degrade silently because chat still works without
+    grounding.
+    """
+    if not view_context or not isinstance(view_context, dict):
+        return {}
+
+    hydrated: dict = {}
+    raw_route = view_context.get("route")
+    if isinstance(raw_route, str):
+        hydrated["route"] = raw_route[:120]
+    if isinstance(view_context.get("label"), str):
+        hydrated["label"] = view_context["label"][:200]
+
+    # Article currently being read
+    article_id = view_context.get("article_id")
+    if isinstance(article_id, str) and article_id and article_id != "new":
+        try:
+            rows = db.execute_query(
+                """SELECT article_id, title, source_name, country_code,
+                          overall_credibility, content_category, claims_status,
+                          COALESCE(insight_summary, '') AS insight_summary,
+                          SUBSTRING(COALESCE(extracted_text, excerpt, '') FROM 1 FOR 1500) AS body_preview
+                   FROM articles WHERE article_id = :id LIMIT 1""",
+                {"id": article_id},
+            )
+            if rows:
+                row = rows[0]
+                hydrated["article"] = {
+                    "article_id": str(row["article_id"]),
+                    "title": row.get("title") or "",
+                    "source_name": row.get("source_name") or "",
+                    "country_code": row.get("country_code"),
+                    "credibility": row.get("overall_credibility"),
+                    "category": row.get("content_category"),
+                    "claims_status": row.get("claims_status"),
+                    "insight": row.get("insight_summary") or "",
+                    "body_preview": row.get("body_preview") or "",
+                }
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"view_context article lookup failed: {exc}")
+
+    # Country focus (selected on map / passed via filter)
+    country_code = view_context.get("country")
+    if isinstance(country_code, str) and len(country_code) in (2, 3):
+        cc = country_code.upper()
+        hydrated["country_code"] = cc
+        try:
+            rows = db.execute_query(
+                """SELECT country_code,
+                          COUNT(*) AS article_count,
+                          COUNT(DISTINCT source_name) AS source_count,
+                          COUNT(*) FILTER (WHERE overall_credibility='HIGH') AS high_cred_articles,
+                          MAX(published_date) AS latest_published
+                   FROM articles
+                   WHERE country_code = :cc
+                   GROUP BY country_code""",
+                {"cc": cc},
+            )
+            stats = rows[0] if rows else None
+            if stats:
+                hydrated["country_stats"] = {
+                    "country_code": cc,
+                    "article_count": int(stats.get("article_count") or 0),
+                    "source_count": int(stats.get("source_count") or 0),
+                    "high_credibility_articles": int(stats.get("high_cred_articles") or 0),
+                    "latest_published": (
+                        str(stats["latest_published"]) if stats.get("latest_published") else None
+                    ),
+                }
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"view_context country lookup failed: {exc}")
+
+    # Compare countries (map compare overlay or deep-search compare)
+    compare_countries = view_context.get("compare_countries")
+    if isinstance(compare_countries, list):
+        cleaned = [
+            str(c).upper() for c in compare_countries
+            if isinstance(c, str) and len(c) in (2, 3)
+        ][:4]
+        if cleaned:
+            hydrated["compare_countries"] = cleaned
+
+    # URL analysis result currently displayed
+    analysis_id = view_context.get("analysis_id")
+    if isinstance(analysis_id, str) and analysis_id:
+        try:
+            rows = db.execute_query(
+                """SELECT analysis_id, submitted_url, source_name, source_domain,
+                          title, status, reliability_score, overall_credibility,
+                          extracted_claims
+                   FROM url_analyses WHERE analysis_id = :id LIMIT 1""",
+                {"id": analysis_id},
+            )
+            if rows:
+                row = rows[0]
+                claims_payload = row.get("extracted_claims") or []
+                if isinstance(claims_payload, str):
+                    try:
+                        claims_payload = json.loads(claims_payload)
+                    except Exception:  # noqa: BLE001
+                        claims_payload = []
+                hydrated["url_analysis"] = {
+                    "analysis_id": str(row["analysis_id"]),
+                    "submitted_url": row.get("submitted_url"),
+                    "source_name": row.get("source_name"),
+                    "source_domain": row.get("source_domain"),
+                    "title": row.get("title"),
+                    "status": row.get("status"),
+                    "reliability_score": row.get("reliability_score"),
+                    "credibility": row.get("overall_credibility"),
+                    "claims": (claims_payload or [])[:5] if isinstance(claims_payload, list) else [],
+                }
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"view_context url_analysis lookup failed: {exc}")
+
+    # Deep search query / compare topics — these are short strings only; we
+    # forward them so the LLM can reference them without re-asking the user.
+    if isinstance(view_context.get("deep_search_query"), str):
+        hydrated["deep_search_query"] = view_context["deep_search_query"][:300]
+    if isinstance(view_context.get("deep_search_compare"), dict):
+        cmp = view_context["deep_search_compare"]
+        if isinstance(cmp.get("query_a"), str) and isinstance(cmp.get("query_b"), str):
+            hydrated["deep_search_compare"] = {
+                "query_a": cmp["query_a"][:200],
+                "query_b": cmp["query_b"][:200],
+            }
+
+    # Source page focus (e.g. user is on /sources/<id>)
+    source_id = view_context.get("source_id")
+    if isinstance(source_id, str) and source_id:
+        try:
+            rows = db.execute_query(
+                """SELECT source_name, COUNT(*) AS article_count,
+                          COUNT(DISTINCT country_code) AS country_count,
+                          AVG(reliability_score) AS avg_reliability
+                   FROM articles WHERE source_name = :name
+                   GROUP BY source_name LIMIT 1""",
+                {"name": source_id},
+            )
+            if rows:
+                row = rows[0]
+                hydrated["source_focus"] = {
+                    "source_name": row.get("source_name"),
+                    "article_count": int(row.get("article_count") or 0),
+                    "country_count": int(row.get("country_count") or 0),
+                    "avg_reliability": (
+                        round(float(row["avg_reliability"]), 1)
+                        if row.get("avg_reliability") is not None else None
+                    ),
+                }
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"view_context source lookup failed: {exc}")
+
+    return hydrated
+
+
+def _format_view_context_block(view: dict) -> str:
+    """Render the hydrated view-context as plain text for the LLM prompt."""
+    if not view:
+        return ""
+
+    parts: List[str] = []
+    if view.get("route"):
+        parts.append(f"- Route: {view['route']}")
+
+    article = view.get("article")
+    if article:
+        cred = article.get("credibility") or "UNKNOWN"
+        body = (article.get("body_preview") or "").strip().replace("\n", " ")
+        if len(body) > 800:
+            body = body[:800] + "…"
+        parts.append(
+            f"- Article being viewed: \"{article.get('title', 'Untitled')}\""
+            f" (id={article.get('article_id')}, source={article.get('source_name', 'Unknown')},"
+            f" credibility={cred}, country={article.get('country_code') or 'n/a'})"
+        )
+        if article.get("insight"):
+            parts.append(f"  Insight: {article['insight'][:300]}")
+        if body:
+            parts.append(f"  Excerpt: {body}")
+
+    if view.get("country_stats"):
+        cs = view["country_stats"]
+        parts.append(
+            f"- Country focus: {cs.get('country_code')} —"
+            f" {cs.get('article_count', 0)} articles from"
+            f" {cs.get('source_count', 0)} sources;"
+            f" {cs.get('high_credibility_articles', 0)} HIGH-credibility."
+        )
+
+    if view.get("compare_countries"):
+        parts.append(f"- Comparing countries: {', '.join(view['compare_countries'])}")
+
+    if view.get("url_analysis"):
+        ua = view["url_analysis"]
+        cred = ua.get("credibility") or "PENDING"
+        rel = ua.get("reliability_score")
+        rel_str = f"{rel}" if rel is not None else "n/a"
+        parts.append(
+            f"- URL analysis open: {ua.get('title') or ua.get('submitted_url')}"
+            f" ({ua.get('source_domain') or ua.get('source_name') or 'unknown source'})"
+            f" — credibility={cred}, reliability={rel_str}, status={ua.get('status')}."
+        )
+        claims = ua.get("claims") or []
+        if claims:
+            for c in claims[:3]:
+                if isinstance(c, dict):
+                    parts.append(f"  Claim: {str(c.get('claim_text') or c)[:200]}")
+
+    if view.get("deep_search_query"):
+        parts.append(f"- Deep-search query open: \"{view['deep_search_query']}\"")
+    if view.get("deep_search_compare"):
+        cmp = view["deep_search_compare"]
+        parts.append(
+            f"- Deep-search compare: A=\"{cmp.get('query_a', '')}\" vs B=\"{cmp.get('query_b', '')}\""
+        )
+
+    if view.get("source_focus"):
+        sf = view["source_focus"]
+        parts.append(
+            f"- Source focus: {sf.get('source_name')} —"
+            f" {sf.get('article_count', 0)} articles across"
+            f" {sf.get('country_count', 0)} countries"
+            + (f", avg reliability {sf.get('avg_reliability')}" if sf.get('avg_reliability') is not None else "")
+            + "."
+        )
+
+    if view.get("label") and not parts:
+        parts.append(f"- {view['label']}")
+
+    return "\n".join(parts)
+
+
+_CYNEFIN_GUIDANCE = {
+    "direct_lookup": (
+        "ANALYSIS DEPTH (Cynefin: clear/direct lookup):\n"
+        "- The question is a factual lookup. Answer concisely with the specific "
+        "fact and the citing article. Do not speculate or extrapolate. If the "
+        "fact is not in the corpus above, say so and stop — do not pad."
+    ),
+    "multi_source_analysis": (
+        "ANALYSIS DEPTH (Cynefin: complicated/multi-source):\n"
+        "- Cross-reference at least two sources before stating a claim. "
+        "Highlight where sources agree or disagree. Quote credibility ratings "
+        "explicitly when sources disagree. Structure: claim → evidence chain → "
+        "remaining uncertainty."
+    ),
+    "causal_analysis": (
+        "ANALYSIS DEPTH (Cynefin: complex/causal):\n"
+        "- Trace cause-and-effect chains rather than reporting correlations. "
+        "Surface counterfactuals (\"if X had not happened\"), feedback loops, "
+        "and emergent dynamics. Mark predictions with explicit confidence "
+        "ranges and name the assumptions they rest on."
+    ),
+    "rapid_assessment": (
+        "ANALYSIS DEPTH (Cynefin: chaotic/rapid assessment):\n"
+        "- This is a fast-evolving situation. Lead with the single most "
+        "actionable fact, then list what is unknown. Flag every uncertainty "
+        "explicitly. Do not synthesise a tidy narrative — preserve ambiguity."
+    ),
+}
+
+
 async def _generate_answer(
     question: str, context: str, sources: List[ChatSource], history: List[dict],
     platform_metrics: Optional[dict] = None,
+    view_context: Optional[dict] = None,
+    cynefin: Optional[dict] = None,
 ) -> dict:
     """Generate an answer using the LLM with article context."""
     try:
@@ -590,9 +890,28 @@ async def _generate_answer(
             else "a curated set of registered sources"
         )
 
+        view_block = _format_view_context_block(view_context or {})
+        view_section = (
+            "\nCURRENT VIEW (what the user is looking at right now):\n"
+            f"{view_block}\n"
+            "When the user says \"this article\", \"this country\", \"these results\", "
+            "\"the analysis\", \"compare them\", etc., resolve those pronouns against "
+            "the CURRENT VIEW above first. If the view does not name what the user "
+            "asked about, fall back to the article corpus below.\n"
+            if view_block else ""
+        )
+
+        cynefin_strategy = (cynefin or {}).get("recommended_strategy")
+        cynefin_section = (
+            f"\n{_CYNEFIN_GUIDANCE[cynefin_strategy]}\n"
+            if cynefin_strategy in _CYNEFIN_GUIDANCE else ""
+        )
+
         system_prompt = (
             "You are CliLens.AI's climate intelligence assistant. You help users understand "
             "climate news, platform features, and analysis results.\n\n"
+            f"{view_section}"
+            f"{cynefin_section}"
             "CAPABILITIES:\n"
             "- Answer climate questions using article data provided below\n"
             "- Explain transparency scores, credibility ratings, and verification processes\n"

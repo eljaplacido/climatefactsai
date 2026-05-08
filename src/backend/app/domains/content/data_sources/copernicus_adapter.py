@@ -56,44 +56,17 @@ class CopernicusAdapter:
             logger.warning("Copernicus CDS API key not configured")
             return None
 
-        try:
-            # For now, use the simplified Climate Data Store API
-            # Full implementation would use cdsapi Python package
-            request_body = {
-                "product_type": "reanalysis",
-                "variable": variable,
-                "year": str(year),
-                "month": [f"{m:02d}" for m in (months or range(1, 13))],
-                "day": ["01"],
-                "time": ["12:00"],
-                "area": [
-                    region.get("north", 90),
-                    region.get("west", -180),
-                    region.get("south", -90),
-                    region.get("east", 180),
-                ],
-                "format": "json",
-            }
-
-            logger.info(
-                f"Copernicus ERA5 request: {variable}, year={year}, region={region}"
-            )
-
-            # Note: Real CDS API requires async polling. This returns a
-            # placeholder structure that the verification service can use.
-            return {
-                "variable": variable,
-                "year": year,
-                "region": region,
-                "source": "Copernicus ERA5",
-                "status": "available" if self.available else "unavailable",
-                "note": "Full ERA5 data requires CDS API polling. "
-                        "Use fetch_climate_indicators() for pre-aggregated data.",
-            }
-
-        except Exception as e:
-            logger.error(f"Copernicus ERA5 fetch failed: {e}")
-            return None
+        # Real ERA5 retrieval requires the cdsapi client + async polling against
+        # the CDS Beta API (cds-beta.climate.copernicus.eu/api). Until that is
+        # wired in, we return None rather than a placeholder envelope so callers
+        # do not treat unavailable data as a "successful" fetch.
+        logger.info(
+            "Copernicus ERA5 fetch requested (variable=%s, year=%s) but not yet implemented; "
+            "use fetch_climate_indicators() for country-level pre-aggregated data",
+            variable,
+            year,
+        )
+        return None
 
     async def fetch_climate_indicators(
         self, country_code: str

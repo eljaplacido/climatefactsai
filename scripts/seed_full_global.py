@@ -1,9 +1,24 @@
 """
 Comprehensive global seed: fills ALL remaining country gaps + adds
 green transition/sustainability topic depth for every country.
+
+WARNING: inserts SYNTHETIC articles generated from random.choice templates.
+Refuses to run unless CLILENS_ALLOW_FAKE_SEED=1 is set, and unless ENV is not
+prod/production. Use only for local/dev/E2E test environments.
 """
 import os, sys, uuid, random
 from datetime import datetime, timedelta
+
+if os.getenv("CLILENS_ALLOW_FAKE_SEED", "").strip() != "1":
+    sys.stderr.write(
+        "Refusing to seed synthetic global articles: set CLILENS_ALLOW_FAKE_SEED=1 to opt in.\n"
+    )
+    sys.exit(2)
+
+_env = (os.getenv("ENV") or os.getenv("CLILENS_ENV") or "").lower()
+if _env in {"prod", "production"}:
+    sys.stderr.write("Refusing to seed synthetic articles in production environment.\n")
+    sys.exit(2)
 
 try:
     import psycopg2, psycopg2.extras

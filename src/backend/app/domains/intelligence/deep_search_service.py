@@ -113,7 +113,7 @@ class DeepSearchService:
             ],
             "weather_used": bool(weather_context),
             "synthesis_model": "anthropic" if self.anthropic_key else ("deepseek" if os.getenv("DEEPSEEK_API_KEY") else "none"),
-            "embedding_model": "onnx-minilm",
+            "embedding_model": "openai:text-embedding-ada-002" if os.getenv("OPENAI_API_KEY") else None,
             "external_provider_configured": bool(self.perplexity_key),
             "sources_consulted": sorted({c.get("source_name") for c in citations if c.get("source_name")}),
         }

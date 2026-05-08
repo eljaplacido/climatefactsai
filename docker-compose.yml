@@ -7,7 +7,7 @@
 #
 # Quick Reference:
 # - Frontend: http://localhost:5300
-# - API: http://localhost:5200 (docs at /docs)
+# - API: http://localhost:5400 (docs at /docs)
 # - PostgreSQL: localhost:5433
 # - Redis: localhost:5379
 # - Kafka: localhost:5092
@@ -250,14 +250,14 @@ services:
       context: ./src/frontend
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_API_URL=http://localhost:5200
+        - NEXT_PUBLIC_API_URL=http://localhost:5400
     container_name: clilens-frontend
     depends_on:
       - api
     ports:
       - "5300:3000"  # Frontend runtime (Next.js on port 3000)
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:5200  # Browser-facing API URL
+      - NEXT_PUBLIC_API_URL=http://localhost:5400  # Browser-facing API URL
       - API_INTERNAL_URL=http://api:8000  # Internal Docker network URL for SSR
     networks:
       - climatenews-network

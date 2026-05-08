@@ -110,7 +110,7 @@ describe('SearchPage', () => {
     mockGetArticles.mockResolvedValueOnce([])
     render(<SearchPage />)
     await waitFor(() => {
-      expect(screen.getByText('No results.')).toBeInTheDocument()
+      expect(screen.getByText(/No results found/i)).toBeInTheDocument()
     })
   })
 })

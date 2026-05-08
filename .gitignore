@@ -46,6 +46,7 @@ ENV/
 # Testing
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
 .tox/
 
@@ -118,6 +119,7 @@ archive/legacy_frontend/dist/
 
 # Claude Flow generated files
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 .mcp.json
 claude-flow.config.json
 .swarm/

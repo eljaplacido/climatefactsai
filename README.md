@@ -6,7 +6,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-green.svg)](https://fastapi.tiangolo.com/)
 [![Next.js 14](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
 
-**Version:** 3.0.0 | **Updated:** 2026-03-26
+**Version:** 3.0.0 | **Updated:** 2026-04-30
 
 ---
 
@@ -15,14 +15,18 @@
 CliLens.AI is an AI-powered platform that discovers, verifies, and publishes climate news with transparent credibility scoring. Every claim ships with evidence trails and confidence scores.
 
 **Key Features:**
-- 🔍 Automated news discovery from 144+ countries across all continents
-- ✅ Multi-layer fact-checking with authoritative climate data sources
-- 📊 Transparent credibility scoring (source + content + verification)
-- 🌐 Multi-country support with language-specific content analysis
-- 🗺️ Interactive Climate Intelligence Map with agentic chat and drill-down
-- 🧠 HybridRAG pipeline with knowledge graph and CARF analytical engines
-- 🤖 AI-powered agentic assistant across all pages (API-first for chatbot integration)
-- 👤 User dashboard with reading history, bookmarks, and subscription tiers
+- News discovery across 198 reference countries (live coverage depends on ingestion)
+- Multi-layer fact-checking with authoritative climate data sources
+- Transparent credibility scoring (source + content + verification)
+- Interactive Climate Intelligence Map with chat and drill-down
+- HybridRAG pipeline with a populated knowledge graph — entities and relationships are extracted by `EntityExtractionService` and called alongside `populate_embedding` from `src/backend/app/tasks/ingestion.py` (ingestion) and `src/backend/app/tasks/processing.py` (post-summary)
+- Optional CARF analytical engine integration via HTTP proxy (`src/backend/app/domains/intelligence/carf_integration.py`)
+- Context-aware climate intelligence assistant: knows what article / country / URL analysis / deep-search the user is viewing and grounds answers in the live article corpus + extracted claims + knowledge graph (see [docs/architecture/CHAT_VIEW_CONTEXT.md](docs/architecture/CHAT_VIEW_CONTEXT.md))
+- User dashboard with reading history, bookmarks, and subscription tiers
+
+> **CARF.** Optional. `carf_integration.py` proxies to `CARF_API_URL` (default `http://localhost:8000`); default deployments do not run that service. When unreachable, claim verification falls back to the Cynefin keyword classifier in `cynefin_router.py`.
+
+> **Data integrity.** All production paths return real data. The Copernicus seasonal-temp synthetic fallback was removed; the former `scripts/api_mock.py` is now `tests/fixtures/standalone_mock_api.py` behind an opt-in `CLILENS_ALLOW_MOCK_API` guard. Demo seed scripts require `CLILENS_ALLOW_FAKE_SEED=1` and refuse to run when `ENV=production`.
 
 ---
 
@@ -34,7 +38,7 @@ Get running in 5 minutes:
 # Clone and configure
 git clone <repository-url> && cd climatenews
 cp .env.example .env
-# Edit .env with your API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY)
+# Edit .env with your API keys (see "API keys & data sources" below)
 
 # Recommended local stack (API + Frontend + Postgres + Redis + Celery worker + Jaeger)
 docker-compose -f docker-compose.simple.yml up -d
@@ -48,102 +52,70 @@ docker-compose -f docker-compose.simple.yml up -d
 # Jaeger (traces): http://localhost:5686
 ```
 
-**New to the project?** See **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)** for comprehensive setup guide.
+### API keys & data sources
+
+| Provider | Required for | If missing |
+|---|---|---|
+| `DEEPSEEK_API_KEY` | Chat, claim extraction, adjudication | Chat / verification disabled |
+| `OPENAI_API_KEY` | Semantic embeddings (`openai:text-embedding-ada-002`) | Deep-search degrades to FTS + Perplexity |
+| `ANTHROPIC_API_KEY` | Optional summarisation paths (env-driven model) | Falls back to other providers |
+| `PERPLEXITY_API_KEY` | External discovery + deep-search external mode | Internal-corpus only |
+| Open-Meteo, NASA POWER | Weather context (no key) | Always available |
+| Copernicus CDS API key | ERA5 reanalysis | Endpoint returns "unavailable" (no synthetic fallback) |
+| `CARF_API_URL` (+ `CARF_API_KEY`) | Optional CARF reasoning | Cynefin keyword classifier used instead |
+
+**New to the project?** See [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
 
 ---
 
 ## Architecture
 
-**Pattern:** Hierarchical multi-agent system (supervisor-worker)
-**Communication:** Event-driven via Apache Kafka
-**Stack:** Python + FastAPI + Next.js + Kafka + PostgreSQL + Redis
+- **Pattern:** Hierarchical multi-agent system (supervisor-worker)
+- **Communication:** Celery + Redis by default (`docker-compose.simple.yml`); Kafka available in the full stack (`docker-compose.yml`)
+- **Stack:** Python + FastAPI + Next.js + PostgreSQL (pgvector) + Redis
 
 ```
 Orchestrator (Claude 3.5 Sonnet)
-    │
-    ├── Ingestion Service (News Discovery)
-    ├── Verification Service (Fact Checking)
-    ├── Content Creation Service (Article Synthesis)
-    └── Video Production Service (Video Generation)
+    ├── Ingestion (news discovery)
+    ├── Verification (fact-checking)
+    ├── Content Creation (article synthesis)
+    └── Video Production (short-form video)
 ```
 
-**See full architecture:** [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md)
+**See:** [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) · [docs/architecture/](docs/architecture/)
 
 ---
 
 ## Service Inventory
 
-| Service | Purpose | Technology | Port |
-|---------|---------|------------|------|
-| **Orchestration** | Workflow supervisor & state management | Claude 3.5 Sonnet | - |
-| **Ingestion** | News discovery & content extraction | Scrapy + Playwright | - |
-| **Verification** | Fact-checking & evidence collection | GPT-4o + Climate APIs | - |
-| **Content Creation** | Article synthesis & summarization | Claude 3.5 Sonnet | - |
-| **Video Production** | Short-form video generation | Multimodal AI | - |
-| **API Gateway** | REST API & authentication | FastAPI + PostgreSQL | 5200 |
-| **Frontend** | Web application | Next.js 14 + Tailwind CSS | 5300 |
-| **PostgreSQL** | Long-term storage + pgvector | PostgreSQL 16 | 5433 |
-| **Redis** | Short-term memory & caching | Redis 7 | 5379 |
-| **Kafka** | Event streaming & messaging | Confluent Platform 7.5 | 5092 |
-| **Zookeeper** | Kafka coordination | Confluent Platform 7.5 | 5181 |
-| **Schema Registry** | Kafka schema management | Confluent Platform 7.5 | 5081 |
-| **Grafana** | Monitoring dashboards | Grafana 10.2 | 3001 |
-| **Prometheus** | Metrics collection | Prometheus 2.48 | 5090 |
-| **Jaeger** | Distributed tracing | Jaeger 1.51 | 5686 |
+| Service | Stack | Port |
+|---|---|---|
+| API Gateway | FastAPI + PostgreSQL | 5400 |
+| Frontend | Next.js 14 + Tailwind | 5300 |
+| PostgreSQL (pgvector) | PostgreSQL 16 | 5433 |
+| Redis (cache + Celery broker) | Redis 7 | 5379 |
+| Celery workers (ingestion, processing) | Python | internal |
+| Jaeger (tracing) | Jaeger 1.51 | 5686 |
+| Kafka / Grafana / Prometheus | full stack only | 5092 / 3001 / 5090 |
 
 ---
 
 ## For Different User Types
 
-### 👨‍💻 New Developers
-**Get started:**
-1. Complete [Quick Start](#quick-start) setup
-2. Read [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) for comprehensive onboarding
-3. Understand architecture: [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md)
-4. Follow coding patterns: [.cursor/.cursorrules](.cursor/.cursorrules)
-
-### 🔧 DevOps Engineers
-**Deploy and monitor:**
-1. Review [Service Inventory](#service-inventory) for infrastructure needs
-2. Follow deployment guide: [docs/architecture/DEPLOYMENT.md](docs/architecture/DEPLOYMENT.md)
-3. Set up monitoring: Grafana (port 3001) + Prometheus (port 5090)
-4. Configure tracing: Jaeger UI (port 5686)
-
-### 🤖 AI/ML Engineers
-**Work with AI models:**
-1. Explore multi-agent architecture: [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md)
-2. Review domain logic: [docs/domain/](docs/domain/)
-3. Understand message schemas: `schemas/*.json`
-4. See AI integration patterns in `src/backend/services/`
-
-### 📊 Product Managers
-**Understand capabilities:**
-1. Review [Key Features](#what-is-cilens)
-2. Explore [Vision & Roadmap](docs/VISION_GLOBAL_CLIMATE_PLATFORM.md)
-3. See [MVP Roadmap](docs/MVP_EUROPE_ROADMAP.md)
-4. Check workflows: [docs/WORKFLOW_AND_UX.md](docs/WORKFLOW_AND_UX.md)
+- **Developers:** [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) · [docs/DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md) · [.cursor/rules/](.cursor/rules/)
+- **DevOps:** [docs/architecture/DEPLOYMENT.md](docs/architecture/DEPLOYMENT.md) — Grafana (3001), Prometheus (5090), Jaeger (5686)
+- **AI/ML:** [docs/domain/](docs/domain/) · [docs/architecture/CHAT_VIEW_CONTEXT.md](docs/architecture/CHAT_VIEW_CONTEXT.md) · `schemas/*.json` · `src/backend/app/domains/intelligence/`
+- **Product:** [Vision & Roadmap](docs/VISION_GLOBAL_CLIMATE_PLATFORM.md) · [MVP Roadmap](docs/MVP_EUROPE_ROADMAP.md) · [docs/WORKFLOW_AND_UX.md](docs/WORKFLOW_AND_UX.md)
 
 ---
 
 ## Development
 
-### Add a Microservice
-Follow the event-driven agent pattern with Kafka integration:
-- Location: `src/backend/services/{service}_service/`
-- Reference: `.cursor/rules/backend-fastapi.mdc`
+- **New microservice:** `src/backend/services/{service}_service/` — see `.cursor/rules/backend-fastapi.mdc`
+- **New v2 API endpoint:** `src/backend/app/domains/{domain}/` (DDD) — see `docs/domain/`
+- **Tests:** `pytest tests/ --cov=src/backend` · `cd src/frontend && npm test`
 
-### Add an API Endpoint (v2)
-Use Domain-Driven Design (DDD):
-- Location: `src/backend/app/domains/{domain}/`
-- Documentation: `docs/domain/`
-
-### Run Tests
-```bash
-pytest tests/ --cov=src/backend  # Backend tests
-cd src/frontend && npm test       # Frontend tests
-```
-
-**See detailed development guide:** [docs/architecture/DEVELOPMENT.md](docs/architecture/DEVELOPMENT.md)
+**Full guide:** [docs/DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md)
 
 ---
 
@@ -151,52 +123,35 @@ cd src/frontend && npm test       # Frontend tests
 
 ```
 climatenews/
-├── api/                          # FastAPI gateway (v1 + v2)
+├── api/                  # FastAPI gateway (v1 + v2)
 ├── src/
 │   ├── backend/
-│   │   ├── app/                  # v2 API (Domain-Driven Design)
-│   │   │   ├── domains/          # Business domains
-│   │   │   └── core/             # Shared infrastructure
-│   │   ├── services/             # Microservices (5 worker agents)
-│   │   └── shared/               # Shared libraries
-│   └── frontend/                 # Next.js 14 web application
-├── docs/                         # Documentation
-│   ├── architecture/             # System design & patterns
-│   ├── domain/                   # Domain specifications
-│   └── archive/                  # Legacy documentation
-├── schemas/                      # JSON schemas for inter-service messages
-├── infrastructure/               # Database, monitoring configs
-└── docker-compose.yml            # Development environment
+│   │   ├── app/          # v2 API (DDD): domains/, core/, tasks/
+│   │   ├── services/     # Worker microservices
+│   │   └── shared/       # Shared libraries
+│   └── frontend/         # Next.js 14 web application
+├── docs/                 # Documentation (architecture/, domain/, archive/)
+├── schemas/              # JSON schemas for inter-service messages
+├── infrastructure/       # Database, monitoring configs
+├── tests/                # Backend tests + fixtures
+└── docker-compose.yml    # Development environment
 ```
 
 ---
 
 ## Contributing
 
-We welcome contributions! Before submitting a pull request:
+1. Coding standards: [.cursor/rules/](.cursor/rules/)
+2. New API endpoints follow DDD in `src/backend/app/domains/`
+3. Maintain 80%+ test coverage; keep docs in sync; use conventional commits
 
-1. **Read coding standards:** [.cursor/.cursorrules](.cursor/.cursorrules)
-2. **Follow DDD patterns:** New API endpoints use Domain-Driven Design in `src/backend/app/domains/`
-3. **Write tests:** Maintain 80%+ test coverage
-4. **Update documentation:** Keep docs synchronized with code
-5. **Use conventional commits:** `feat:`, `fix:`, `docs:`, etc.
-
-**See contribution guide:** [docs/architecture/DEVELOPMENT.md](docs/architecture/DEVELOPMENT.md)
+**See:** [docs/DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md)
 
 ---
 
 ## Production Deployment
 
-**Infrastructure Requirements:**
-- PostgreSQL 16 with pgvector extension
-- Redis 7+ cluster
-- Apache Kafka (KRaft mode recommended)
-- Docker or Kubernetes for orchestration
-
-**Deployment Guides:**
-- Production setup: [docs/architecture/DEPLOYMENT.md](docs/architecture/DEPLOYMENT.md)
-- Monitoring: Grafana dashboards + Prometheus metrics
-- Troubleshooting: Service-specific runbooks *(coming soon)*
+Infrastructure: PostgreSQL 16 (pgvector), Redis 7+, optional Kafka, Docker/Kubernetes. See [docs/architecture/DEPLOYMENT.md](docs/architecture/DEPLOYMENT.md).
 
 ---
 
@@ -208,11 +163,12 @@ We welcome contributions! Before submitting a pull request:
 
 ## Links
 
-- **Documentation Hub:** [docs/README.md](docs/README.md)
-- **Architecture Deep Dive:** [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md)
-- **Getting Started:** [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)
-- **Vision & Roadmap:** [docs/VISION_GLOBAL_CLIMATE_PLATFORM.md](docs/VISION_GLOBAL_CLIMATE_PLATFORM.md)
+- [docs/README.md](docs/README.md) — documentation hub
+- [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) — current platform state
+- [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) — setup
+- [docs/architecture/CHAT_VIEW_CONTEXT.md](docs/architecture/CHAT_VIEW_CONTEXT.md) — chat grounding contract
+- [docs/VISION_GLOBAL_CLIMATE_PLATFORM.md](docs/VISION_GLOBAL_CLIMATE_PLATFORM.md) — vision & roadmap
 
 ---
 
-**Built with trust, powered by evidence.** 🌍
+**Built with trust, powered by evidence.**

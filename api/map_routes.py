@@ -89,6 +89,14 @@ class MapQueryRequest(BaseModel):
     topic: Optional[str] = None
     limit: int = Field(20, ge=1, le=100)
     session_id: Optional[str] = Field(None, description="Session ID for follow-up queries")
+    view_context: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "What the user is currently viewing on the map (selected country, "
+            "compare overlay, etc.). Used to ground pronoun resolution in the "
+            "agentic answer; same shape as /api/chat view_context."
+        ),
+    )
 
 
 class MapQueryResponse(BaseModel):
@@ -255,7 +263,7 @@ REGION_COUNTRIES = {
         "ZM", "ZW", "ST", "SC", "EH",
     ],
     "asia": [
-        "AF", "BD", "BT", "BN", "KH", "CN", "IN", "ID", "IR", "IQ",
+        "AF", "BD", "BT", "BN", "KH", "CN", "HK", "IN", "ID", "IR", "IQ",
         "IL", "JP", "JO", "KZ", "KW", "KG", "LA", "LB", "MY", "MV",
         "MN", "MM", "NP", "PK", "PH", "QA", "SA", "SG", "KR", "LK",
         "SY", "TW", "TJ", "TH", "TL", "TM", "AE", "UZ", "VN", "YE",
@@ -654,6 +662,28 @@ async def query_map(
     parsed_filters: Dict[str, Any] = {}
     if request.query:
         parsed_filters = await _llm_parse_query(request.query, request.session_id)
+
+    # Promote view_context country into the request when nothing else specified
+    # one — lets "this country" / "what about it?" follow-ups retain focus.
+    view_ctx = request.view_context or {}
+    if isinstance(view_ctx, dict):
+        ctx_country = view_ctx.get("country")
+        if (
+            isinstance(ctx_country, str)
+            and len(ctx_country) in (2, 3)
+            and not request.countries
+            and not parsed_filters.get("countries")
+        ):
+            parsed_filters.setdefault("countries", []).append(ctx_country.upper())
+        ctx_compare = view_ctx.get("compare_countries")
+        if (
+            isinstance(ctx_compare, list)
+            and not request.countries
+            and not parsed_filters.get("countries")
+        ):
+            parsed_filters["countries"] = [
+                c.upper() for c in ctx_compare if isinstance(c, str) and len(c) in (2, 3)
+            ][:4]
 
     # Merge LLM-parsed filters with explicit request filters (explicit wins)
     effective_countries = request.countries or parsed_filters.get("countries", [])

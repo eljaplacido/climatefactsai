@@ -44,22 +44,17 @@ class ContentCreationService:
         # PostgreSQL
         self.postgres = PostgresClient()
 
-        # Content Creator (uses Perplexity or Claude)
-        perplexity_api_key = os.getenv("PERPLEXITY_API_KEY", "")
-        anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "")
-
-        # Use Perplexity if available, otherwise Claude
-        if perplexity_api_key:
-            self.content_creator = ContentCreator(perplexity_api_key)
-            self.provider = "perplexity"
-        elif anthropic_api_key:
-            # Future: implement Claude-based content creator
-            self.content_creator = ContentCreator(perplexity_api_key or "demo")
-            self.provider = "claude"
-        else:
-            self.logger.warning("No LLM API key found, using fallback mode")
-            self.content_creator = ContentCreator("demo")
-            self.provider = "fallback"
+        # Content Creator requires a real Perplexity API key. Synthetic fallback
+        # has been removed; if no key is configured the service refuses to start
+        # rather than emitting fake summaries.
+        perplexity_api_key = os.getenv("PERPLEXITY_API_KEY", "").strip()
+        if not perplexity_api_key:
+            raise RuntimeError(
+                "ContentCreationService: PERPLEXITY_API_KEY is required. "
+                "Set the env var or do not start this worker."
+            )
+        self.content_creator = ContentCreator(perplexity_api_key)
+        self.provider = "perplexity"
 
         self.logger.info(
             "ContentCreationService initialized",

@@ -77,6 +77,12 @@ Respond in JSON format (valid JSON, no comments):
             "max_tokens": 2400,
         }
 
+        if not self.api_key:
+            raise RuntimeError(
+                "ContentCreator: PERPLEXITY_API_KEY is required; "
+                "no synthetic fallback is available."
+            )
+
         try:
             response = requests.post(
                 f"{self.base_url}/chat/completions",
@@ -93,7 +99,7 @@ Respond in JSON format (valid JSON, no comments):
             return summary
         except requests.RequestException as exc:
             print(f"[ContentCreator] Perplexity API error: {exc}")
-            return self._create_fallback_summary(articles, country, language)
+            raise
 
     def _parse_summary_response(
         self,
@@ -105,13 +111,17 @@ Respond in JSON format (valid JSON, no comments):
         json_start = content.find("{")
         json_end = content.rfind("}") + 1
         if json_start < 0 or json_end <= json_start:
-            return self._create_fallback_summary(articles, country, language)
+            raise ValueError(
+                "ContentCreator: model response did not contain a JSON object"
+            )
 
         json_str = content[json_start:json_end]
         try:
             result = json.loads(json_str)
-        except json.JSONDecodeError:
-            return self._create_fallback_summary(articles, country, language)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"ContentCreator: model response was not valid JSON: {exc}"
+            ) from exc
 
         result.setdefault("summary_plain_text", result.get("summary", ""))
         result.setdefault("summary_markdown", result.get("summary_plain_text", ""))
@@ -127,56 +137,45 @@ Respond in JSON format (valid JSON, no comments):
         result["country"] = country
         return result
 
-    def _create_fallback_summary(
-        self,
-        articles: List[Dict[str, Any]],
-        country: str,
-        language: str,
-    ) -> Dict[str, Any]:
-        titles = [article.get("title", "") for article in articles[:5]]
-        plain = f"Latest climate news from {country}. Analysed {len(articles)} articles."
-        markdown = (
-            "### Executive Summary\n" + plain + "\n\n"
-            "### Key Developments\n" + "\n".join(f"- {title}" for title in titles if title)
-        )
-
-        return {
-            "title": f"Climate News Highlights: {country}",
-            "summary_plain_text": plain,
-            "summary_markdown": markdown,
-            "summary": plain,
-            "key_findings": titles,
-            "impact_analysis": "Impact analysis not available (fallback).",
-            "confidence_assessment": "Confidence data unavailable (fallback).",
-            "recommended_actions": ["Stay informed", "Support local climate initiatives", "Share verified information"],
-            "created_at": datetime.now().isoformat(),
-            "article_count": len(articles),
-            "country": country,
-            "language": language,
-            "created_with": "fallback",
-        }
-
     def analyze_trends(
         self,
         articles: List[Dict[str, Any]],
         time_period_days: int = 30,
     ) -> Dict[str, Any]:
+        """Compute trend metrics by tallying real article tags / countries / sources.
+
+        No fabricated topics. If the corpus is empty we return zero-valued buckets
+        so callers can detect the absence of data rather than read a synthetic answer.
+        """
+        from collections import Counter
+
+        topic_counter: Counter = Counter()
+        country_counter: Counter = Counter()
+        source_counter: Counter = Counter()
+
+        for article in articles:
+            tags = article.get("tags") or article.get("categories") or []
+            if isinstance(tags, str):
+                tags = [t.strip() for t in tags.split(",") if t.strip()]
+            for tag in tags:
+                topic_counter[str(tag).lower()] += 1
+
+            cc = article.get("country_code")
+            if cc:
+                country_counter[cc.upper()] += 1
+
+            source = article.get("source_name") or article.get("source")
+            if source:
+                source_counter[source] += 1
+
         return {
-            "emerging_topics": ["climate policy", "renewable energy", "carbon emissions"],
-            "sentiment_trend": "increasing concern",
-            "geographic_focus": [articles[0].get("country_code", "N/A")] if articles else [],
-            "key_actors": ["Government", "EU", "NGOs"],
+            "emerging_topics": [t for t, _ in topic_counter.most_common(5)],
+            "topic_counts": dict(topic_counter.most_common(10)),
+            "geographic_focus": [c for c, _ in country_counter.most_common(5)],
+            "active_sources": [s for s, _ in source_counter.most_common(10)],
+            "article_count": len(articles),
+            "time_period_days": time_period_days,
+            "computed_at": datetime.now().isoformat(),
         }
 
 
-def test_content_creator() -> None:
-    api_key = "demo"
-    creator = ContentCreator(api_key)
-    demo_articles = [
-        {"title": "Example article", "summary": "Content about climate."}
-    ]
-    print(creator.create_summary(demo_articles, country="Finland", language="fi"))
-
-
-if __name__ == "__main__":
-    test_content_creator()

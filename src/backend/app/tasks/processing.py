@@ -136,6 +136,23 @@ def create_summary(self, workflow_state: Dict[str, Any]) -> Dict[str, Any]:
         except Exception as emb_exc:
             logger.warning("Embedding generation failed", article_id=article_id, error=str(emb_exc))
 
+        # Populate the knowledge graph (entities + relationships) so the chat /
+        # deep-search graph hop has data to traverse. Best-effort — failures
+        # don't block the rest of the pipeline.
+        try:
+            from app.domains.intelligence.entity_extraction_service import EntityExtractionService
+            entity_svc = EntityExtractionService(db)
+            article_text = row.get("extracted_text") or row.get("excerpt") or ""
+            article_title = row.get("title") or ""
+            if article_text.strip() or article_title.strip():
+                asyncio.run(entity_svc.extract_and_store(
+                    article_id=str(article_id),
+                    title=article_title,
+                    text=article_text,
+                ))
+        except Exception as kg_exc:
+            logger.warning("Entity extraction failed", article_id=article_id, error=str(kg_exc))
+
     # Generate analysis article if verification results exist
     verification_results = workflow_state.get("verification_results", [])
     if verification_results:

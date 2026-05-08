@@ -9,6 +9,7 @@ import TranslatableText from "@/components/TranslatableText";
 import MethodologyDrawer from "@/components/MethodologyDrawer";
 import CompareCharts from "@/components/CompareCharts";
 import ClarificationChips from "@/components/ClarificationChips";
+import { useViewContext } from "@/lib/view-context";
 
 type Mode = "search" | "compare";
 
@@ -39,6 +40,28 @@ export default function DeepSearchPage() {
   const [activeStep, setActiveStep] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Publish active deep-search context so the global chat can reference it.
+  const { setView, clearKey } = useViewContext();
+  useEffect(() => {
+    if (mode === "search" && searchResult && query) {
+      setView({
+        deepSearchQuery: query,
+        countryCode: country || undefined,
+        label: `Deep-search: "${query}"`,
+      });
+    } else if (mode === "compare" && compareResult && queryA && queryB) {
+      setView({
+        deepSearchCompare: { query_a: queryA, query_b: queryB },
+        countryCode: country || undefined,
+        label: `Deep-search compare: "${queryA}" vs "${queryB}"`,
+      });
+    } else {
+      clearKey("deepSearchQuery");
+      clearKey("deepSearchCompare");
+      clearKey("label");
+    }
+  }, [mode, searchResult, compareResult, query, queryA, queryB, country, setView, clearKey]);
 
   // Progress timer
   useEffect(() => {

@@ -27,6 +27,12 @@ interface AgenticAssistantProps {
   currentPage?: string;
   currentArticleId?: string;
   currentCountry?: string;
+  currentAnalysisId?: string;
+  currentDeepSearchQuery?: string;
+  currentCompareCountries?: string[];
+  currentSourceId?: string;
+  currentRoute?: string;
+  contextLabel?: string;
   onHighlightCountries?: (countries: string[]) => void;
 }
 
@@ -98,6 +104,12 @@ export default function AgenticAssistant({
   currentPage = "default",
   currentArticleId,
   currentCountry,
+  currentAnalysisId,
+  currentDeepSearchQuery,
+  currentCompareCountries,
+  currentSourceId,
+  currentRoute,
+  contextLabel,
   onHighlightCountries,
 }: AgenticAssistantProps) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -169,12 +181,32 @@ export default function AgenticAssistant({
           ? localStorage.getItem("clilens_token")
           : null;
 
+      // Single object describing what the user is currently looking at; the
+      // backend hydrates this server-side (article text, country stats, URL
+      // analysis row, etc.) and feeds it into the LLM system prompt so the
+      // model can resolve "this article", "this country", etc.
+      const viewContext: Record<string, any> = {};
+      if (currentRoute) viewContext.route = currentRoute;
+      else if (currentPage) viewContext.route = `/${currentPage === "default" ? "" : currentPage}`;
+      if (currentArticleId) viewContext.article_id = currentArticleId;
+      if (currentCountry) viewContext.country = currentCountry;
+      if (currentCompareCountries && currentCompareCountries.length > 0) {
+        viewContext.compare_countries = currentCompareCountries;
+      }
+      if (currentAnalysisId) viewContext.analysis_id = currentAnalysisId;
+      if (currentDeepSearchQuery) viewContext.deep_search_query = currentDeepSearchQuery;
+      if (currentSourceId) viewContext.source_id = currentSourceId;
+      if (contextLabel) viewContext.label = contextLabel;
+      const hasViewContext = Object.keys(viewContext).length > 0;
+
       let endpoint = `${API_BASE}/api/chat`;
       let body: Record<string, any> = {
         question: userMessage.content,
         mode,
         session_id: sessionId,
       };
+      if (currentCountry) body.country = currentCountry;
+      if (hasViewContext) body.view_context = viewContext;
 
       if (mode === "map_intelligence") {
         endpoint = `${API_BASE}/api/map/query`;
@@ -186,6 +218,7 @@ export default function AgenticAssistant({
         if (currentCountry) {
           body.countries = [currentCountry];
         }
+        if (hasViewContext) body.view_context = viewContext;
       } else if (mode === "article_qa" && currentArticleId) {
         endpoint = `${API_BASE}/api/articles/${currentArticleId}/ask`;
         body = {
@@ -195,6 +228,7 @@ export default function AgenticAssistant({
             content: m.content,
           })),
         };
+        if (hasViewContext) body.view_context = viewContext;
       }
 
       const headers: Record<string, string> = {
@@ -445,7 +479,7 @@ export default function AgenticAssistant({
                 disabled={loading}
               />
               <button
-                onClick={handleSend}
+                onClick={() => handleSend()}
                 disabled={!input.trim() || loading}
                 className="p-2 bg-teal-600 text-white rounded-lg hover:bg-teal-500 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-colors"
               >

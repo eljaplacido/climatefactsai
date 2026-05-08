@@ -5,6 +5,7 @@ import { api } from '@/lib/api'
 import type { AnalyzeUrlResponse, Article, DecomposedConfidence } from '@/types'
 import CredibilityGauge from './CredibilityGauge'
 import Markdown from './Markdown'
+import { useViewContext } from '@/lib/view-context'
 
 export default function UrlAnalysisForm() {
   const [url, setUrl] = useState('')
@@ -16,6 +17,35 @@ export default function UrlAnalysisForm() {
   const [estimatedTime, setEstimatedTime] = useState<number | null>(null)
   const [decomposedConfidence, setDecomposedConfidence] = useState<DecomposedConfidence | null>(null)
   const [insightSummary, setInsightSummary] = useState<string | null>(null)
+
+  const { setView, clearKey } = useViewContext()
+
+  // Publish the in-flight / completed analysis id into the shared view-context
+  // so the chat assistant can answer "explain this analysis" without guessing.
+  useEffect(() => {
+    if (jobId) {
+      setView({
+        analysisId: jobId,
+        label: url ? `URL analysis: ${url}` : undefined,
+      })
+    } else {
+      clearKey('analysisId')
+    }
+  }, [jobId, url, setView, clearKey])
+
+  useEffect(() => {
+    if (status === 'completed' && article?.article_id) {
+      setView({
+        articleId: article.article_id,
+        label: `URL analysis result: ${article.title || url}`,
+      })
+    }
+    if (status === 'idle') {
+      clearKey('articleId')
+      clearKey('analysisId')
+      clearKey('label')
+    }
+  }, [status, article, url, setView, clearKey])
 
   // URL validation
   const validateUrl = (urlString: string): boolean => {

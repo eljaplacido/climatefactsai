@@ -169,6 +169,32 @@ def _insert_discovered_articles(
                 )
             except Exception as sp_exc:
                 logger.warning("Source profile upsert failed", error=str(sp_exc))
+
+            # Best-effort enrichment + embedding + entity extraction so newly
+            # discovered articles are immediately queryable by chat / deep-search
+            # / similarity. Failures don't block ingestion — the batch_enrich
+            # admin task will retry later.
+            try:
+                import asyncio
+                from app.domains.content.embedding_service import EmbeddingService
+                emb_svc = EmbeddingService(db)
+                asyncio.run(emb_svc.populate_embedding(article_id))
+            except Exception as emb_exc:
+                logger.warning("Post-ingest embedding failed", article_id=article_id, error=str(emb_exc))
+
+            try:
+                import asyncio
+                from app.domains.intelligence.entity_extraction_service import EntityExtractionService
+                entity_svc = EntityExtractionService(db)
+                article_text = article.get("summary") or article.get("excerpt") or article.get("content") or ""
+                if article_text.strip() or title.strip():
+                    asyncio.run(entity_svc.extract_and_store(
+                        article_id=article_id,
+                        title=title,
+                        text=article_text,
+                    ))
+            except Exception as kg_exc:
+                logger.warning("Post-ingest entity extraction failed", article_id=article_id, error=str(kg_exc))
         except Exception as exc:
             logger.error("Failed to insert article", title=title[:80], error=str(exc))
 

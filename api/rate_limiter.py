@@ -289,6 +289,21 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             )
 
     async def dispatch(self, request: Request, call_next):
+        # HTTPException raised inside BaseHTTPMiddleware.dispatch is wrapped
+        # by starlette's TaskGroup and surfaces as a 500 instead of the
+        # intended status code. Catch it here and convert to a JSONResponse
+        # so 429 / 401 / etc. reach the client cleanly.
+        try:
+            return await self._dispatch(request, call_next)
+        except HTTPException as exc:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail},
+                headers=getattr(exc, "headers", None) or {},
+            )
+
+    async def _dispatch(self, request: Request, call_next):
         # Skip rate limiting for auth endpoints and health checks
         if request.url.path.startswith("/api/auth") or request.url.path in ["/", "/health", "/api/stats"]:
             return await call_next(request)

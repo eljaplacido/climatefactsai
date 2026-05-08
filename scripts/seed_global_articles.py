@@ -1,12 +1,10 @@
 """
 Seed articles for ALL countries missing from the climate intelligence map.
 
-Generates realistic climate-related articles for every country that currently
-has 0 or very few articles in the database, ensuring full global coverage
-for the map layers (article density, temperature anomaly, climate risk,
-source diversity).
+WARNING: Generates SYNTHETIC articles via random templates. Refuses to run
+unless CLILENS_ALLOW_FAKE_SEED=1 is set. Use only for local/dev/E2E setups.
 
-Run: DB_PORT=5433 python scripts/seed_global_articles.py
+Run: CLILENS_ALLOW_FAKE_SEED=1 DB_PORT=5433 python scripts/seed_global_articles.py
 """
 
 import os
@@ -14,6 +12,17 @@ import sys
 import uuid
 from datetime import datetime, timedelta
 import random
+
+if os.getenv("CLILENS_ALLOW_FAKE_SEED", "").strip() != "1":
+    sys.stderr.write(
+        "Refusing to seed synthetic articles: set CLILENS_ALLOW_FAKE_SEED=1 to opt in.\n"
+    )
+    sys.exit(2)
+
+_env = (os.getenv("ENV") or os.getenv("CLILENS_ENV") or "").lower()
+if _env in {"prod", "production"}:
+    sys.stderr.write("Refusing to seed synthetic articles in production environment.\n")
+    sys.exit(2)
 
 try:
     import psycopg2

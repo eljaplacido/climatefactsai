@@ -11,6 +11,7 @@ import MapCountryPanel from "@/components/map/MapCountryPanel";
 import MapAgenticChat from "@/components/map/MapAgenticChat";
 import MapTimeline from "@/components/map/MapTimeline";
 import MapCompareView from "@/components/map/MapCompareView";
+import { useViewContext } from "@/lib/view-context";
 
 // Dynamic import of the Leaflet-based map (no SSR)
 const InteractiveClimateMap = dynamic(
@@ -51,11 +52,6 @@ const INITIAL_FILTERS: MapFilters = {
   keyword: "",
 };
 
-function getCurrentYearMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
-
 export default function MapPage() {
   // Core state
   const [countryStats, setCountryStats] = useState<CountryStatEntry[]>([]);
@@ -70,13 +66,28 @@ export default function MapPage() {
   const [filters, setFilters] = useState<MapFilters>(INITIAL_FILTERS);
   const [availableSources, setAvailableSources] = useState<AvailableSource[]>([]);
 
-  // Timeline state
-  const [timelineDate, setTimelineDate] = useState(getCurrentYearMonth);
+  // Timeline state — empty until we discover the latest month with data on mount
+  const [timelineDate, setTimelineDate] = useState("");
 
   // Compare mode
   const [compareMode, setCompareMode] = useState(false);
   const [compareCountryA, setCompareCountryA] = useState("");
   const [compareCountryB, setCompareCountryB] = useState("");
+
+  // Publish current map state into shared view-context so the global chat
+  // (ContextualAssistant) and the inline MapAgenticChat both know what the
+  // user is focused on.
+  const { setView, clearKey } = useViewContext();
+  useEffect(() => {
+    setView({ countryCode: selectedCountry || undefined });
+  }, [selectedCountry, setView]);
+  useEffect(() => {
+    if (compareMode && compareCountryA && compareCountryB) {
+      setView({ compareCountries: [compareCountryA, compareCountryB] });
+    } else {
+      clearKey("compareCountries");
+    }
+  }, [compareMode, compareCountryA, compareCountryB, setView, clearKey]);
 
   // Fetch country stats
   const fetchCountryStats = useCallback(async () => {
@@ -105,6 +116,29 @@ export default function MapPage() {
       setLoading(false);
     }
   }, [filters, timelineDate]);
+
+  // On mount, discover the latest YYYY-MM with data so the timeline starts on
+  // a populated month (instead of "today", which can be empty if seed is older).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/map/country-stats`);
+        if (!res.ok || cancelled) return;
+        const data: CountryStatEntry[] = await res.json();
+        if (cancelled) return;
+        let latest = "";
+        for (const s of data) {
+          const m = s.last_updated ? String(s.last_updated).slice(0, 7) : "";
+          if (m && m > latest) latest = m;
+        }
+        if (latest) setTimelineDate(latest);
+      } catch {
+        // silently fail — fetchCountryStats will still load unfiltered data
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Fetch available sources
   useEffect(() => {
@@ -305,6 +339,12 @@ export default function MapPage() {
         <MapAgenticChat
           onHighlightCountries={handleHighlightCountries}
           onCountryClick={handleCountryClick}
+          selectedCountry={selectedCountry}
+          compareCountries={
+            compareMode && compareCountryA && compareCountryB
+              ? [compareCountryA, compareCountryB]
+              : undefined
+          }
         />
 
         {/* Compare overlay */}

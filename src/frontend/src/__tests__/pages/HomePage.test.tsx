@@ -106,10 +106,13 @@ describe('HomePage', () => {
 
   it('renders navigation links', async () => {
     render(<Home />)
+    // Current GlobalNav.tsx ships these primary items; "About"/"Methodology"
+    // were removed in favour of the in-product Methodology drawer.
     expect(screen.getAllByText('News').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Map').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('About').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Methodology').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Search').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Deep Search').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Sources').length).toBeGreaterThan(0)
   })
 
   it('renders articles after loading', async () => {

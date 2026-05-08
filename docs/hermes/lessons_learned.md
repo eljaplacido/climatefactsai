@@ -4,6 +4,53 @@ This document is maintained by the Hermes agent. It stores the project's histori
 
 ## 2026
 
+### 2026-05-05 — Wave A: Semantic-Layer Alignment + Country Discipline
+
+Builds on the 2026-05-05 feature inventory audit (`docs/audits/2026-05-05_feature_inventory.md`). Closed the URL-claim semantic-layer gap, made Cynefin classification actionable, fixed the HK drift in REGION_COUNTRIES, and added a CI guard for country-coverage discipline. 16 new tests pass; 1 skipped (live-DB coverage floor — runs in CI when `CLILENS_ASSERT_LIVE_COVERAGE=1`).
+
+**URL-claim mirror (the big one).** Migration 016 (`infrastructure/database/migrations/versions/016_url_claim_mirror.sql`) adds `articles.is_user_submitted`, `articles.url_analysis_id` (FK + index), `claims.importance_score`, `claims.source_kind` (`'corpus'` vs `'url_analysis'`). New helper `_mirror_url_analysis_to_corpus` in `api/url_analysis_routes.py:383` upserts the analyzed page into `articles` keyed on URL (UNIQUE), then INSERTs each extracted claim into the `claims` table with `source_kind='url_analysis'`. Wrapped in try/except — mirror failures must never break the URL analysis. Best-effort embedding population is awaited inline (skipped when no `OPENAI_API_KEY`). After this, deep-search, hybrid RAG, and transparency cross-references see URL-submitted claims like any other. **Rule:** any new entrypoint that produces claims must mirror them into the canonical `claims` table — JSONB-only storage is invisible to the rest of the platform.
+
+**Cynefin made actionable.** `api/chat_routes.py:_generate_answer` now accepts a `cynefin` kwarg and injects domain-specific guidance into the system prompt: `direct_lookup` → "answer concisely, do not speculate"; `multi_source_analysis` → "cross-reference at least two sources, structure as claim → evidence → uncertainty"; `causal_analysis` → "trace cause-effect, surface counterfactuals, quote confidence ranges"; `rapid_assessment` → "lead with the actionable fact, flag every uncertainty, do not synthesise a tidy narrative". Only activates in `mode=research_analysis` — other modes ignore the classification, as designed. **Lesson:** when a classifier's output is added to the response payload but never branched on, it's dead weight that creates the *appearance* of intelligence without the substance. Treat "we return X to the client" and "X actually steers behaviour" as distinct review checkboxes.
+
+**HK drift fixed.** `HK` was in COUNTRY_COORDS / COUNTRY_NAMES / `04_countries_seed.sql` but missing from `REGION_COUNTRIES.asia` — added. `XX` (the cross-border / international placeholder) is now documented in `tests/api/test_country_coverage.py::ALLOWED_EXTRAS`.
+
+**Country-coverage discipline guard.** New `tests/api/test_country_coverage.py` enforces three invariants permanently: (1) every REGION_COUNTRIES code has matching coords + name + seed entry; (2) coords ↔ names agree (modulo allow-listed extras like XX); (3) every region bucket non-empty. Plus a live-coverage floor: `CLILENS_ASSERT_LIVE_COVERAGE=1` makes <95% article coverage of REGION_COUNTRIES codes a CI hard-fail.
+
+**Audit correction.** The 2026-05-05 Phase 1 audit (Explore agent) flagged `similarity_routes.py` as a stub. **It is not** — it calls `EmbeddingService.find_similar()` which has a real pgvector implementation at `embedding_service.py:193`. Always verify Explore-agent claims about "this code does nothing" by reading the implementation, not just the route handler.
+
+### 2026-05-05 — GCP Cloud Project Provisioned
+
+GCP project `climatenews-495412` (number `696885797915`) created as the future home for production deployment. Empty shell — no services enabled, no billing alerts, no Cloud SQL / Memorystore / Cloud Run yet. Decision deferred on:
+- Region (leaning `europe-west4` for EU residency + Open-Meteo provenance, but not finalized)
+- Whether to keep DeepSeek third-party or migrate intelligence pipeline to Vertex AI Gemini
+- pgvector index strategy at scale (HNSW vs IVFFlat) — needs benchmark before cutover
+- Celery Beat → Cloud Scheduler rewrite for per-tier feed frequency caps
+
+**Lesson captured up-front (not from incident yet):** the local docker-compose stack and Cloud Run will diverge on three concrete points the existing code already encodes — (1) Cloud Run is stateless so any in-process cache (`_get_platform_metrics`'s 10-min TTL) needs to be backed by Redis when traffic spans multiple revisions; (2) Cloud Run scales to zero, so the first request after idle pays cold-start; gate `feed_scheduler` to Cloud Scheduler instead of relying on a long-running container; (3) `BaseHTTPMiddleware.dispatch` HTTPException-wrapping (RateLimitMiddleware) must keep its try/except converter — the failure mode (429 → 500) is invisible until a load test catches it. **Rule:** before the cloud cutover, write a load-test that explicitly fires anonymous traffic past the rate limit and asserts a 429 (not 500) is returned.
+
+See `docs/hermes/blueprint.md` § 5 (Cloud Deployment Plan) for the full proposed architecture.
+
+### 2026-04-30 — Mock Elimination + View-Aware Chat + Semantic-Layer Wiring
+
+End-to-end audit + fix wave. Three concurrent objectives: (a) zero synthetic data in production paths, (b) chat that can see what the user is currently viewing, (c) ingestion → embedding → KG chain wired end-to-end. 127 new unit tests landed at 100% pass.
+
+**Mock/synthetic data — surgically removed.** Every "fallback" payload that fabricated data when an external service was unavailable is gone. `forecast_service._fetch_copernicus_indicators` (synthetic seasonal sinusoid), `copernicus_adapter.fetch_era5_data` (placeholder envelope), `tasks/video.render_video_preview` (fake `videos.climatenews.local` URLs), `content_creator._create_fallback_summary`, `content_creation_service/main.py`'s `"demo"` literal, and `deep_search_service.methodology.embedding_model = "onnx-minilm"` (which lied — no ONNX MiniLM was running) — all replaced with `None` / `RuntimeError` / `DISABLED` markers. Seed scripts gated behind `CLILENS_ALLOW_FAKE_SEED=1` and refuse to run when `ENV=production`. **Rule:** when a feature depends on an external service, ship it as disabled when the service is unavailable, not as a fabricated payload. Demo data lives behind explicit env gates outside production.
+
+**Chat view-context plumbing.** Frontend now publishes everything currently on screen (route, selected country, compare set, deep-search query+topics, URL-analysis jobId/articleId, source label) through `ViewContextProvider` (`src/frontend/src/lib/view-context.tsx`). `AgenticAssistant` posts it as a top-level `view_context` field. Backend (`api/chat_routes.py:_hydrate_view_context`) resolves IDs server-side — article body+claims, country aggregates, url_analyses row+claims, source_profile — and renders a `CURRENT VIEW` preamble in the system prompt so pronouns ("this article", "this country", "these results") bind to live state. `api/map_routes.py:MapQueryRequest` also accepts `view_context`; promotes `country` / `compare_countries` into the retrieval filter when no explicit countries are passed. Full spec: `docs/architecture/CHAT_VIEW_CONTEXT.md`.
+
+**Semantic-layer chain closed.** Before this wave, the KG (`entities`, `entity_relationships`) had a schema and a reader but no writer — ingestion never populated it. Now `tasks/processing.py:create_summary` runs `EntityExtractionService.extract_and_store` next to `populate_embedding`, and `tasks/ingestion.py:_insert_discovered_articles` enriches newly discovered articles inline (embedding + entity extraction, best-effort). **Rule:** every ingestion-stage enrichment must be reachable from both the bulk processing path (`create_summary`) AND the inline discovery path (`_insert_discovered_articles`); otherwise, articles ingested via different routes get inconsistent enrichment.
+
+**Known follow-ups left open after this wave:**
+- URL-analysis claims still in `url_analyses.extracted_claims` JSONB. Chat hydrator reads from `url_analyses` directly via `analysis_id` so the immediate UX works, but cross-corpus claim search misses them. Mirror into `claims` + create an `articles` row with `is_user_submitted=true`.
+- `AgenticAssistant.handleSend` is wired as `onClick={handleSend}` so the click event leaks into `overrideText` and crashes on `.trim()`. Enter-key path works; mouse click does not. Tests sidestep via key event. Latent — fix before public launch.
+- CARF integration still defaults to localhost:8000 stub; either ship a CARF service in compose or strip the proactive claims.
+- CynefinRouter classifies but `chat_routes.py` doesn't branch on `recommended_strategy` — make it actionable.
+- FTS path of `/api/map/query` uses `to_tsvector('english', ...)`; Finnish/multilingual articles miss matches. Switch to `simple` config or rely on embeddings.
+- `tests/pages/HomePage.test.tsx`, `SearchPage.test.tsx` have 2 pre-existing failures unrelated to this wave.
+- Project venv at `venv/` lacks pytest etc.; system Python has the deps installed instead.
+
+**Lesson on test discipline:** the audit wave that *deleted* fallback code paths needed test coverage to prevent regression — i.e., a test that asserts `forecast_service._fetch_copernicus_indicators` returns `None` (not a fabricated dict) when `CDS_API_KEY` is absent. Without that assertion, a future "let's restore the demo data so the page doesn't look empty" PR re-introduces the lie. **Rule:** when removing a fallback, the test for that path must assert *what the no-data state looks like*, not just "no exception raised".
+
 ### 2026-04-29 — Live Launch + Visualization Layer
 
 The 2026-04-28 audit was a paper-only sweep — code was reviewed and patched but the stack was never brought up to verify end-to-end. The 2026-04-29 session ran `docker compose up` against a fresh data volume and immediately uncovered ~7 schema and runtime bugs the prior pass missed. Fixed:

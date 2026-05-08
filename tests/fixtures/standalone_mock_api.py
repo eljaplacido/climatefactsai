@@ -1,13 +1,30 @@
 """
-Mock API Server for Testing Frontend
-Returns sample data without database dependency
+Standalone mock API for FRONTEND-ONLY UI smoke tests.
+
+DO NOT START IN PRODUCTION. This file lives under tests/fixtures/ because it
+returns hardcoded payloads that look like real data. It exists so the Next.js
+shell can render without a backing database during isolated UI work.
+
+The runtime guard below refuses to start unless CLILENS_ALLOW_MOCK_API=1 is set,
+so an operator cannot accidentally launch this from `python tests/fixtures/...`
+into a deployment.
 """
+
+import os
+import sys
+
+if os.getenv("CLILENS_ALLOW_MOCK_API", "").strip() != "1":
+    sys.stderr.write(
+        "Refusing to start standalone mock API: set CLILENS_ALLOW_MOCK_API=1 "
+        "to opt in (UI smoke tests only).\n"
+    )
+    raise SystemExit(2)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 
-app = FastAPI(title="Climate News API (Mock)")
+app = FastAPI(title="Climate News API (Mock — UI fixtures only)")
 
 # CORS
 app.add_middleware(

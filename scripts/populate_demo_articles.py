@@ -1,17 +1,34 @@
 """
 Populate database with demo climate articles for UI testing.
 Run this script to see articles immediately in the web interface.
+
+WARNING: This inserts FAKE / synthetic articles. Refuses to run unless
+CLILENS_ALLOW_FAKE_SEED=1 is set, so it cannot be triggered against a
+production database by accident.
 """
+
+import os
+import sys
+
+if os.getenv("CLILENS_ALLOW_FAKE_SEED", "").strip() != "1":
+    sys.stderr.write(
+        "Refusing to seed demo (fake) articles: set CLILENS_ALLOW_FAKE_SEED=1 to opt in.\n"
+    )
+    sys.exit(2)
+
+if os.getenv("ENV", "").lower() in {"prod", "production"} or os.getenv("CLILENS_ENV", "").lower() in {"prod", "production"}:
+    sys.stderr.write("Refusing to seed demo articles in production environment.\n")
+    sys.exit(2)
 
 import psycopg2
 from datetime import datetime, timedelta
 import random
 
 # Database connection
-DB_HOST = "localhost"
-DB_PORT = 5433
-DB_NAME = "climatenews"
-DB_USER = "postgres"
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = int(os.getenv("DB_PORT", "5433"))
+DB_NAME = os.getenv("DB_NAME", "climatenews")
+DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASS = os.getenv("POSTGRES_PASSWORD", "")
 
 # Sample articles

@@ -445,33 +445,30 @@ class ForecastService:
             "fetched_at": datetime.utcnow().isoformat(),
         }
 
-    async def _fetch_copernicus_indicators(self, country_code: str) -> Dict:
-        """Fetch climate indicator data from Copernicus CDS (simplified proxy)."""
+    async def _fetch_copernicus_indicators(self, country_code: str) -> Optional[Dict]:
+        """Fetch climate indicator data from Copernicus CDS.
+
+        Returns None when no API key is configured or when the fetch fails —
+        callers must skip the source rather than insert fabricated data.
+        """
         import os
         api_key = os.getenv("COPERNICUS_CDS_API_KEY")
         if not api_key:
-            # Return a synthetic baseline when no key is configured
-            coords = COUNTRY_COORDS[country_code]
-            lat = coords["lat"]
-            # Rough seasonal temperature estimate for Europe
-            month = datetime.utcnow().month
-            # Simple sinusoidal seasonal model
-            import math
-            seasonal_temp = 10 + 15 * math.sin((month - 4) * math.pi / 6)
-            return {
-                "source_name": "Copernicus ERA5 (modeled)",
-                "temperature_avg": round(seasonal_temp + (lat - 50) * -0.5, 1),
-                "precipitation_mm": None,
-                "wind_speed_ms": None,
-                "confidence": 0.70,
-                "fetched_at": datetime.utcnow().isoformat(),
-            }
+            logger.info(
+                "Copernicus skipped for %s: COPERNICUS_CDS_API_KEY not configured",
+                country_code,
+            )
+            return None
 
-        # With API key, use the CDS adapter
         try:
             from app.domains.content.data_sources.copernicus_adapter import CopernicusAdapter
             adapter = CopernicusAdapter()
             indicators = await adapter.fetch_climate_indicators(country_code)
+            if not indicators or all(
+                indicators.get(k) is None
+                for k in ("temperature_avg", "precipitation_mm", "wind_speed_ms")
+            ):
+                return None
             return {
                 "source_name": "Copernicus ERA5",
                 "temperature_avg": indicators.get("temperature_avg"),
@@ -482,14 +479,7 @@ class ForecastService:
             }
         except Exception as e:
             logger.warning(f"Copernicus fetch failed for {country_code}: {e}")
-            return {
-                "source_name": "Copernicus ERA5",
-                "temperature_avg": None,
-                "precipitation_mm": None,
-                "wind_speed_ms": None,
-                "confidence": 0.0,
-                "fetched_at": datetime.utcnow().isoformat(),
-            }
+            return None
 
     def _build_comparison(self, country_code: str, sources: List[Dict]) -> Dict:
         """Build comparison response with discrepancy analysis."""

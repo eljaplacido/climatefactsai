@@ -36,11 +36,15 @@ interface ChatMessage {
 interface MapAgenticChatProps {
   onHighlightCountries: (codes: string[]) => void;
   onCountryClick?: (code: string) => void;
+  selectedCountry?: string | null;
+  compareCountries?: string[];
 }
 
 export default function MapAgenticChat({
   onHighlightCountries,
   onCountryClick,
+  selectedCountry,
+  compareCountries,
 }: MapAgenticChatProps) {
   const [expanded, setExpanded] = useState(false);
   const [input, setInput] = useState("");
@@ -72,14 +76,24 @@ export default function MapAgenticChat({
       setLoading(true);
 
       try {
+        const viewContext: Record<string, any> = { route: "/map" };
+        if (selectedCountry) viewContext.country = selectedCountry;
+        if (compareCountries && compareCountries.length > 0) {
+          viewContext.compare_countries = compareCountries;
+        }
+
+        const requestBody: Record<string, any> = {
+          query: queryText,
+          session_id: sessionId,
+          limit: 30,
+          view_context: viewContext,
+        };
+        if (selectedCountry) requestBody.countries = [selectedCountry];
+
         const res = await fetch(`${API_BASE}/api/map/query`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            query: queryText,
-            session_id: sessionId,
-            limit: 30,
-          }),
+          body: JSON.stringify(requestBody),
         });
 
         if (res.ok) {
@@ -137,7 +151,7 @@ export default function MapAgenticChat({
         setLoading(false);
       }
     },
-    [loading, sessionId, onHighlightCountries]
+    [loading, sessionId, onHighlightCountries, selectedCountry, compareCountries]
   );
 
   function handleSubmit(e: React.FormEvent) {

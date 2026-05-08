@@ -377,6 +377,151 @@ async def fetch_url_content(url: str) -> dict:
 
 
 # =============================================================================
+# URL → CORPUS MIRROR (migration 016)
+# =============================================================================
+
+async def _mirror_url_analysis_to_corpus(
+    db,
+    analysis_id: str,
+    url: str,
+    title: str,
+    source_name: Optional[str],
+    text: str,
+    language_code: str,
+    claims_list: list,
+    reliability_score: Optional[int],
+    overall_credibility: Optional[str],
+) -> None:
+    """
+    Mirror an analyzed URL's article + extracted claims into the canonical
+    `articles` and `claims` tables so the URL flow's output participates in
+    deep-search, hybrid RAG, and transparency cross-references.
+
+    - Upserts into `articles` keyed on URL (UNIQUE).  Marks is_user_submitted=TRUE
+      and stores the back-reference to the originating url_analyses row.
+    - Inserts each extracted claim into `claims` with source_kind='url_analysis'
+      and the LLM-provided importance_score.
+    - Best-effort kicks off embedding population so the new article is
+      discoverable through pgvector similarity search.
+
+    All failures are caught and logged as warnings — URL analysis must succeed
+    even if mirroring fails (e.g. on FK violation, missing migration, or the
+    embedding service being offline).
+
+    Args:
+        db: Postgres client (from get_postgres()).
+        analysis_id: url_analyses.analysis_id (UUID str) to back-reference.
+        url: The submitted URL (must equal articles.url uniqueness key).
+        title: Extracted article title.
+        source_name: Domain / source name (used for articles.source_name).
+        text: Extracted article body.
+        language_code: 2-char language code.
+        claims_list: Iterable of AtomicClaim-shaped objects with attributes
+            claim_text, claim_type, importance_score, claim_context.
+        reliability_score: Preliminary 0-100 score from extraction stage.
+        overall_credibility: 'LOW' | 'MEDIUM' | 'HIGH' from extraction stage.
+    """
+    try:
+        excerpt = (text or "")[:500]
+
+        rows = db.execute_query(
+            """
+            INSERT INTO articles (
+                url, title, source_name, extracted_text, excerpt,
+                language_code, reliability_score, overall_credibility,
+                is_user_submitted, url_analysis_id, discovered_at
+            ) VALUES (
+                :url, :title, :source_name, :text, :excerpt,
+                :language_code, :reliability, :credibility,
+                TRUE, :analysis_id, NOW()
+            )
+            ON CONFLICT (url) DO UPDATE SET
+                title = EXCLUDED.title,
+                extracted_text = EXCLUDED.extracted_text,
+                excerpt = EXCLUDED.excerpt,
+                reliability_score = EXCLUDED.reliability_score,
+                overall_credibility = EXCLUDED.overall_credibility,
+                url_analysis_id = EXCLUDED.url_analysis_id,
+                is_user_submitted = TRUE
+            RETURNING article_id
+            """,
+            {
+                "url": url,
+                "title": title,
+                "source_name": source_name,
+                "text": text,
+                "excerpt": excerpt,
+                "language_code": language_code,
+                "reliability": reliability_score,
+                "credibility": overall_credibility,
+                "analysis_id": analysis_id,
+            },
+        )
+
+        if not rows:
+            logger.warning(
+                f"[mirror] articles upsert returned no row for analysis {analysis_id}; "
+                "skipping claim mirror"
+            )
+            return
+
+        article_id = rows[0].get("article_id")
+        if article_id is None:
+            logger.warning(
+                f"[mirror] articles upsert returned row without article_id for {analysis_id}"
+            )
+            return
+
+        article_id_str = str(article_id)
+
+        # Mirror each claim into the canonical claims table
+        for claim in claims_list or []:
+            try:
+                db.execute_update(
+                    """
+                    INSERT INTO claims (
+                        article_id, claim_text, claim_context, claim_type,
+                        importance_score, source_kind, identified_at
+                    ) VALUES (
+                        :article_id, :claim_text, :claim_context, :claim_type,
+                        :importance_score, 'url_analysis', NOW()
+                    )
+                    """,
+                    {
+                        "article_id": article_id_str,
+                        "claim_text": getattr(claim, "claim_text", None),
+                        "claim_context": getattr(claim, "claim_context", None),
+                        "claim_type": getattr(claim, "claim_type", "factual"),
+                        "importance_score": getattr(claim, "importance_score", None),
+                    },
+                )
+            except Exception as claim_err:
+                logger.warning(
+                    f"[mirror] failed to insert claim for article {article_id_str}: {claim_err}"
+                )
+
+        logger.info(
+            f"[mirror] mirrored URL analysis {analysis_id} -> article {article_id_str} "
+            f"with {len(claims_list or [])} claim(s)"
+        )
+
+        # Best-effort embedding population so the article is RAG-discoverable.
+        try:
+            from app.domains.content.embedding_service import EmbeddingService
+            await EmbeddingService(db).populate_embedding(article_id_str)
+        except Exception as emb_err:
+            logger.warning(
+                f"[mirror] embedding population skipped for {article_id_str}: {emb_err}"
+            )
+
+    except Exception as e:
+        logger.warning(
+            f"[mirror] failed to mirror URL analysis {analysis_id} into corpus: {e}",
+            exc_info=True,
+        )
+
+
+# =============================================================================
 # BACKGROUND PROCESSING
 # =============================================================================
 
@@ -537,6 +682,22 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
         logger.info(
             f"URL analysis {analysis_id} completed successfully: "
             f"{claims_count} claims extracted in {processing_time_ms}ms"
+        )
+
+        # Step 9: Mirror into canonical articles + claims tables so the URL
+        # flow contributes to deep-search / hybrid RAG / transparency views.
+        # Best-effort — mirror failures must NOT fail the URL analysis.
+        await _mirror_url_analysis_to_corpus(
+            db=db,
+            analysis_id=analysis_id,
+            url=url,
+            title=title,
+            source_name=source_name,
+            text=text,
+            language_code=language_code,
+            claims_list=claims,
+            reliability_score=reliability_score,
+            overall_credibility=overall_credibility,
         )
 
     except HTTPException as e:
