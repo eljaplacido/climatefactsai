@@ -357,9 +357,13 @@ async def get_country_stats(
             conditions.append("to_char(a.published_date, 'YYYY-MM') = :month")
             params["month"] = month
         if keyword:
+            # D3 (migration 018): query the language-aware generated tsvector
+            # column. Using 'simple' for the query gives cross-language token
+            # match so Finnish/German/French/Spanish articles are findable
+            # alongside English ones — pre-fix they were invisible to keyword
+            # search because the tsvector side was hardcoded to 'english'.
             conditions.append(
-                "to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,''))"
-                " @@ plainto_tsquery('english', :keyword)"
+                "a.search_tsv @@ websearch_to_tsquery('simple', :keyword)"
             )
             params["keyword"] = keyword
 
@@ -740,11 +744,16 @@ async def query_map(
         conditions.append("a.created_at <= :date_to")
         params["date_to"] = effective_date_to
 
-    # If natural language query, add full-text search
+    # If natural language query, add full-text search.
+    # D3 (migration 018): query the language-aware generated tsvector column
+    # instead of computing to_tsvector('english', …) at query time. websearch
+    # handles AND/OR/quoted phrases the way users expect from Google-style
+    # search bars. 'simple' on the query side gives cross-language token
+    # match; per-locale stemming is a future enhancement when the API gains
+    # an explicit `lang` parameter.
     if request.query:
         conditions.append(
-            "to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'')) "
-            "@@ plainto_tsquery('english', :q)"
+            "a.search_tsv @@ websearch_to_tsquery('simple', :q)"
         )
         params["q"] = request.query
 

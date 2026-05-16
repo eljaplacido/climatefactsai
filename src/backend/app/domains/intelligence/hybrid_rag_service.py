@@ -123,9 +123,17 @@ class HybridRAGService:
         limit: int = 30,
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
-        """Full-text search using PostgreSQL tsvector/tsquery with ts_rank."""
+        """Full-text search using PostgreSQL tsvector/tsquery with ts_rank.
+
+        D3 (migration 018): uses articles.search_tsv — a STORED generated
+        column whose stemmer is chosen per-row via clilens_lang_cfg() from
+        articles.language_code. This replaces the pre-fix hardcoded
+        `to_tsvector('english', …)` which mangled non-English tokens and
+        hid ~70% of the multilingual corpus from RAG retrieval. Query side
+        uses 'simple' for cross-language token match.
+        """
         where_clauses = [
-            "to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'') || ' ' || COALESCE(a.extracted_text,'')) @@ plainto_tsquery('english', :query)"
+            "a.search_tsv @@ websearch_to_tsquery('simple', :query)"
         ]
         params: Dict[str, Any] = {"query": query, "limit": limit}
         self._apply_filters(where_clauses, params, filters)
@@ -140,10 +148,7 @@ class HybridRAGService:
                 a.excerpt,
                 a.overall_credibility,
                 a.country_code,
-                ts_rank(
-                    to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'') || ' ' || COALESCE(a.extracted_text,'')),
-                    plainto_tsquery('english', :query)
-                ) AS similarity_score
+                ts_rank(a.search_tsv, websearch_to_tsquery('simple', :query)) AS similarity_score
             FROM articles a
             WHERE {where_sql}
             ORDER BY similarity_score DESC
