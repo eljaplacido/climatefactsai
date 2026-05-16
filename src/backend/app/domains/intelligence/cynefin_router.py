@@ -184,33 +184,19 @@ class CynefinRouter:
         """
         try:
             from app.domains.intelligence.llm_client import llm_chat
+            from app.domains.intelligence.prompts import get_prompt
 
-            system_prompt = (
-                "You are a context classifier for the CliLens.AI climate-news "
-                "complexity router (Cynefin-based). Classify each query into "
-                "one of five domains and return ONLY a JSON object — no prose, "
-                "no code fences.\n\n"
-                "Domains:\n"
-                "- clear: Simple factual lookup the database can answer directly.\n"
-                "  Example: \"What is the current temperature in Helsinki?\"\n"
-                "- complicated: Requires expert analysis of multiple known factors.\n"
-                "  Example: \"Compare Germany and France on renewable adoption.\"\n"
-                "- complex: Novel situation where cause-effect emerges in retrospect.\n"
-                "  Example: \"How will the Loss & Damage Fund reshape adaptation?\"\n"
-                "- chaotic: Emergency requiring rapid synthesis.\n"
-                "  Example: \"Flash flood hit Pakistan — what just happened?\"\n"
-                "- disorder: Insufficient signal; classify as disorder when unsure.\n\n"
-                "Output format (JSON only):\n"
-                "{\"domain\": \"clear|complicated|complex|chaotic|disorder\", "
-                "\"confidence\": 0.0-1.0, \"reasoning\": \"one-sentence justification\"}\n\n"
-                "Be conservative — classify as disorder rather than guessing."
-            )
+            # Phase 4 wave 1: resolve prompt + system from the central registry
+            # so the cynefin classifier is versioned/fingerprinted alongside
+            # every other LLM call.
+            tmpl = get_prompt("cynefin_classifier")
+            user_prompt = tmpl.format(query=query)
 
             response = llm_chat(
-                prompt=f'Query: "{query}"',
-                system_prompt=system_prompt,
-                max_tokens=200,
-                temperature=0.0,
+                prompt=user_prompt,
+                system_prompt=tmpl.system,
+                max_tokens=tmpl.max_tokens or 200,
+                temperature=tmpl.temperature if tmpl.temperature is not None else 0.0,
             )
 
             if not response:
@@ -263,6 +249,8 @@ class CynefinRouter:
                 "scores": {},
                 "source": "llm_structured",
                 "raw_domain": raw_domain,  # preserve "disorder" for transparency
+                # Phase 4 wave 1: record which versioned prompt produced this.
+                "prompt": tmpl.as_audit_dict(),
             }
         except Exception as e:
             logger.debug(f"LLM Cynefin classification failed: {e}")

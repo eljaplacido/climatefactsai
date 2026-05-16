@@ -235,35 +235,37 @@ class HallucinationDetector:
         generated: str,
         sources: List[str],
     ) -> Dict[str, Any]:
-        """Use LLM to assess if generated text is grounded in sources."""
+        """Use LLM to assess if generated text is grounded in sources.
+
+        Phase 4 wave 1 (2026-05-16): prompt resolved via the central
+        registry so its version + fingerprint show up in audit trails.
+        """
         try:
             from app.domains.intelligence.llm_client import llm_chat
+            from app.domains.intelligence.prompts import get_prompt
 
+            tmpl = get_prompt("hallucination_grounding")
             truncated_gen = generated[:3000]
             source_excerpts = "\n---\n".join(s[:1500] for s in sources[:5])
 
-            prompt = (
-                f"GENERATED TEXT:\n{truncated_gen}\n\n"
-                f"SOURCE DOCUMENTS:\n{source_excerpts}\n\n"
-                "Analyze whether the generated text is faithful to the source documents.\n"
-                "Return JSON:\n"
-                "{\n"
-                '  "hallucination_risk": 0.0-1.0,\n'
-                '  "flagged_segments": [\n'
-                '    {"text": "problematic quote", "reason": "why it is unsupported", "severity": "low/medium/high"}\n'
-                "  ]\n"
-                "}"
+            prompt = tmpl.format(
+                generated_text=truncated_gen,
+                source_excerpts=source_excerpts,
             )
 
             response = llm_chat(
                 prompt=prompt,
-                system_prompt="You detect hallucinations in AI text. Return ONLY JSON.",
-                max_tokens=800,
-                temperature=0.0,
+                system_prompt=tmpl.system,
+                max_tokens=tmpl.max_tokens or 800,
+                temperature=tmpl.temperature if tmpl.temperature is not None else 0.0,
             )
 
             if not response:
-                return {"hallucination_risk": 0.5, "flagged_segments": []}
+                return {
+                    "hallucination_risk": 0.5,
+                    "flagged_segments": [],
+                    "prompt": tmpl.as_audit_dict(),
+                }
 
             cleaned = response.strip()
             if cleaned.startswith("```"):
@@ -271,7 +273,9 @@ class HallucinationDetector:
                 lines = [l for l in lines if not l.strip().startswith("```")]
                 cleaned = "\n".join(lines)
 
-            return json.loads(cleaned)
+            parsed = json.loads(cleaned)
+            parsed["prompt"] = tmpl.as_audit_dict()
+            return parsed
 
         except json.JSONDecodeError:
             return {"hallucination_risk": 0.5, "flagged_segments": []}

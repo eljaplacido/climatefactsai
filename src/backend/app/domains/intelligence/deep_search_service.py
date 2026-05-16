@@ -136,11 +136,27 @@ class DeepSearchService:
 
         # Methodology: how the answer was assembled. Surfaced in the UI's
         # "How this was answered" drawer so users can audit our pipeline.
+        # Phase 4 wave 1 (2026-05-16): prompts_used records the versioned
+        # template that produced the synthesis so old answers stay
+        # reproducible / auditable even after the prompt evolves.
+        prompts_used: Dict[str, Any] = {}
+        try:
+            from app.domains.intelligence.prompts import get_prompt
+            synth_prompt = get_prompt("deep_search_synthesis")
+            prompts_used["synthesis"] = synth_prompt.as_audit_dict()
+        except Exception as exc:
+            logger.debug(f"Prompt registry lookup failed (non-fatal): {exc}")
+
         methodology = {
             "queries_run": [
                 {"layer": "internal_corpus", "scope": {"country": country, "category": category}, "hits": internal_count},
                 {"layer": "perplexity_external", "skipped": not bool(self.perplexity_key), "hits": external_count},
             ],
+            "retrieval_strategy": (
+                "internal_corpus(fts+semantic) + perplexity_external + weather_context"
+                if weather_context
+                else "internal_corpus(fts+semantic) + perplexity_external"
+            ),
             "weather_used": bool(weather_context),
             "synthesis_model": "anthropic" if self.anthropic_key else ("deepseek" if os.getenv("DEEPSEEK_API_KEY") else "none"),
             "embedding_model": "openai:text-embedding-ada-002" if os.getenv("OPENAI_API_KEY") else None,
@@ -149,6 +165,8 @@ class DeepSearchService:
             # Hallucination check block (may be None if no sources were available
             # or the detector errored — clients should treat absence as "not run").
             "hallucination_check": hallucination_check,
+            # Phase 4 wave 1: versioned prompt fingerprints used during this answer.
+            "prompts_used": prompts_used,
         }
 
         # Clarification: when the corpus + external search both miss, suggest
@@ -485,24 +503,16 @@ class DeepSearchService:
             for dp in weather_context["data_points"]:
                 weather_section += f"- {dp['content']}\n"
 
-        prompt = f"""Based on the following sources, provide a comprehensive answer to: "{query}"
-
-INTERNAL ARTICLES (from our verified corpus):
-{articles_context or 'No matching articles found.'}
-
-EXTERNAL RESEARCH:
-{perplexity_answer or 'No external sources available.'}
-{weather_section}
----
-
-Synthesize a clear, well-structured answer that:
-1. Leads with the most important findings
-2. Notes where internal and external sources agree or disagree
-3. Indicates credibility levels of sources cited
-4. Includes relevant weather/climate data if available
-5. Flags any limitations or areas of uncertainty
-
-Use markdown formatting. Be factual and concise."""
+        # Phase 4 wave 1: resolve the versioned prompt from the registry.
+        from app.domains.intelligence.prompts import get_prompt
+        tmpl = get_prompt("deep_search_synthesis")
+        prompt = tmpl.format(
+            query=query,
+            articles_context=(articles_context or 'No matching articles found.'),
+            perplexity_answer=(perplexity_answer or 'No external sources available.'),
+            weather_section=weather_section,
+        )
+        system_prompt = tmpl.system
 
         # Try Claude first
         if self.anthropic_key:
@@ -511,9 +521,9 @@ Use markdown formatting. Be factual and concise."""
                 client = anthropic.Anthropic(api_key=self.anthropic_key, timeout=15.0)
                 message = client.messages.create(
                     model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5"),
-                    max_tokens=1500,
-                    temperature=0.2,
-                    system="You are CliLens.AI's research assistant. Synthesize climate research from multiple sources with emphasis on source credibility and data accuracy.",
+                    max_tokens=tmpl.max_tokens or 1500,
+                    temperature=tmpl.temperature if tmpl.temperature is not None else 0.2,
+                    system=system_prompt,
                     messages=[{"role": "user", "content": prompt}],
                 )
                 if message.content:
@@ -534,11 +544,11 @@ Use markdown formatting. Be factual and concise."""
                 response = client.chat.completions.create(
                     model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
                     messages=[
-                        {"role": "system", "content": "Synthesize climate research concisely."},
+                        {"role": "system", "content": system_prompt or "Synthesize climate research concisely."},
                         {"role": "user", "content": prompt},
                     ],
-                    max_tokens=1500,
-                    temperature=0.2,
+                    max_tokens=tmpl.max_tokens or 1500,
+                    temperature=tmpl.temperature if tmpl.temperature is not None else 0.2,
                 )
                 return response.choices[0].message.content.strip()
             except Exception as e:
