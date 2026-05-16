@@ -22,6 +22,7 @@ from .base import (
     IndicatorRecord,
     SyncResult,
 )
+from .climate_action_tracker import ClimateActionTrackerAdapter
 from .climate_trace import ClimateTRACEAdapter
 from .owid import OWIDAdapter
 
@@ -29,6 +30,7 @@ __all__ = [
     "IndicatorAdapter",
     "IndicatorRecord",
     "SyncResult",
+    "ClimateActionTrackerAdapter",
     "ClimateTRACEAdapter",
     "OWIDAdapter",
 ]
