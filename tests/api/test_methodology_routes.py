@@ -267,6 +267,182 @@ class TestCalibrationEndpoint:
         assert "not yet supported" in body["reason"]
 
 
+class TestCalibrationAdminEndpoints:
+    """Phase 5 wave 5: POST /api/methodology/calibration/labels +
+    POST /api/methodology/calibration/refit."""
+
+    def _swap_db(self, fake):
+        import shared.database as _shared_db
+        prior = _shared_db._postgres_client
+        _shared_db._postgres_client = fake
+        return prior
+
+    def _restore(self, prior):
+        import shared.database as _shared_db
+        _shared_db._postgres_client = prior
+
+    def test_submit_label_records_and_returns_id(self, monkeypatch):
+        monkeypatch.delenv("CLILENS_CALIBRATION_ADMIN_SECRET", raising=False)
+
+        class _LabelDB:
+            def execute_query(self, q, p=None):
+                qn = " ".join(q.split()).lower()
+                if "insert into calibration_labels" in qn:
+                    return [{"id": 17, "labeled_at": "2026-05-16T12:00:00"}]
+                return []
+
+        prior = self._swap_db(_LabelDB())
+        try:
+            r = client.post(
+                "/api/methodology/calibration/labels",
+                json={
+                    "url_analysis_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                    "label_truth": 0.85,
+                    "labeled_by": "reviewer-1",
+                    "label_method": "human_review",
+                    "label_notes": "Mostly correct.",
+                },
+            )
+            assert r.status_code == 201, r.text
+            body = r.json()
+            assert body["status"] == "recorded"
+            assert body["id"] == 17
+        finally:
+            self._restore(prior)
+
+    def test_submit_label_duplicate_returns_409(self, monkeypatch):
+        monkeypatch.delenv("CLILENS_CALIBRATION_ADMIN_SECRET", raising=False)
+
+        class _DupDB:
+            def execute_query(self, q, p=None):
+                raise RuntimeError(
+                    'duplicate key value violates unique constraint "uq_calibration_labels_natural"'
+                )
+
+        prior = self._swap_db(_DupDB())
+        try:
+            r = client.post(
+                "/api/methodology/calibration/labels",
+                json={
+                    "url_analysis_id": "x",
+                    "label_truth": 0.5,
+                    "labeled_by": "r",
+                },
+            )
+            assert r.status_code == 409
+        finally:
+            self._restore(prior)
+
+    def test_submit_label_rejects_out_of_range(self):
+        # Pydantic validation should catch this before we even hit the DB.
+        r = client.post(
+            "/api/methodology/calibration/labels",
+            json={
+                "url_analysis_id": "x",
+                "label_truth": 2.0,  # > 1.0
+                "labeled_by": "r",
+            },
+        )
+        assert r.status_code == 422
+
+    def test_admin_secret_enforced_when_configured(self, monkeypatch):
+        # Setting the env var via monkeypatch is scoped to this test; the
+        # endpoint reads it on each call, so no module reload needed.
+        monkeypatch.setenv("CLILENS_CALIBRATION_ADMIN_SECRET", "secret-xyz")
+
+        # Wrong secret → 403.
+        r = client.post(
+            "/api/methodology/calibration/labels",
+            headers={"X-Admin-Secret": "wrong"},
+            json={
+                "url_analysis_id": "x",
+                "label_truth": 0.5,
+                "labeled_by": "r",
+            },
+        )
+        assert r.status_code == 403
+
+    def test_admin_secret_correct_passes_through(self, monkeypatch):
+        """Sanity: correct secret + valid body → 201 with the recorded label."""
+        monkeypatch.setenv("CLILENS_CALIBRATION_ADMIN_SECRET", "secret-xyz")
+
+        class _LabelDB:
+            def execute_query(self, q, p=None):
+                qn = " ".join(q.split()).lower()
+                if "insert into calibration_labels" in qn:
+                    return [{"id": 42, "labeled_at": "2026-05-16T12:00:00"}]
+                return []
+
+        prior = self._swap_db(_LabelDB())
+        try:
+            r = client.post(
+                "/api/methodology/calibration/labels",
+                headers={"X-Admin-Secret": "secret-xyz"},
+                json={
+                    "url_analysis_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                    "label_truth": 0.85,
+                    "labeled_by": "reviewer-1",
+                },
+            )
+            assert r.status_code == 201, r.text
+            assert r.json()["id"] == 42
+        finally:
+            self._restore(prior)
+
+    def test_refit_returns_insufficient_data_when_few_labels(self, monkeypatch):
+        monkeypatch.delenv("CLILENS_CALIBRATION_ADMIN_SECRET", raising=False)
+
+        class _FewLabelsDB:
+            def execute_query(self, q, p=None):
+                qn = " ".join(q.split()).lower()
+                if "from calibration_labels" in qn:
+                    return [{"label_truth": 1.0, "reliability_score": 80}]
+                return []
+
+        prior = self._swap_db(_FewLabelsDB())
+        try:
+            r = client.post("/api/methodology/calibration/refit")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["status"] == "insufficient_data"
+            assert body["n_labels"] == 1
+        finally:
+            self._restore(prior)
+
+    def test_refit_writes_fit_row_and_returns_ok(self, monkeypatch):
+        monkeypatch.delenv("CLILENS_CALIBRATION_ADMIN_SECRET", raising=False)
+
+        class _EnoughLabelsDB:
+            inserts: list = []
+            def execute_query(self, q, p=None):
+                qn = " ".join(q.split()).lower()
+                if "from calibration_labels" in qn:
+                    return [
+                        {"label_truth": 1.0, "reliability_score": 90},
+                        {"label_truth": 0.0, "reliability_score": 30},
+                        {"label_truth": 1.0, "reliability_score": 80},
+                        {"label_truth": 0.0, "reliability_score": 40},
+                        {"label_truth": 1.0, "reliability_score": 75},
+                    ]
+                if "insert into calibration_fits" in qn:
+                    self.inserts.append({"q": qn, "p": p or {}})
+                    return [{"id": 7}]
+                return []
+
+        prior = self._swap_db(_EnoughLabelsDB())
+        try:
+            r = client.post("/api/methodology/calibration/refit?signal=reliability_score")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["status"] == "ok"
+            assert body["n_labels"] == 5
+            assert body["fit_id"] == 7
+            assert body["platt_a"] is not None
+            assert body["brier_score"] is not None
+        finally:
+            self._restore(prior)
+
+
 class TestMethodologyBundle:
     def test_bundle_contains_all_blocks(self):
         resp = client.get("/api/methodology")

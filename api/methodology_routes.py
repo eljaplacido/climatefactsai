@@ -29,7 +29,8 @@ import os
 import subprocess
 from typing import Any, Dict, List, Optional  # noqa: F401
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header, HTTPException, status
+from pydantic import BaseModel, Field
 
 import sys
 from pathlib import Path
@@ -43,6 +44,27 @@ from shared.logger import setup_logging
 
 logger = setup_logging("methodology-api")
 router = APIRouter(prefix="/api/methodology", tags=["Methodology"])
+
+
+# ---------------------------------------------------------------------------
+# Admin secret for write endpoints (Phase 5 wave 5)
+# ---------------------------------------------------------------------------
+# Matches the pattern used by scheduler_routes.py: when the env var is
+# unset (dev), endpoints are open; in production set
+# `CLILENS_CALIBRATION_ADMIN_SECRET` and pass it via the
+# `X-Admin-Secret` header on every write.
+#
+# We read the env var on each call (not at module load) so test fixtures
+# that monkeypatch it stay correctly scoped — no `importlib.reload`
+# gymnastics required.
+
+def _verify_admin_secret(secret: Optional[str]) -> None:
+    configured = os.getenv("CLILENS_CALIBRATION_ADMIN_SECRET", "")
+    if configured and secret != configured:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or missing admin secret",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -391,3 +413,86 @@ async def methodology_calibration(
         "available": True,
         "metrics": result.as_dict(),
     }
+
+
+# =============================================================================
+# Calibration data → fit → apply (Phase 5 wave 5)
+# =============================================================================
+
+class CalibrationLabelRequest(BaseModel):
+    """One ground-truth label submitted by a reviewer."""
+    url_analysis_id: str = Field(..., min_length=1, max_length=64)
+    label_truth: float = Field(..., ge=0.0, le=1.0,
+        description="Ground-truth verdict: 0.0 = wrong, 1.0 = correct, "
+                    "intermediate = graded.")
+    labeled_by: str = Field(..., min_length=1, max_length=128,
+        description="Reviewer identifier — name, email, or external review-ID.")
+    label_method: str = Field(default="human_review", max_length=64,
+        description="One of: human_review | external_factcheck | "
+                    "consensus_panel | reviewer_team_lead | auto_baseline")
+    label_notes: Optional[str] = Field(default=None, max_length=8192)
+    confidence_at_label: Optional[float] = Field(default=None, ge=0.0, le=1.0,
+        description="Reviewer's own confidence in their label, optional.")
+
+
+@router.post("/calibration/labels", status_code=status.HTTP_201_CREATED)
+async def submit_calibration_label(
+    request: CalibrationLabelRequest,
+    x_admin_secret: Optional[str] = Header(None, alias="X-Admin-Secret"),
+) -> Dict[str, Any]:
+    """Record one ground-truth label for an analysis.
+
+    The label feeds future calibration refit runs. Idempotent on the
+    natural key (analysis_id, labeled_by, label_method); duplicate
+    submissions return 409 with status='duplicate'.
+    """
+    _verify_admin_secret(x_admin_secret)
+
+    from app.domains.intelligence.calibration_store import record_calibration_label
+
+    db = get_postgres()
+    result = record_calibration_label(
+        db,
+        url_analysis_id=request.url_analysis_id,
+        label_truth=request.label_truth,
+        labeled_by=request.labeled_by,
+        label_method=request.label_method,
+        label_notes=request.label_notes,
+        confidence_at_label=request.confidence_at_label,
+    )
+
+    if result.status == "duplicate":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Already labelled by this reviewer + method",
+        )
+    if result.status == "error":
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to record label: {result.error}",
+        )
+
+    return result.as_dict()
+
+
+@router.post("/calibration/refit")
+async def refit_calibration(
+    signal: str = "reliability_score",
+    min_labels: int = 5,
+    x_admin_secret: Optional[str] = Header(None, alias="X-Admin-Secret"),
+) -> Dict[str, Any]:
+    """Recompute Brier + ECE + Platt parameters and persist into
+    `calibration_fits`. The application picks up the new fit on the
+    next GET — no restart required.
+
+    Returns `status='insufficient_data'` when fewer than `min_labels`
+    rows exist for the signal (default 5). The fit is skipped, no row
+    written.
+    """
+    _verify_admin_secret(x_admin_secret)
+
+    from app.domains.intelligence.calibration_store import refit_and_persist
+
+    db = get_postgres()
+    result = refit_and_persist(db, signal_name=signal, min_labels=int(min_labels))
+    return result.as_dict()

@@ -521,6 +521,11 @@ class URLAnalysisDetail(BaseModel):
     # Analysis results
     reliability_score: Optional[int] = None
     overall_credibility: Optional[str] = None
+    # Phase 5 wave 5 (2026-05-16): the platform applies the most-recent
+    # Platt-scaled calibration to `reliability_score` when a fit exists
+    # in `calibration_fits`. Returns None when no fit is available yet —
+    # callers fall back to `reliability_score`.
+    calibrated_reliability_score: Optional[float] = None
 
     # Claims (as JSON array)
     extracted_claims: List[dict] = Field(default_factory=list)
@@ -1458,6 +1463,22 @@ async def get_analysis_result(
     elif fact_checks is None:
         fact_checks = []
 
+    # Phase 5 wave 5: apply the most-recent Platt-scaled calibration when
+    # available. Returns None if no fit exists — callers fall back to raw.
+    calibrated_reliability_score: Optional[float] = None
+    try:
+        from app.domains.intelligence.calibration_store import (
+            apply_latest_to_reliability,
+        )
+        calibrated_reliability_score = apply_latest_to_reliability(
+            db, result.get("reliability_score"),
+        )
+    except Exception as _calib_exc:
+        logger.debug(
+            "Calibration application failed (non-fatal) for %s: %s",
+            job_id, _calib_exc,
+        )
+
     return URLAnalysisDetail(
         analysis_id=str(result["analysis_id"]),
         submitted_url=result["submitted_url"],
@@ -1470,6 +1491,7 @@ async def get_analysis_result(
         published_date=result.get("published_date"),
         reliability_score=result.get("reliability_score"),
         overall_credibility=result.get("overall_credibility"),
+        calibrated_reliability_score=calibrated_reliability_score,
         extracted_claims=extracted_claims,
         fact_checks=fact_checks,
         created_at=result["created_at"],
