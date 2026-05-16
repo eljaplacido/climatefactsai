@@ -173,40 +173,97 @@ class CynefinRouter:
     # ------------------------------------------------------------------
 
     def _llm_classify(self, query: str) -> Optional[Dict[str, Any]]:
-        """Use LLM to classify ambiguous queries."""
+        """Classify an ambiguous query via an LLM with structured-JSON output.
+
+        Prompt adapted from `projectcarfcynepic/config/prompts.yaml#router`
+        (eljaplacido/projectcarfcynepic — BSL 1.1, both repos same owner so
+        self-permission is fine; track in docs/licenses if the port grows).
+        Returns confidence + reasoning grounded in the LLM's actual judgement
+        rather than the pre-fix flat 0.6 with a templated "Classified by LLM"
+        string (the audit flagged that as a calibration lie).
+        """
         try:
             from app.domains.intelligence.llm_client import llm_chat
 
-            prompt = (
-                f'Classify this climate news query into one Cynefin domain.\n'
-                f'Query: "{query}"\n\n'
-                f'Domains:\n'
-                f'- clear: Simple factual lookup\n'
-                f'- complicated: Requires expert analysis of multiple factors\n'
-                f'- complex: Involves emergence, predictions, tipping points\n'
-                f'- chaotic: Crisis/emergency requiring rapid response\n\n'
-                f'Respond with ONLY the domain name (one word): clear, complicated, complex, or chaotic'
+            system_prompt = (
+                "You are a context classifier for the CliLens.AI climate-news "
+                "complexity router (Cynefin-based). Classify each query into "
+                "one of five domains and return ONLY a JSON object — no prose, "
+                "no code fences.\n\n"
+                "Domains:\n"
+                "- clear: Simple factual lookup the database can answer directly.\n"
+                "  Example: \"What is the current temperature in Helsinki?\"\n"
+                "- complicated: Requires expert analysis of multiple known factors.\n"
+                "  Example: \"Compare Germany and France on renewable adoption.\"\n"
+                "- complex: Novel situation where cause-effect emerges in retrospect.\n"
+                "  Example: \"How will the Loss & Damage Fund reshape adaptation?\"\n"
+                "- chaotic: Emergency requiring rapid synthesis.\n"
+                "  Example: \"Flash flood hit Pakistan — what just happened?\"\n"
+                "- disorder: Insufficient signal; classify as disorder when unsure.\n\n"
+                "Output format (JSON only):\n"
+                "{\"domain\": \"clear|complicated|complex|chaotic|disorder\", "
+                "\"confidence\": 0.0-1.0, \"reasoning\": \"one-sentence justification\"}\n\n"
+                "Be conservative — classify as disorder rather than guessing."
             )
 
             response = llm_chat(
-                prompt=prompt,
-                system_prompt="You classify queries. Respond with exactly one word.",
-                max_tokens=10,
+                prompt=f'Query: "{query}"',
+                system_prompt=system_prompt,
+                max_tokens=200,
                 temperature=0.0,
             )
 
-            if response:
-                domain = response.strip().lower().rstrip(".")
-                if domain in self.STRATEGY_MAP:
-                    strategy = self.STRATEGY_MAP[domain]
-                    return {
-                        "domain": domain,
-                        "confidence": 0.6,
-                        "recommended_strategy": strategy,
-                        "strategy_description": self.STRATEGY_DESCRIPTIONS[strategy],
-                        "reasoning": "Classified by LLM (ambiguous keywords).",
-                        "scores": {},
-                    }
+            if not response:
+                return None
+
+            # Tolerant JSON parse — strip code fences if the model added them.
+            import json as _json
+            import re as _re
+
+            cleaned = response.strip()
+            if cleaned.startswith("```"):
+                cleaned = _re.sub(
+                    r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=_re.DOTALL
+                ).strip()
+
+            try:
+                parsed = _json.loads(cleaned)
+            except (ValueError, TypeError):
+                logger.debug(f"LLM Cynefin returned non-JSON: {response!r}")
+                return None
+
+            if not isinstance(parsed, dict):
+                return None
+
+            raw_domain = str(parsed.get("domain", "")).strip().lower()
+            if raw_domain not in self.STRATEGY_MAP and raw_domain != "disorder":
+                return None
+
+            # "disorder" → safe default routing (complicated) with capped
+            # confidence so callers can flag for clarification.
+            effective_domain = "complicated" if raw_domain == "disorder" else raw_domain
+            strategy = self.STRATEGY_MAP[effective_domain]
+
+            try:
+                confidence = float(parsed.get("confidence", 0.5))
+            except (TypeError, ValueError):
+                confidence = 0.5
+            confidence = max(0.0, min(1.0, confidence))
+            if raw_domain == "disorder":
+                confidence = min(confidence, 0.4)
+
+            reasoning = str(parsed.get("reasoning", "")).strip() or "Classified by LLM."
+
+            return {
+                "domain": effective_domain,
+                "confidence": round(confidence, 2),
+                "recommended_strategy": strategy,
+                "strategy_description": self.STRATEGY_DESCRIPTIONS[strategy],
+                "reasoning": reasoning,
+                "scores": {},
+                "source": "llm_structured",
+                "raw_domain": raw_domain,  # preserve "disorder" for transparency
+            }
         except Exception as e:
             logger.debug(f"LLM Cynefin classification failed: {e}")
 

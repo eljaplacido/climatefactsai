@@ -88,27 +88,39 @@ class CARFIntegration:
         }
 
     def _fallback_classify(self, text: str) -> Dict[str, Any]:
-        text_lower = text.lower()
-        sci = ["study", "research", "data", "measurement", "peer-reviewed", "journal", "findings"]
-        cmplx = ["uncertain", "emerging", "might", "could", "model", "scenario", "tipping point"]
-        chaotic = ["crisis", "emergency", "disaster", "unprecedented", "catastrophic"]
+        """Local fallback when CARF service is unreachable.
 
-        sci_s = sum(1 for k in sci if k in text_lower)
-        cmplx_s = sum(1 for k in cmplx if k in text_lower)
-        chaotic_s = sum(1 for k in chaotic if k in text_lower)
+        Pre-2026-05-16 this was a 4-keyword heuristic that would label any
+        text with three "study" mentions as 'complicated' regardless of
+        substance — the audit (T3) flagged it as misleading methodology
+        because the transparency endpoint advertised "Bayesian + Guardian-
+        lite" while this stub ran in production.
 
-        if chaotic_s >= 3:
-            domain = "chaotic"
-        elif cmplx_s >= 3:
-            domain = "complex"
-        elif sci_s >= 3:
-            domain = "complicated"
-        elif sci_s >= 1:
-            domain = "clear"
-        else:
-            domain = "disorder"
+        Now delegates to CynefinRouter, which has keyword scoring + a
+        structured-JSON LLM classifier (the LLM prompt itself was ported
+        from projectcarfcynepic). Still local-only — no HTTP — so CARF
+        service deployment can wait.
+        """
+        try:
+            from app.domains.intelligence.cynefin_router import CynefinRouter
 
-        return {"domain": domain, "confidence": 0.4, "routing": f"fallback_{domain}", "source": "heuristic"}
+            router = CynefinRouter()
+            result = router.classify(text)
+            return {
+                "domain": result["domain"],
+                "confidence": result["confidence"],
+                "routing": result["recommended_strategy"],
+                "source": result.get("source", "cynefin_router_local"),
+                "reasoning": result.get("reasoning"),
+            }
+        except Exception as e:
+            logger.warning(f"CynefinRouter fallback failed: {e}")
+            return {
+                "domain": "disorder",
+                "confidence": 0.2,
+                "routing": "fallback_disorder",
+                "source": "error",
+            }
 
     async def analyze_causal_claim(self, claim: str, evidence: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
         """Run causal inference on a climate claim using CARF's DoWhy/EconML engine."""
