@@ -190,14 +190,16 @@ export default function GlobalNav() {
               )}
             </div>
 
-            {/* Analytics link */}
-            <Link
-              href="/admin/analytics"
-              className="hidden md:flex items-center px-2 py-1.5 text-gray-500 hover:bg-gray-50 rounded-md transition-colors"
-              title={t("nav.analytics")}
-            >
-              <BarChart3 className="h-4 w-4" />
-            </Link>
+            {/* Analytics link — gated to authenticated users; backend enforces admin role */}
+            {isLoggedIn && (
+              <Link
+                href="/admin/analytics"
+                className="hidden md:flex items-center px-2 py-1.5 text-gray-500 hover:bg-gray-50 rounded-md transition-colors"
+                title={t("nav.analytics")}
+              >
+                <BarChart3 className="h-4 w-4" />
+              </Link>
+            )}
 
             {/* About */}
             <Link
@@ -304,10 +306,12 @@ export default function GlobalNav() {
               </Link>
             ))}
             <div className="border-t border-gray-100 mt-2 pt-2">
-              <Link href="/admin/analytics" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
-                <BarChart3 className="h-5 w-5" />
-                <span>{t("nav.analytics")}</span>
-              </Link>
+              {isLoggedIn && (
+                <Link href="/admin/analytics" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+                  <BarChart3 className="h-5 w-5" />
+                  <span>{t("nav.analytics")}</span>
+                </Link>
+              )}
               <Link href="/about" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
                 <Info className="h-5 w-5" />
                 <span>{t("nav.about")}</span>

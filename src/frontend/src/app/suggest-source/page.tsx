@@ -14,6 +14,7 @@ import {
   XCircle,
   Eye,
   ExternalLink,
+  LogIn,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
@@ -107,13 +108,6 @@ export default function SuggestSourcePage() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
 
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!authLoading && !isLoggedIn) {
-      router.push("/login");
-    }
-  }, [authLoading, isLoggedIn, router]);
-
   // Load user's suggestions
   useEffect(() => {
     if (isLoggedIn && token) {
@@ -195,7 +189,33 @@ export default function SuggestSourcePage() {
   }
 
   if (!isLoggedIn) {
-    return null; // Will redirect
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-md border border-gray-200 p-8 text-center">
+          <div className="inline-flex items-center justify-center w-14 h-14 bg-teal-100 rounded-full mb-4">
+            <Lightbulb className="h-7 w-7 text-teal-600" />
+          </div>
+          <h1 className="text-xl font-bold text-gray-900 mb-2">Sign in to suggest a source</h1>
+          <p className="text-sm text-gray-600 mb-6">
+            We track who suggests each source so we can credit you when it ships and follow up if we need clarification.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2 justify-center">
+            <Link
+              href="/login?redirect=/suggest-source"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors"
+            >
+              <LogIn className="h-4 w-4" /> Sign in
+            </Link>
+            <Link
+              href="/signup?redirect=/suggest-source"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white text-teal-700 border border-teal-200 rounded-lg text-sm font-medium hover:bg-teal-50 transition-colors"
+            >
+              Create account
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -365,76 +385,78 @@ export default function SuggestSourcePage() {
           </form>
         </div>
 
-        {/* My Suggestions */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">My Suggestions</h2>
+        {/* My Suggestions — only visible when logged in */}
+        {isLoggedIn && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">My Suggestions</h2>
 
-          {loadingSuggestions ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-            </div>
-          ) : suggestions.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-8">
-              You have not submitted any source suggestions yet.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {suggestions.map((s) => {
-                const cfg = STATUS_CONFIG[s.status] || STATUS_CONFIG.pending;
-                const StatusIcon = cfg.icon;
-                return (
-                  <div
-                    key={s.suggestion_id}
-                    className="border border-gray-100 rounded-lg p-4 hover:border-gray-200 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-sm font-semibold text-gray-900 truncate">
-                            {s.name}
-                          </h3>
-                          <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.bg} ${cfg.color}`}
+            {loadingSuggestions ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              </div>
+            ) : suggestions.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-8">
+                You have not submitted any source suggestions yet.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {suggestions.map((s) => {
+                  const cfg = STATUS_CONFIG[s.status] || STATUS_CONFIG.pending;
+                  const StatusIcon = cfg.icon;
+                  return (
+                    <div
+                      key={s.suggestion_id}
+                      className="border border-gray-100 rounded-lg p-4 hover:border-gray-200 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="text-sm font-semibold text-gray-900 truncate">
+                              {s.name}
+                            </h3>
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.bg} ${cfg.color}`}
+                            >
+                              <StatusIcon className="h-3 w-3" />
+                              {cfg.label}
+                            </span>
+                          </div>
+                          <a
+                            href={s.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-teal-600 hover:text-teal-800 flex items-center gap-1 truncate"
                           >
-                            <StatusIcon className="h-3 w-3" />
-                            {cfg.label}
-                          </span>
+                            <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                            {s.url}
+                          </a>
+                          {s.description && (
+                            <p className="mt-1 text-xs text-gray-500 line-clamp-2">{s.description}</p>
+                          )}
+                          {s.admin_notes && (
+                            <p className="mt-1 text-xs text-slate-600 bg-slate-50 px-2 py-1 rounded">
+                              Admin: {s.admin_notes}
+                            </p>
+                          )}
                         </div>
-                        <a
-                          href={s.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-teal-600 hover:text-teal-800 flex items-center gap-1 truncate"
-                        >
-                          <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                          {s.url}
-                        </a>
-                        {s.description && (
-                          <p className="mt-1 text-xs text-gray-500 line-clamp-2">{s.description}</p>
-                        )}
-                        {s.admin_notes && (
-                          <p className="mt-1 text-xs text-slate-600 bg-slate-50 px-2 py-1 rounded">
-                            Admin: {s.admin_notes}
-                          </p>
-                        )}
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded">
-                          {s.source_type.replace("_", " ")}
-                        </span>
-                        {s.created_at && (
-                          <p className="text-[10px] text-gray-400 mt-1">
-                            {new Date(s.created_at).toLocaleDateString()}
-                          </p>
-                        )}
+                        <div className="text-right flex-shrink-0">
+                          <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded">
+                            {s.source_type.replace("_", " ")}
+                          </span>
+                          {s.created_at && (
+                            <p className="text-[10px] text-gray-400 mt-1">
+                              {new Date(s.created_at).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

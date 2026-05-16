@@ -233,6 +233,9 @@ export interface AnalyzeUrlResponse {
   job_id: string;
   status: "processing" | "completed" | "failed";
   estimated_time?: number;
+  // HMAC token returned by POST — required on subsequent GETs for anonymous
+  // users (defends against UUID-guessing of other users' submissions).
+  access_token?: string;
   article?: Article;
   error?: string;
   decomposed_confidence?: DecomposedConfidence;

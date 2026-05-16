@@ -43,20 +43,40 @@ class OAuthTokenResponse(BaseModel):
 
 
 # Google OAuth2 config
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 # Microsoft OAuth2 config
-MS_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID", "")
-MS_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET", "")
 MS_TENANT_ID = os.getenv("MICROSOFT_TENANT_ID", "common")
 MS_TOKEN_URL_TEMPLATE = "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
 MS_USERINFO_URL = "https://graph.microsoft.com/v1.0/me"
 
 
 OAUTH_STATE_SECRET = os.getenv("OAUTH_STATE_SECRET", secrets.token_hex(32))
+
+
+def _read_secret_env(*names: str) -> str:
+    """Return first non-empty env var among aliases."""
+    for name in names:
+        value = os.getenv(name, "")
+        if value and value.strip():
+            return value.strip()
+    return ""
+
+
+def _oauth_config() -> dict:
+    """Load OAuth provider credentials dynamically from env."""
+    google_client_id = _read_secret_env("GOOGLE_CLIENT_ID", "google-client-id")
+    google_client_secret = _read_secret_env("GOOGLE_CLIENT_SECRET", "google-client-secret")
+    microsoft_client_id = _read_secret_env("MICROSOFT_CLIENT_ID", "microsoft-client-id")
+    microsoft_client_secret = _read_secret_env("MICROSOFT_CLIENT_SECRET", "microsoft-client-secret")
+
+    return {
+        "google_client_id": google_client_id,
+        "google_client_secret": google_client_secret,
+        "ms_client_id": microsoft_client_id,
+        "ms_client_secret": microsoft_client_secret,
+    }
 
 
 @router.get("/state")
@@ -69,9 +89,10 @@ async def generate_oauth_state():
 @router.get("/providers")
 async def get_available_providers():
     """Return which OAuth providers are configured."""
+    cfg = _oauth_config()
     return {
-        "google": bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
-        "microsoft": bool(MS_CLIENT_ID and MS_CLIENT_SECRET),
+        "google": bool(cfg["google_client_id"] and cfg["google_client_secret"]),
+        "microsoft": bool(cfg["ms_client_id"] and cfg["ms_client_secret"]),
     }
 
 
@@ -220,16 +241,26 @@ async def oauth_callback(data: OAuthCallbackRequest):
 
 
 async def _exchange_google_code(code: str, redirect_uri: str) -> Optional[dict]:
-    """Exchange Google authorization code for user info."""
-    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+    """Exchange Google authorization code for user info.
+
+    Security: Google's `email` claim is only trustworthy when
+    `email_verified=true`. Without this check, anyone who registers any
+    Google account under a victim's email could sign in as the victim
+    (account-takeover via email-match in the callback handler).
+    """
+    cfg = _oauth_config()
+    google_client_id = cfg["google_client_id"]
+    google_client_secret = cfg["google_client_secret"]
+
+    if not google_client_id or not google_client_secret:
         raise HTTPException(status_code=501, detail="Google OAuth not configured")
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             token_resp = await client.post(GOOGLE_TOKEN_URL, data={
                 "code": code,
-                "client_id": GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
+                "client_id": google_client_id,
+                "client_secret": google_client_secret,
                 "redirect_uri": redirect_uri,
                 "grant_type": "authorization_code",
             })
@@ -242,11 +273,29 @@ async def _exchange_google_code(code: str, redirect_uri: str) -> Optional[dict]:
             userinfo_resp.raise_for_status()
             info = userinfo_resp.json()
 
+            email = info.get("email")
+            # `email_verified` may come back as a bool or as the string "true"
+            # depending on Google's response variant.
+            ev_raw = info.get("email_verified")
+            email_verified = (
+                ev_raw is True
+                or (isinstance(ev_raw, str) and ev_raw.lower() == "true")
+            )
+
+            if not email or not email_verified:
+                logger.warning(
+                    "Google OAuth rejected: email_verified is false",
+                    email=email,
+                    email_verified=ev_raw,
+                )
+                return None
+
             return {
-                "email": info.get("email"),
+                "email": email,
                 "name": info.get("name"),
                 "avatar_url": info.get("picture"),
                 "provider_id": info.get("sub"),
+                "email_verified": True,
             }
     except httpx.HTTPStatusError as e:
         logger.error(f"Google OAuth failed: {e.response.status_code}")
@@ -258,7 +307,11 @@ async def _exchange_google_code(code: str, redirect_uri: str) -> Optional[dict]:
 
 async def _exchange_microsoft_code(code: str, redirect_uri: str) -> Optional[dict]:
     """Exchange Microsoft authorization code for user info."""
-    if not MS_CLIENT_ID or not MS_CLIENT_SECRET:
+    cfg = _oauth_config()
+    ms_client_id = cfg["ms_client_id"]
+    ms_client_secret = cfg["ms_client_secret"]
+
+    if not ms_client_id or not ms_client_secret:
         raise HTTPException(status_code=501, detail="Microsoft OAuth not configured")
 
     token_url = MS_TOKEN_URL_TEMPLATE.format(tenant=MS_TENANT_ID)
@@ -267,8 +320,8 @@ async def _exchange_microsoft_code(code: str, redirect_uri: str) -> Optional[dic
         async with httpx.AsyncClient(timeout=15) as client:
             token_resp = await client.post(token_url, data={
                 "code": code,
-                "client_id": MS_CLIENT_ID,
-                "client_secret": MS_CLIENT_SECRET,
+                "client_id": ms_client_id,
+                "client_secret": ms_client_secret,
                 "redirect_uri": redirect_uri,
                 "grant_type": "authorization_code",
                 "scope": "openid profile email User.Read",

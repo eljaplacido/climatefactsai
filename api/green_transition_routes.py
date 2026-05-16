@@ -66,6 +66,19 @@ class CountryGreenProfile(BaseModel):
     total_green_articles: int
     top_sources: List[str] = []
     last_updated: Optional[str] = None
+    # Honesty caption (added 2026-05-16): the score above is a *platform
+    # coverage* signal, not a verified sustainability indicator. Renaming
+    # the field is a breaking change; until structured primary-source
+    # indicators land (IRENA / OWID / Climate Action Tracker), surface
+    # these explicit fields so clients can render the caveat.
+    score_basis: str = "coverage_index"
+    coverage_caveat: str = (
+        "This score reflects how broadly CliLens.AI's article corpus covers "
+        "green-transition topics for this country (0–10, derived from article "
+        "counts across 7 dimensions). It is NOT a verified sustainability "
+        "performance metric. Real-world performance scoring (IRENA, OWID, "
+        "Climate Action Tracker integration) is in active development."
+    )
 
 
 class GlobalLeaderboard(BaseModel):
@@ -75,7 +88,14 @@ class GlobalLeaderboard(BaseModel):
 
 
 def _score(cnt: int) -> float:
-    """Convert article count to 0–10 score (2 articles per point, capped at 10)."""
+    """Convert article count to 0–10 coverage proxy (2 articles per point, capped at 10).
+
+    This is a COVERAGE INDEX, not a verified sustainability score. A country with
+    active climate journalism will score high; a country we under-crawl will
+    score low. Real-world sustainability scoring requires primary-source
+    indicators (IRENA capacity, OWID emissions, CAT policy ratings) — those
+    integrations are tracked separately.
+    """
     return round(min(10.0, cnt / 2.0), 2)
 
 

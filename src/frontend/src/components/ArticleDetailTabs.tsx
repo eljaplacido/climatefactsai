@@ -2,24 +2,32 @@
 
 import { useState, useMemo } from "react";
 import clsx from "clsx";
+import DOMPurify from "isomorphic-dompurify";
 import type { ClaimDetail } from "@/types";
 import ClaimCard from "./ClaimCard";
 import Markdown from "./Markdown";
 import { FileText, Shield, Search, ChevronDown, ChevronRight } from "lucide-react";
 
+// Regex sanitizer was bypassable (newline-injected on-handlers, SVG <use href="data:...">,
+// math/SVG namespace tricks, etc.). Use DOMPurify with a strict allowlist that covers
+// the tags actually produced by our analysis-article Markdown→HTML pipeline.
+const SAFE_TAGS = [
+  "a", "b", "blockquote", "br", "code", "em", "h1", "h2", "h3", "h4", "h5", "h6",
+  "hr", "i", "img", "li", "ol", "p", "pre", "span", "strong", "sub", "sup",
+  "table", "tbody", "td", "th", "thead", "tr", "ul",
+];
+const SAFE_ATTRS = ["href", "src", "alt", "title", "class", "target", "rel"];
+
 function sanitizeHtml(html: string): string {
-  // Strip script tags, event handlers, and dangerous attributes
-  return html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-    .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, "")
-    .replace(/\bon\w+\s*=\s*[^\s>]*/gi, "")
-    .replace(/javascript\s*:/gi, "")
-    .replace(/data\s*:[^,]*base64/gi, "")
-    .replace(/<iframe\b[^>]*>/gi, "")
-    .replace(/<\/iframe>/gi, "")
-    .replace(/<object\b[^>]*>/gi, "")
-    .replace(/<\/object>/gi, "")
-    .replace(/<embed\b[^>]*>/gi, "");
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: SAFE_TAGS,
+    ALLOWED_ATTR: SAFE_ATTRS,
+    // Block protocols other than http(s) and mailto on href/src (defence in
+    // depth — DOMPurify already strips javascript:, but be explicit).
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+    // Force target=_blank links to also carry rel="noopener noreferrer".
+    ADD_ATTR: ["target", "rel"],
+  });
 }
 
 interface ArticleDetailTabsProps {

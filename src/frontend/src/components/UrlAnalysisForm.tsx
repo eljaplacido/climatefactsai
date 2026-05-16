@@ -11,6 +11,8 @@ export default function UrlAnalysisForm() {
   const [url, setUrl] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
+  // Access token returned by POST — required on GET for anonymous reads (S7).
+  const [accessToken, setAccessToken] = useState<string | null>(null)
   const [status, setStatus] = useState<'idle' | 'processing' | 'completed' | 'failed'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [article, setArticle] = useState<Article | null>(null)
@@ -64,9 +66,9 @@ export default function UrlAnalysisForm() {
   }
 
   // Poll status every 3 seconds
-  const pollStatus = useCallback(async (currentJobId: string) => {
+  const pollStatus = useCallback(async (currentJobId: string, currentToken: string | null) => {
     try {
-      const response = await api.getAnalysisStatus(currentJobId)
+      const response = await api.getAnalysisStatus(currentJobId, currentToken ?? undefined)
 
       setStatus(response.status)
 
@@ -92,11 +94,11 @@ export default function UrlAnalysisForm() {
     if (!jobId) return
 
     const intervalId = setInterval(() => {
-      pollStatus(jobId)
+      pollStatus(jobId, accessToken)
     }, 3000)
 
     return () => clearInterval(intervalId)
-  }, [jobId, pollStatus])
+  }, [jobId, accessToken, pollStatus])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -105,6 +107,7 @@ export default function UrlAnalysisForm() {
     setError(null)
     setArticle(null)
     setJobId(null)
+    setAccessToken(null)
     setEstimatedTime(null)
 
     // Validate URL
@@ -121,6 +124,7 @@ export default function UrlAnalysisForm() {
 
       if (response.status === 'processing') {
         setJobId(response.job_id)
+        setAccessToken(response.access_token || null)
         setEstimatedTime(response.estimated_time || null)
       } else if (response.status === 'completed') {
         setArticle(response.article || null)
@@ -155,6 +159,7 @@ export default function UrlAnalysisForm() {
     setError(null)
     setArticle(null)
     setJobId(null)
+    setAccessToken(null)
     setEstimatedTime(null)
     setDecomposedConfidence(null)
     setInsightSummary(null)

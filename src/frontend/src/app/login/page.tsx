@@ -18,6 +18,7 @@ import { useAuth } from "@/lib/auth";
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 const MS_CLIENT_ID = process.env.NEXT_PUBLIC_MICROSOFT_CLIENT_ID || "";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
 
 function LoginForm() {
   const router = useRouter();
@@ -54,15 +55,54 @@ function LoginForm() {
     }
   }
 
-  function handleOAuth(provider: "google" | "microsoft") {
-    const redirectUri = `${window.location.origin}/auth/callback`;
-    let authUrl: string;
-    if (provider === "google") {
-      authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=openid%20email%20profile&state=${provider}&access_type=offline&prompt=consent`;
-    } else {
-      authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${MS_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=openid%20profile%20email%20User.Read&state=${provider}`;
+  async function handleOAuth(provider: "google" | "microsoft") {
+    setError(null);
+    setLoading(true);
+    try {
+      // Fetch a random CSRF state token from the backend (>=16 chars, URL-safe).
+      // The literal "google"/"microsoft" string we used before failed the
+      // backend's state-length check, so OAuth never round-tripped successfully.
+      const stateResp = await fetch(`${API_URL}/api/auth/oauth/state`);
+      if (!stateResp.ok) throw new Error("Could not initiate OAuth — please try again");
+      const { state } = await stateResp.json();
+      if (!state || state.length < 16) throw new Error("Invalid OAuth state token");
+
+      // Persist state + provider so the /auth/callback page can verify the
+      // returned state and know which exchange endpoint to call.
+      try {
+        sessionStorage.setItem("oauth_state", state);
+        sessionStorage.setItem("oauth_provider", provider);
+        sessionStorage.setItem("oauth_redirect", redirect);
+      } catch {
+        // sessionStorage unavailable (private mode etc.) — proceed; callback
+        // will fall back to provider hint embedded as query param.
+      }
+
+      const redirectUri = `${window.location.origin}/auth/callback`;
+      let authUrl: string;
+      if (provider === "google") {
+        authUrl =
+          `https://accounts.google.com/o/oauth2/v2/auth` +
+          `?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}` +
+          `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+          `&response_type=code` +
+          `&scope=${encodeURIComponent("openid email profile")}` +
+          `&state=${encodeURIComponent(state)}` +
+          `&access_type=offline&prompt=consent`;
+      } else {
+        authUrl =
+          `https://login.microsoftonline.com/common/oauth2/v2.0/authorize` +
+          `?client_id=${encodeURIComponent(MS_CLIENT_ID)}` +
+          `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+          `&response_type=code` +
+          `&scope=${encodeURIComponent("openid profile email User.Read")}` +
+          `&state=${encodeURIComponent(state)}`;
+      }
+      window.location.href = authUrl;
+    } catch (err: any) {
+      setError(err?.message || "Failed to start OAuth flow");
+      setLoading(false);
     }
-    window.location.href = authUrl;
   }
 
   if (authLoading) {

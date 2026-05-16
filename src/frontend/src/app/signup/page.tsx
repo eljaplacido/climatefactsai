@@ -125,6 +125,11 @@ export default function SignupPage() {
       const result = await register(email, password, fullName);
       if (result.requiresVerification) {
         setVerificationSent(true);
+      } else if (selectedTier && selectedTier !== "freemium") {
+        // Paid tier picked — route to subscription page to complete payment.
+        // The selected tier is preserved as a query param; the subscription page
+        // pre-selects it for the user.
+        router.push(`/dashboard/subscription?tier=${encodeURIComponent(selectedTier)}`);
       } else {
         router.push("/dashboard");
       }

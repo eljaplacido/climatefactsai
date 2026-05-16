@@ -21,21 +21,64 @@ function CallbackHandler() {
     if (errorParam) { setError(`OAuth error: ${errorParam}`); return; }
     if (!code || !state) { setError("Missing authorization code"); return; }
 
+    // Verify the returned state matches the one we stashed before redirecting
+    // to the provider — protects against CSRF / code-injection. Look up the
+    // provider via sessionStorage instead of trusting whatever came back in
+    // the state field.
+    let expectedState: string | null = null;
+    let provider: string | null = null;
+    let postLoginRedirect = "/";
+    try {
+      expectedState = sessionStorage.getItem("oauth_state");
+      provider = sessionStorage.getItem("oauth_provider");
+      postLoginRedirect = sessionStorage.getItem("oauth_redirect") || "/";
+    } catch {
+      // sessionStorage unavailable — degrade with a clear error.
+    }
+
+    if (!expectedState || !provider) {
+      setError(
+        "OAuth session expired. Please start sign-in again from the login page."
+      );
+      return;
+    }
+    if (state !== expectedState) {
+      setError("OAuth state mismatch (possible CSRF). Please try again.");
+      return;
+    }
+
+    // Clear one-shot storage so a reload of this URL can't replay the flow.
+    try {
+      sessionStorage.removeItem("oauth_state");
+      sessionStorage.removeItem("oauth_provider");
+      sessionStorage.removeItem("oauth_redirect");
+    } catch { /* ignore */ }
+
     async function exchangeCode() {
       try {
         const resp = await fetch(`${API_URL}/api/auth/oauth/callback`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, redirect_uri: `${window.location.origin}/auth/callback`, provider: state }),
+          body: JSON.stringify({
+            code,
+            redirect_uri: `${window.location.origin}/auth/callback`,
+            provider,
+            state,
+          }),
         });
-        if (!resp.ok) { const data = await resp.json(); throw new Error(data.detail || "OAuth callback failed"); }
+        if (!resp.ok) {
+          const data = await resp.json().catch(() => ({}));
+          throw new Error(data.detail || "OAuth callback failed");
+        }
         const tokens = await resp.json();
+        // NOTE: localStorage is the current pattern; migrating to httpOnly
+        // cookies is tracked as security P0 S5 (Sprint 1 follow-up).
         localStorage.setItem("clilens_token", tokens.access_token);
         localStorage.setItem("clilens_refresh", tokens.refresh_token);
         localStorage.setItem("clilens_user", JSON.stringify({
           user_id: tokens.user_id, email: tokens.email, full_name: tokens.full_name, avatar_url: tokens.avatar_url,
         }));
-        router.push("/");
+        router.push(postLoginRedirect);
       } catch (err: any) { setError(err.message || "Authentication failed"); }
     }
     exchangeCode();
