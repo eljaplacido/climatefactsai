@@ -285,6 +285,10 @@ app.include_router(analytics_router)
 from api.translation_routes import router as translation_router
 app.include_router(translation_router)
 
+# Include scheduler routes (Cloud Scheduler HTTP triggers, replaces Celery Beat)
+from api.scheduler_routes import router as scheduler_router
+app.include_router(scheduler_router)
+
 # Include benchmark & audit routes (scientific benchmarking, KPI auditing)
 from api.benchmark_routes import router as benchmark_router
 app.include_router(benchmark_router)
@@ -348,7 +352,16 @@ app.include_router(source_suggestion_router)
 from api.green_transition_routes import router as green_transition_router
 app.include_router(green_transition_router)
 
-logger.info("Loaded Chat, Saved Query, and Green Transition routers")
+# Phase 4 wave 2 (2026-05-16): public methodology surface — every prompt,
+# formula, and indicator the platform uses, all inspectable via API.
+from api.methodology_routes import router as methodology_router
+app.include_router(methodology_router)
+
+# Phase 6 wave 1 (2026-05-16): KL-divergence drift detection on source mix.
+from api.drift_routes import router as drift_router
+app.include_router(drift_router)
+
+logger.info("Loaded Chat, Saved Query, Green Transition, Methodology, and Drift routers")
 
 
 # ---------------------------------------------------------------------------
