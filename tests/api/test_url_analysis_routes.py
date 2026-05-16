@@ -628,6 +628,88 @@ class TestBackgroundProcessing:
         )
 
     @pytest.mark.asyncio
+    async def test_hallucination_grounding_records_score(self, monkeypatch):
+        """Phase 6 wave 2: HallucinationDetector runs on extracted claims and
+        the score lands in claim_provenance.hallucination_score (dedicated column)."""
+        from api import url_analysis_routes
+        from app.domains.intelligence import services as intel_services
+        from app.domains.intelligence import hallucination_detector as hd_mod
+
+        async def _fake_fetch(url):
+            return {
+                "title": "Example",
+                "text": "Solar capacity grew by 35% in 2022. " * 100,
+                "source_name": "example.com",
+                "source_domain": "example.com",
+                "language_code": "en",
+                "published_date": None,
+            }
+        monkeypatch.setattr(url_analysis_routes, "fetch_url_content", _fake_fetch)
+
+        class _Claim:
+            def __init__(self, txt="Solar capacity grew by 35% in 2022"):
+                self.claim_text = txt
+                self.claim_type = "factual"
+                self.importance_score = 0.85
+                self.claim_context = "ctx"
+
+        async def _fake_claims(self_arg, *args, **kwargs):
+            return [_Claim()]
+        monkeypatch.setattr(intel_services.ClaimExtractor, "decompose_claims", _fake_claims)
+
+        # Mock HallucinationDetector.check so we don't need an LLM.
+        async def _fake_check(self_arg, generated_text, source_texts, source_metadata=None):
+            return {
+                "hallucination_risk": 0.18,
+                "is_grounded": True,
+                "flagged_segments": [
+                    {"text": "minor unsupported phrase", "reason": "no source", "severity": "low"},
+                ],
+                "entity_overlap_score": 0.9,
+                "statistic_accuracy": 0.95,
+                "overall_confidence": 0.82,
+                "checks_performed": ["entity_overlap", "statistic_verification", "llm_grounding"],
+            }
+        monkeypatch.setattr(hd_mod.HallucinationDetector, "check", _fake_check)
+
+        recorded = []
+        class _RecorderDB:
+            def execute_update(self, query, params=None):
+                recorded.append(("update", " ".join((query or "").split()), params or {}))
+                return None
+            def execute_query(self, query, params=None):
+                recorded.append(("query", " ".join((query or "").split()), params or {}))
+                normalized = " ".join((query or "").split()).lower()
+                if "insert into claim_provenance" in normalized:
+                    return [{"id": 99}]
+                return []
+            def execute_scalar(self, query, params=None):
+                return 0
+        monkeypatch.setattr(url_analysis_routes, "get_postgres", lambda: _RecorderDB())
+
+        await url_analysis_routes.process_url_analysis_sync(
+            analysis_id="aid-hallucination",
+            url="https://example.com/grounding-test",
+            user_id="00000000-0000-0000-0000-000000000000",
+        )
+
+        prov_calls = [
+            c for c in recorded
+            if c[0] == "query" and "insert into claim_provenance" in c[1].lower()
+        ]
+        assert prov_calls, "Expected provenance insert with hallucination score"
+        params = prov_calls[0][2]
+        # Dedicated column populated, not None.
+        assert params["hallucination_score"] == 0.18
+
+        import json as _json
+        raw_meta = _json.loads(params["raw_metadata"])
+        # Flagged segments mirrored into raw_metadata so audit trail surfaces them.
+        assert "hallucination_flagged_segments" in raw_meta
+        assert len(raw_meta["hallucination_flagged_segments"]) == 1
+        assert raw_meta["hallucination_flagged_segments"][0]["severity"] == "low"
+
+    @pytest.mark.asyncio
     async def test_multi_llm_verification_records_agreement_in_provenance(self, monkeypatch):
         """Phase 5 wave 3: when CLILENS_MULTI_LLM_VERIFY=1 + ANTHROPIC_API_KEY is set,
         process_url_analysis_sync runs Anthropic as a secondary extractor and records

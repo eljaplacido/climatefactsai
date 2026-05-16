@@ -1076,6 +1076,37 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
             f"{claims_count} claims extracted in {processing_time_ms}ms"
         )
 
+        # Step 8.3: Hallucination grounding check on extracted claims (Phase 6 wave 2).
+        # Runs the existing HallucinationDetector.check with the joined claim
+        # texts as `generated` and the article body as the source. The local
+        # entity-overlap + statistic-verification subchecks run regardless of
+        # LLM availability; the LLM-grounding sub-check degrades to risk=0.5
+        # gracefully when no LLM key is set. Captures hallucination_score for
+        # the provenance row's existing column (migration 021).
+        hallucination_score: Optional[float] = None
+        hallucination_flags: list = []
+        try:
+            if claims and text:
+                from app.domains.intelligence.hallucination_detector import (
+                    HallucinationDetector,
+                )
+                detector = HallucinationDetector(db)
+                joined_claims = " ".join(
+                    (getattr(c, "claim_text", "") or "") for c in claims
+                ).strip()
+                if joined_claims:
+                    h_result = await detector.check(
+                        generated_text=joined_claims,
+                        source_texts=[text[:20000]],  # cap to keep the LLM cost bounded
+                    )
+                    hallucination_score = h_result.get("hallucination_risk")
+                    hallucination_flags = h_result.get("flagged_segments", []) or []
+        except Exception as _h_exc:
+            logger.warning(
+                "Hallucination grounding check failed for %s: %s",
+                analysis_id, _h_exc,
+            )
+
         # Step 8.4: Multi-LLM cross-verification (Phase 5 wave 3).
         # Opt-in via env: CLILENS_MULTI_LLM_VERIFY=1 + ANTHROPIC_API_KEY.
         # When enabled, runs Anthropic Claude as a SECONDARY extractor on
@@ -1170,6 +1201,11 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
             }
             if multi_llm_meta:
                 _raw_meta["multi_llm_verification"] = multi_llm_meta
+            # Phase 6 wave 2: include the hallucination flagged segments
+            # (the score itself goes in the dedicated column) so auditors
+            # can see WHICH spans of the synthesised claims were flagged.
+            if hallucination_flags:
+                _raw_meta["hallucination_flagged_segments"] = hallucination_flags
 
             record_provenance(db, ProvenanceRecord(
                 extraction_method=EXTRACTION_URL_ANALYSIS,
@@ -1182,6 +1218,7 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
                     float(reliability_score) / 100.0
                     if reliability_score is not None else None
                 ),
+                hallucination_score=hallucination_score,
                 raw_metadata=_raw_meta,
             ))
         except Exception as _prov_exc:
