@@ -244,3 +244,57 @@ async def methodology_snapshot() -> Dict[str, Any]:
         "sustainability_formula": formula_block,
         "indicators": indicators_block,
     }
+
+
+# =============================================================================
+# Audit-trail endpoints (Phase 4 wave 3)
+# =============================================================================
+# Surface per-extraction provenance to users and external auditors.
+# Each row records which model + prompt fingerprint + retrieval strategy
+# produced a given analytical output — pairs with the methodology snapshot
+# above to answer "this score was produced under this exact pipeline".
+
+@router.get("/audit-trail/url-analysis/{analysis_id}")
+async def audit_trail_for_url_analysis(analysis_id: str) -> Dict[str, Any]:
+    """All provenance rows for one URL analysis run, newest first."""
+    from app.domains.intelligence.provenance import get_provenance_for_url_analysis
+
+    db = get_postgres()
+    records = get_provenance_for_url_analysis(db, analysis_id)
+    return {
+        "url_analysis_id": analysis_id,
+        "records": records,
+        "total": len(records),
+    }
+
+
+@router.get("/audit-trail/article/{article_id}")
+async def audit_trail_for_article(article_id: str) -> Dict[str, Any]:
+    """All provenance rows for one article, newest first.
+
+    Includes ingestion-time enrichment, deep-search syntheses anchored to
+    this article (via source_article_ids), and any URL-analysis mirrors.
+    """
+    from app.domains.intelligence.provenance import get_provenance_for_article
+
+    db = get_postgres()
+    records = get_provenance_for_article(db, article_id)
+    return {
+        "article_id": article_id,
+        "records": records,
+        "total": len(records),
+    }
+
+
+@router.get("/audit-trail/claim/{claim_id}")
+async def audit_trail_for_claim(claim_id: str) -> Dict[str, Any]:
+    """All provenance rows for one canonical claim, newest first."""
+    from app.domains.intelligence.provenance import get_provenance_for_claim
+
+    db = get_postgres()
+    records = get_provenance_for_claim(db, claim_id)
+    return {
+        "claim_id": claim_id,
+        "records": records,
+        "total": len(records),
+    }

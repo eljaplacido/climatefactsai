@@ -1076,6 +1076,46 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
             f"{claims_count} claims extracted in {processing_time_ms}ms"
         )
 
+        # Step 8.5: Record per-extraction provenance (Phase 4 wave 3).
+        # Best-effort — never fails the URL analysis.
+        try:
+            from app.domains.intelligence.provenance import (
+                EXTRACTION_URL_ANALYSIS,
+                ProvenanceRecord,
+                record_provenance,
+            )
+            # Model name is the env-configured extraction LLM. When we register
+            # the claim-extraction prompt in the prompts.PROMPTS registry
+            # (future wave), prompt_name/version/fingerprint will also populate.
+            _model_name = (
+                os.getenv("DEEPSEEK_MODEL")
+                or os.getenv("ANTHROPIC_MODEL")
+                or "unknown"
+            )
+            record_provenance(db, ProvenanceRecord(
+                extraction_method=EXTRACTION_URL_ANALYSIS,
+                url_analysis_id=str(analysis_id),
+                model_name=_model_name,
+                retrieval_strategy="user_submitted_url",
+                # Normalise reliability_score (0–100) to confidence (0–1) so it
+                # aggregates with other confidence signals across the platform.
+                confidence=(
+                    float(reliability_score) / 100.0
+                    if reliability_score is not None else None
+                ),
+                raw_metadata={
+                    "claim_count": claims_count,
+                    "text_length": text_len,
+                    "language_code": language_code,
+                    "overall_credibility": overall_credibility,
+                    "processing_time_ms": processing_time_ms,
+                },
+            ))
+        except Exception as _prov_exc:
+            logger.warning(
+                f"record_provenance failed for URL analysis {analysis_id}: {_prov_exc}"
+            )
+
         # Step 9: Mirror into canonical articles + claims tables so the URL
         # flow contributes to deep-search / hybrid RAG / transparency views.
         # Best-effort — mirror failures must NOT fail the URL analysis.
