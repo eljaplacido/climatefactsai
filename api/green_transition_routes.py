@@ -58,6 +58,29 @@ class DimensionScore(BaseModel):
     top_tags: List[str] = []
 
 
+class RealIndicatorValue(BaseModel):
+    """One indicator value fetched from a primary source (Climate TRACE,
+    OWID, etc.) and surfaced verbatim with full provenance.
+
+    Defensible against the ClimateFeedback / IPCC traceability bar — every
+    field a UI displays maps back to (a) the upstream methodology URL,
+    (b) the exact value as parsed, and (c) the fetch timestamp.
+    """
+    indicator_id: str
+    display_name: str
+    value: Optional[float]
+    unit: Optional[str]
+    year: int
+    source_name: str
+    source_url: Optional[str] = None
+    methodology_url: Optional[str] = None
+    methodology_version: Optional[str] = None
+    category: str  # 'emissions' | 'energy' | 'policy' | 'adaptation' | 'biodiversity' | 'finance'
+    is_higher_better: bool
+    uncertainty_low: Optional[float] = None
+    uncertainty_high: Optional[float] = None
+
+
 class CountryGreenProfile(BaseModel):
     country_code: str
     country_name: str
@@ -68,17 +91,23 @@ class CountryGreenProfile(BaseModel):
     last_updated: Optional[str] = None
     # Honesty caption (added 2026-05-16): the score above is a *platform
     # coverage* signal, not a verified sustainability indicator. Renaming
-    # the field is a breaking change; until structured primary-source
-    # indicators land (IRENA / OWID / Climate Action Tracker), surface
-    # these explicit fields so clients can render the caveat.
+    # the field is a breaking change; surface these explicit fields so
+    # clients can render the caveat alongside the legacy field.
     score_basis: str = "coverage_index"
     coverage_caveat: str = (
-        "This score reflects how broadly CliLens.AI's article corpus covers "
-        "green-transition topics for this country (0–10, derived from article "
-        "counts across 7 dimensions). It is NOT a verified sustainability "
-        "performance metric. Real-world performance scoring (IRENA, OWID, "
-        "Climate Action Tracker integration) is in active development."
+        "The `overall_green_score` field above reflects how broadly "
+        "CliLens.AI's article corpus covers green-transition topics for "
+        "this country (0–10, derived from article counts across 7 "
+        "dimensions). It is NOT a verified sustainability performance "
+        "metric. For defensible per-country indicators see the "
+        "`real_indicators` field — populated from Climate TRACE, OWID, "
+        "Climate Action Tracker, etc. as those integrations ship."
     )
+    # Phase 3 wave 2 (added 2026-05-16): real primary-source indicators
+    # for this country, when available. Keyed by indicator_id; each entry
+    # carries full provenance (source, fetched_at, methodology_url).
+    # Empty dict if no data has been synced yet for this country.
+    real_indicators: Dict[str, RealIndicatorValue] = {}
 
 
 class GlobalLeaderboard(BaseModel):
@@ -97,6 +126,72 @@ def _score(cnt: int) -> float:
     integrations are tracked separately.
     """
     return round(min(10.0, cnt / 2.0), 2)
+
+
+def _get_real_indicators(db, country_code: str) -> Dict[str, RealIndicatorValue]:
+    """Fetch the most recent value per indicator for this country.
+
+    Phase 3 wave 2 — surfaces values landed by the indicator adapters
+    (Climate TRACE, OWID, ...) with full provenance. The query uses
+    PostgreSQL DISTINCT ON to pick the most-recent (year DESC, fetched_at
+    DESC) row per indicator_id. Empty dict if no data has been synced yet.
+
+    Best-effort: any DB error returns an empty dict and logs a warning so
+    a missing migration / empty table doesn't break the existing API.
+    """
+    try:
+        rows = db.execute_query(
+            """
+            SELECT DISTINCT ON (ci.indicator_id)
+                ci.indicator_id,
+                ci.value,
+                ci.year,
+                ci.source_name,
+                ci.source_url,
+                ci.methodology_version,
+                ci.uncertainty_low,
+                ci.uncertainty_high,
+                ind.display_name,
+                ind.unit,
+                ind.category,
+                ind.is_higher_better,
+                ind.methodology_url
+            FROM country_indicators ci
+            JOIN indicator_definitions ind USING (indicator_id)
+            WHERE ci.country_code = :cc
+            ORDER BY ci.indicator_id, ci.year DESC, ci.fetched_at DESC
+            """,
+            {"cc": country_code},
+        )
+    except Exception as exc:
+        logger.warning(
+            f"country_indicators query failed for {country_code} "
+            f"(table missing or schema drift?): {exc}"
+        )
+        return {}
+
+    result: Dict[str, RealIndicatorValue] = {}
+    for row in rows or []:
+        try:
+            result[row["indicator_id"]] = RealIndicatorValue(
+                indicator_id=row["indicator_id"],
+                display_name=row.get("display_name") or row["indicator_id"],
+                value=row.get("value"),
+                unit=row.get("unit"),
+                year=int(row.get("year") or 0),
+                source_name=row.get("source_name") or "unknown",
+                source_url=row.get("source_url"),
+                methodology_url=row.get("methodology_url"),
+                methodology_version=row.get("methodology_version"),
+                category=row.get("category") or "emissions",
+                is_higher_better=bool(row.get("is_higher_better", True)),
+                uncertainty_low=row.get("uncertainty_low"),
+                uncertainty_high=row.get("uncertainty_high"),
+            )
+        except Exception as exc:
+            logger.debug(f"Skipping malformed indicator row: {exc}")
+            continue
+    return result
 
 
 @router.get("/country/{cc}", response_model=CountryGreenProfile)
@@ -184,6 +279,11 @@ async def get_country_green_profile(
 
     overall = round(sum(d.score for d in dimensions) / len(dimensions), 2) if dimensions else 0.0
 
+    # Phase 3 wave 2: surface primary-source indicators alongside the
+    # coverage_index. Empty dict until the adapter sync has run for this
+    # country (degrades gracefully when the migration / table is missing).
+    real_indicators = _get_real_indicators(db, cc)
+
     return CountryGreenProfile(
         country_code=cc,
         country_name=country_name,
@@ -192,6 +292,7 @@ async def get_country_green_profile(
         total_green_articles=total_articles,
         top_sources=top_sources,
         last_updated=last_updated,
+        real_indicators=real_indicators,
     )
 
 
