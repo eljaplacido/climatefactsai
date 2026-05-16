@@ -155,6 +155,30 @@ Return JSON:
 }}"""
 
 
+_CLAIM_EXTRACTION_TEMPLATE = """\
+Analyze the following climate news article and extract atomic, verifiable claims.
+
+ARTICLE TEXT:
+{text}
+
+INSTRUCTIONS:
+Extract factual claims that are:
+1. Self-contained (understandable without context)
+2. Singular (one assertion per claim)
+3. Specific (includes numbers, dates, entities)
+4. Verifiable (can be fact-checked)
+
+For each claim, provide:
+- claim_text: The exact claim
+- claim_type: "factual", "opinion", or "prediction"
+- claim_category: one of "scientific_causal", "statistical", "policy", "anecdotal", "predictive"
+- importance_score: 0.0-1.0 (how central to the article)
+- claim_context: Surrounding sentence for context
+
+Return ONLY a valid JSON array, no other text. Extract up to {max_claims} most important claims.
+"""
+
+
 PROMPTS: Dict[str, PromptTemplate] = {
     "deep_search_synthesis": PromptTemplate(
         name="deep_search_synthesis",
@@ -215,6 +239,27 @@ PROMPTS: Dict[str, PromptTemplate] = {
             "v1.0 extracted from HallucinationDetector inline (2026-05-16) "
             "during Phase 4 wave 1. Returns hallucination_risk + "
             "flagged_segments JSON — calling code expects this exact shape."
+        ),
+    ),
+    "claim_extraction": PromptTemplate(
+        name="claim_extraction",
+        version="v1.0",
+        template=_CLAIM_EXTRACTION_TEMPLATE,
+        system=None,  # the template carries the full instructions
+        max_tokens=2000,
+        temperature=0.1,
+        description=(
+            "Extracts atomic, verifiable claims from a climate news article "
+            "as a JSON array. Used by both the DeepSeek primary extractor "
+            "(services.ClaimExtractor) and the Anthropic secondary extractor "
+            "(anthropic_claim_extractor.AnthropicClaimExtractor) so multi-LLM "
+            "verification (Phase 5) is measuring AGREEMENT, not PROMPT DRIFT."
+        ),
+        rationale=(
+            "v1.0 extracted from services.py:_extract_with_deepseek (2026-05-16) "
+            "during Phase 5 wave 2. The same template feeds both LLMs so when "
+            "the multi-LLM verifier compares outputs, any divergence is "
+            "attributable to model behaviour, not prompt phrasing differences."
         ),
     ),
 }
