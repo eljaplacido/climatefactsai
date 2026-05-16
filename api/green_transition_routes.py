@@ -81,33 +81,70 @@ class RealIndicatorValue(BaseModel):
     uncertainty_high: Optional[float] = None
 
 
+class SustainabilityComponentOut(BaseModel):
+    """One contribution to the composite sustainability_score."""
+    indicator_id: str
+    normalized_score: float            # 0–100 after normalization
+    weight_applied: float              # effective weight after redistribution
+    raw_value: float
+    unit: Optional[str] = None
+    year: int
+    source_name: str
+    source_url: Optional[str] = None
+
+
+class SustainabilityScoreOut(BaseModel):
+    """Defensible composite sustainability score over primary-source indicators.
+
+    Phase 3 wave 3 (2026-05-16) — replaces the article-count `coverage_index`
+    proxy as the primary sustainability signal whenever real_indicators are
+    available. Every field traces back to either the source data or the
+    explicit formula constants in `sustainability_score.py`.
+    """
+    value: float                                # 0–100 composite
+    confidence_low: float
+    confidence_high: float
+    confidence_band: float
+    methodology_version: str
+    methodology_url: str
+    indicators_used: int
+    indicators_available_in_formula: int
+    components: List[SustainabilityComponentOut]
+    formula_disclosure: str
+
+
 class CountryGreenProfile(BaseModel):
     country_code: str
     country_name: str
-    overall_green_score: float  # average of all 7 dimensions, 0–10
+    overall_green_score: float  # legacy: average of all 7 dimensions, 0–10
     dimensions: List[DimensionScore]
     total_green_articles: int
     top_sources: List[str] = []
     last_updated: Optional[str] = None
-    # Honesty caption (added 2026-05-16): the score above is a *platform
-    # coverage* signal, not a verified sustainability indicator. Renaming
-    # the field is a breaking change; surface these explicit fields so
-    # clients can render the caveat alongside the legacy field.
+    # Honesty caption (added 2026-05-16): the legacy `overall_green_score`
+    # above is a *platform coverage* signal, not a verified sustainability
+    # indicator. We keep it for backwards compat but the `sustainability_score`
+    # field below is the defensible replacement when primary-source data is
+    # available.
     score_basis: str = "coverage_index"
     coverage_caveat: str = (
-        "The `overall_green_score` field above reflects how broadly "
-        "CliLens.AI's article corpus covers green-transition topics for "
-        "this country (0–10, derived from article counts across 7 "
-        "dimensions). It is NOT a verified sustainability performance "
-        "metric. For defensible per-country indicators see the "
-        "`real_indicators` field — populated from Climate TRACE, OWID, "
-        "Climate Action Tracker, etc. as those integrations ship."
+        "The `overall_green_score` field reflects how broadly CliLens.AI's "
+        "article corpus covers green-transition topics for this country "
+        "(0–10, derived from article counts across 7 dimensions). It is "
+        "NOT a verified sustainability performance metric. When primary-"
+        "source data is available for a country, the `sustainability_score` "
+        "field below is the defensible replacement — computed from "
+        "Climate TRACE / OWID / CAT via the documented formula in "
+        "src/backend/app/domains/intelligence/sustainability_score.py. "
+        "Inspect `real_indicators` for the underlying values."
     )
-    # Phase 3 wave 2 (added 2026-05-16): real primary-source indicators
-    # for this country, when available. Keyed by indicator_id; each entry
-    # carries full provenance (source, fetched_at, methodology_url).
-    # Empty dict if no data has been synced yet for this country.
+    # Phase 3 wave 2 (2026-05-16): real primary-source indicators for this
+    # country, when available. Empty dict if no adapter has synced yet.
     real_indicators: Dict[str, RealIndicatorValue] = {}
+    # Phase 3 wave 3 (2026-05-16): composite score over `real_indicators`.
+    # null when no defined-formula component has data for this country
+    # (callers should fall back to overall_green_score in that case).
+    sustainability_score: Optional[SustainabilityScoreOut] = None
 
 
 class GlobalLeaderboard(BaseModel):
@@ -284,6 +321,23 @@ async def get_country_green_profile(
     # country (degrades gracefully when the migration / table is missing).
     real_indicators = _get_real_indicators(db, cc)
 
+    # Phase 3 wave 3: compute the defensible sustainability_score whenever
+    # at least one formula component has data for this country. Returns None
+    # otherwise — callers fall back to overall_green_score (the legacy
+    # article-count coverage_index).
+    sustainability_score_out: Optional[SustainabilityScoreOut] = None
+    try:
+        from app.domains.intelligence.sustainability_score import (
+            compute_sustainability_score,
+        )
+        score_obj = compute_sustainability_score(real_indicators)
+        if score_obj is not None:
+            sustainability_score_out = SustainabilityScoreOut(**score_obj.as_dict())
+    except Exception as exc:
+        logger.warning(
+            f"sustainability_score computation failed for {cc}: {exc}"
+        )
+
     return CountryGreenProfile(
         country_code=cc,
         country_name=country_name,
@@ -293,6 +347,7 @@ async def get_country_green_profile(
         top_sources=top_sources,
         last_updated=last_updated,
         real_indicators=real_indicators,
+        sustainability_score=sustainability_score_out,
     )
 
 
