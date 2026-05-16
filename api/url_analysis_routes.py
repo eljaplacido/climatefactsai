@@ -1076,6 +1076,75 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
             f"{claims_count} claims extracted in {processing_time_ms}ms"
         )
 
+        # Step 8.4: Multi-LLM cross-verification (Phase 5 wave 3).
+        # Opt-in via env: CLILENS_MULTI_LLM_VERIFY=1 + ANTHROPIC_API_KEY.
+        # When enabled, runs Anthropic Claude as a SECONDARY extractor on
+        # the same article and reports agreement_score in the provenance
+        # raw_metadata. Disagreement → independently-corroborated claims
+        # are flagged downstream. Best-effort: any failure logs + skips
+        # (never blocks the URL analysis from completing).
+        multi_llm_meta: dict = {}
+        if os.getenv("CLILENS_MULTI_LLM_VERIFY") == "1":
+            try:
+                from app.domains.intelligence.anthropic_claim_extractor import (
+                    AnthropicClaimExtractor,
+                )
+                from app.domains.intelligence.multi_llm_verifier import verify_claims
+
+                secondary = AnthropicClaimExtractor()
+                if secondary.available:
+                    # Primary passthrough: we already extracted; just hand the
+                    # existing list to verify_claims so it doesn't re-run the LLM.
+                    _primary_claims = claims
+
+                    async def _primary_passthrough(_t, _n):
+                        return _primary_claims
+
+                    async def _secondary_call(t, n):
+                        return await secondary.decompose_claims(t, n)
+
+                    verification = await verify_claims(
+                        text=text[:4000],
+                        max_claims=max(claims_count, 1),
+                        primary_extractor=_primary_passthrough,
+                        primary_model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+                        secondary_extractor=_secondary_call,
+                        secondary_model=secondary.model,
+                    )
+                    multi_llm_meta = {
+                        "enabled": True,
+                        "agreement_score": verification.agreement_score,
+                        "primary_model": verification.primary_model,
+                        "secondary_model": verification.secondary_model,
+                        "primary_count": verification.primary_count,
+                        "corroborated_count": verification.corroborated_count,
+                        "secondary_total_claims": verification.secondary_total_claims,
+                        "secondary_error": verification.secondary_error,
+                        "similarity_threshold": verification.similarity_threshold,
+                    }
+                    logger.info(
+                        "Multi-LLM verification for %s: "
+                        "agreement=%s corroborated=%s/%s",
+                        analysis_id,
+                        verification.agreement_score,
+                        verification.corroborated_count,
+                        verification.primary_count,
+                    )
+                else:
+                    multi_llm_meta = {
+                        "enabled": True,
+                        "skipped_reason": "anthropic_unavailable",
+                    }
+            except Exception as _verify_exc:
+                logger.warning(
+                    "Multi-LLM verification failed for %s: %s",
+                    analysis_id, _verify_exc,
+                )
+                multi_llm_meta = {
+                    "enabled": True,
+                    "skipped_reason": f"verifier_error:{type(_verify_exc).__name__}",
+                }
+
         # Step 8.5: Record per-extraction provenance (Phase 4 wave 3).
         # Best-effort — never fails the URL analysis.
         try:
@@ -1092,6 +1161,16 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
                 or os.getenv("ANTHROPIC_MODEL")
                 or "unknown"
             )
+            _raw_meta = {
+                "claim_count": claims_count,
+                "text_length": text_len,
+                "language_code": language_code,
+                "overall_credibility": overall_credibility,
+                "processing_time_ms": processing_time_ms,
+            }
+            if multi_llm_meta:
+                _raw_meta["multi_llm_verification"] = multi_llm_meta
+
             record_provenance(db, ProvenanceRecord(
                 extraction_method=EXTRACTION_URL_ANALYSIS,
                 url_analysis_id=str(analysis_id),
@@ -1103,13 +1182,7 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
                     float(reliability_score) / 100.0
                     if reliability_score is not None else None
                 ),
-                raw_metadata={
-                    "claim_count": claims_count,
-                    "text_length": text_len,
-                    "language_code": language_code,
-                    "overall_credibility": overall_credibility,
-                    "processing_time_ms": processing_time_ms,
-                },
+                raw_metadata=_raw_meta,
             ))
         except Exception as _prov_exc:
             logger.warning(

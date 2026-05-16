@@ -628,6 +628,182 @@ class TestBackgroundProcessing:
         )
 
     @pytest.mark.asyncio
+    async def test_multi_llm_verification_records_agreement_in_provenance(self, monkeypatch):
+        """Phase 5 wave 3: when CLILENS_MULTI_LLM_VERIFY=1 + ANTHROPIC_API_KEY is set,
+        process_url_analysis_sync runs Anthropic as a secondary extractor and records
+        agreement_score in claim_provenance.raw_metadata.multi_llm_verification.
+        """
+        import os as _os
+        from api import url_analysis_routes
+        from app.domains.intelligence import services as intel_services
+        from app.domains.intelligence import anthropic_claim_extractor as ace_mod
+
+        monkeypatch.setenv("CLILENS_MULTI_LLM_VERIFY", "1")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-key-for-test")
+        monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-chat-test")
+
+        # 1) Fake fetch returns enough text for claim extraction to proceed.
+        async def _fake_fetch(url):
+            return {
+                "title": "Example",
+                "text": "Solar capacity grew 35% in 2022 according to the IEA. " * 50,
+                "source_name": "example.com",
+                "source_domain": "example.com",
+                "language_code": "en",
+                "published_date": None,
+            }
+        monkeypatch.setattr(url_analysis_routes, "fetch_url_content", _fake_fetch)
+
+        # 2) Primary (DeepSeek path) returns two claims.
+        class _Claim:
+            def __init__(self, claim_text, importance_score=0.8):
+                self.claim_text = claim_text
+                self.claim_type = "factual"
+                self.importance_score = importance_score
+                self.claim_context = "ctx"
+
+        async def _fake_primary(self_arg, *args, **kwargs):
+            return [
+                _Claim("Solar capacity grew 35% in 2022"),
+                _Claim("Wind doubled deployment in 2022"),
+            ]
+        monkeypatch.setattr(
+            intel_services.ClaimExtractor, "decompose_claims", _fake_primary,
+        )
+
+        # 3) Secondary (Anthropic) returns one matching claim (50% agreement).
+        async def _fake_secondary(self_arg, text, max_claims=20):
+            from app.domains.intelligence.schemas import AtomicClaim, ClaimCategory
+            return [
+                AtomicClaim(
+                    claim_text="Solar capacity grew 35% in 2022",
+                    claim_type="factual",
+                    claim_category=ClaimCategory.STATISTICAL,
+                    importance_score=0.7,
+                    claim_context="ctx",
+                    extraction_model="anthropic:test-model",
+                    extraction_confidence=0.9,
+                ),
+            ]
+        monkeypatch.setattr(
+            ace_mod.AnthropicClaimExtractor, "decompose_claims", _fake_secondary,
+        )
+
+        # 4) Record DB calls so we can assert what was written.
+        recorded = []
+
+        class _RecorderDB:
+            def execute_update(self, query, params=None):
+                recorded.append(("update", " ".join((query or "").split()), params or {}))
+                return None
+
+            def execute_query(self, query, params=None):
+                recorded.append(("query", " ".join((query or "").split()), params or {}))
+                # The provenance INSERT uses RETURNING id; return a row.
+                normalized = " ".join((query or "").split()).lower()
+                if "insert into claim_provenance" in normalized:
+                    return [{"id": 42}]
+                return []
+
+            def execute_scalar(self, query, params=None):
+                return 0
+
+        monkeypatch.setattr(url_analysis_routes, "get_postgres", lambda: _RecorderDB())
+
+        await url_analysis_routes.process_url_analysis_sync(
+            analysis_id="aid-multi-llm",
+            url="https://example.com/multi-llm-test",
+            user_id="00000000-0000-0000-0000-000000000000",
+        )
+
+        # Find the claim_provenance INSERT and verify multi_llm_verification metadata.
+        prov_calls = [
+            c for c in recorded
+            if c[0] == "query" and "insert into claim_provenance" in c[1].lower()
+        ]
+        assert prov_calls, "Expected a claim_provenance INSERT to have run"
+        params = prov_calls[0][2]
+        # raw_metadata is JSON-serialised before binding.
+        import json as _json
+        raw_meta = _json.loads(params["raw_metadata"])
+        assert "multi_llm_verification" in raw_meta, (
+            f"Expected multi_llm_verification key in raw_metadata, got: {raw_meta}"
+        )
+        mv = raw_meta["multi_llm_verification"]
+        assert mv["enabled"] is True
+        assert mv["primary_model"] == "deepseek-chat-test"
+        # 1 corroborated / 2 primary = 0.5 agreement
+        assert mv["agreement_score"] == 0.5
+        assert mv["corroborated_count"] == 1
+        assert mv["primary_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_multi_llm_off_by_default(self, monkeypatch):
+        """Phase 5 wave 3: when CLILENS_MULTI_LLM_VERIFY is unset, no verification
+        runs and raw_metadata has no `multi_llm_verification` key."""
+        import os as _os
+        from api import url_analysis_routes
+        from app.domains.intelligence import services as intel_services
+
+        monkeypatch.delenv("CLILENS_MULTI_LLM_VERIFY", raising=False)
+
+        async def _fake_fetch(url):
+            return {
+                "title": "Example",
+                "text": "x" * 2000,
+                "source_name": "example.com",
+                "source_domain": "example.com",
+                "language_code": "en",
+                "published_date": None,
+            }
+        monkeypatch.setattr(url_analysis_routes, "fetch_url_content", _fake_fetch)
+
+        class _Claim:
+            def __init__(self):
+                self.claim_text = "Solar capacity grew 35% in 2022"
+                self.claim_type = "factual"
+                self.importance_score = 0.8
+                self.claim_context = "ctx"
+
+        async def _fake_claims(self_arg, *args, **kwargs):
+            return [_Claim()]
+        monkeypatch.setattr(intel_services.ClaimExtractor, "decompose_claims", _fake_claims)
+
+        recorded = []
+
+        class _RecorderDB:
+            def execute_update(self, query, params=None):
+                recorded.append(("update", " ".join((query or "").split()), params or {}))
+                return None
+
+            def execute_query(self, query, params=None):
+                recorded.append(("query", " ".join((query or "").split()), params or {}))
+                normalized = " ".join((query or "").split()).lower()
+                if "insert into claim_provenance" in normalized:
+                    return [{"id": 1}]
+                return []
+
+            def execute_scalar(self, query, params=None):
+                return 0
+
+        monkeypatch.setattr(url_analysis_routes, "get_postgres", lambda: _RecorderDB())
+
+        await url_analysis_routes.process_url_analysis_sync(
+            analysis_id="aid-default",
+            url="https://example.com/default",
+            user_id="00000000-0000-0000-0000-000000000000",
+        )
+
+        prov_calls = [
+            c for c in recorded
+            if c[0] == "query" and "insert into claim_provenance" in c[1].lower()
+        ]
+        assert prov_calls, "Expected provenance insert even when multi-LLM disabled"
+        import json as _json
+        raw_meta = _json.loads(prov_calls[0][2]["raw_metadata"])
+        assert "multi_llm_verification" not in raw_meta
+
+    @pytest.mark.asyncio
     async def test_completed_update_uses_cast_jsonb_not_pg_style(self, monkeypatch):
         """Regression: SQLAlchemy text queries must avoid ':param::jsonb' syntax."""
         from api import url_analysis_routes
