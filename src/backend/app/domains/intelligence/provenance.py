@@ -44,14 +44,21 @@ EXTRACTION_INGESTION = "article_ingestion_enrichment"
 class ProvenanceRecord:
     """Compact, dataclass-typed shape for one provenance row.
 
-    At least one of `claim_id`, `url_analysis_id`, `article_id` MUST be
-    set — enforced by both `record_provenance` and the DB CHECK
-    constraint.
+    At least ONE identity link must be set (`claim_id`, `url_analysis_id`,
+    `article_id`, `deep_search_session_id`, or `cynefin_classification_id`).
+    Enforced by both `record_provenance` and the DB CHECK constraint.
+
+    Migration 023 added `deep_search_session_id` + `cynefin_classification_id`
+    to support Phase 4 wave 4 — the deep-search and Cynefin paths don't
+    create durable artifacts, so they use ephemeral session UUIDs as
+    their identity link.
     """
     extraction_method: str
     claim_id: Optional[str] = None
     url_analysis_id: Optional[str] = None
     article_id: Optional[str] = None
+    deep_search_session_id: Optional[str] = None
+    cynefin_classification_id: Optional[str] = None
     model_name: Optional[str] = None
     prompt_name: Optional[str] = None
     prompt_version: Optional[str] = None
@@ -64,7 +71,13 @@ class ProvenanceRecord:
 
     def has_link(self) -> bool:
         """True iff at least one identifying link is set."""
-        return any((self.claim_id, self.url_analysis_id, self.article_id))
+        return any((
+            self.claim_id,
+            self.url_analysis_id,
+            self.article_id,
+            self.deep_search_session_id,
+            self.cynefin_classification_id,
+        ))
 
 
 # ---------------------------------------------------------------------------
@@ -91,12 +104,14 @@ def record_provenance(db, record: ProvenanceRecord) -> Optional[int]:
             """
             INSERT INTO claim_provenance (
                 claim_id, url_analysis_id, article_id,
+                deep_search_session_id, cynefin_classification_id,
                 extraction_method, model_name,
                 prompt_name, prompt_version, prompt_fingerprint,
                 retrieval_strategy, source_article_ids,
                 hallucination_score, confidence, raw_metadata
             ) VALUES (
                 :claim_id, :url_analysis_id, :article_id,
+                :deep_search_session_id, :cynefin_classification_id,
                 :extraction_method, :model_name,
                 :prompt_name, :prompt_version, :prompt_fingerprint,
                 :retrieval_strategy, CAST(:source_article_ids AS jsonb),
@@ -108,6 +123,8 @@ def record_provenance(db, record: ProvenanceRecord) -> Optional[int]:
                 "claim_id": record.claim_id,
                 "url_analysis_id": record.url_analysis_id,
                 "article_id": record.article_id,
+                "deep_search_session_id": record.deep_search_session_id,
+                "cynefin_classification_id": record.cynefin_classification_id,
                 "extraction_method": record.extraction_method,
                 "model_name": record.model_name,
                 "prompt_name": record.prompt_name,
@@ -154,7 +171,13 @@ def _rows_to_dicts(rows) -> List[Dict[str, Any]]:
                 except Exception:
                     pass
         # Stringify the id columns so JSON responses are predictable.
-        for uuid_col in ("claim_id", "url_analysis_id", "article_id"):
+        for uuid_col in (
+            "claim_id",
+            "url_analysis_id",
+            "article_id",
+            "deep_search_session_id",
+            "cynefin_classification_id",
+        ):
             if d.get(uuid_col) is not None:
                 d[uuid_col] = str(d[uuid_col])
         if d.get("created_at") is not None:
@@ -210,5 +233,30 @@ def get_provenance_for_claim(db, claim_id: str) -> List[Dict[str, Any]]:
         )
     except Exception as exc:
         _logger.warning(f"get_provenance_for_claim failed: {exc}")
+        return []
+    return _rows_to_dicts(rows)
+
+
+def get_provenance_for_deep_search_session(
+    db, session_id: str,
+) -> List[Dict[str, Any]]:
+    """All provenance rows tied to one deep-search request, newest first.
+
+    A deep-search call typically writes 1–3 rows (synthesis + optional
+    Cynefin classification + optional hallucination grounding). Grouping
+    by session_id lets the audit-trail endpoint render a single request's
+    full reasoning trail.
+    """
+    try:
+        rows = db.execute_query(
+            """
+            SELECT * FROM claim_provenance
+            WHERE deep_search_session_id = :id
+            ORDER BY created_at DESC
+            """,
+            {"id": session_id},
+        )
+    except Exception as exc:
+        _logger.warning(f"get_provenance_for_deep_search_session failed: {exc}")
         return []
     return _rows_to_dicts(rows)

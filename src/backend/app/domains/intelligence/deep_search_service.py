@@ -53,6 +53,13 @@ class DeepSearchService:
         Returns a synthesized answer with citations from internal articles,
         external web sources, and optionally weather data.
         """
+        # Phase 4 wave 4: mint a session id at the start of the request so
+        # every provenance row written by this call (synthesis, hallucination
+        # check, cynefin classification if invoked) shares the same id. The
+        # audit-trail endpoint can then group them.
+        import uuid as _uuid
+        deep_search_session_id = str(_uuid.uuid4())
+
         # Run all searches concurrently
         tasks = [
             self._search_internal_corpus(query, country=country, category=category, limit=limit),
@@ -177,6 +184,49 @@ class DeepSearchService:
         if internal_count == 0 and external_count == 0:
             clarification_needed = await self._suggest_scope_refinements(query, country)
 
+        # Phase 4 wave 4: record one provenance row for this deep-search
+        # response. Best-effort; never fails the request.
+        try:
+            from app.domains.intelligence.provenance import (
+                EXTRACTION_DEEP_SEARCH,
+                ProvenanceRecord,
+                record_provenance,
+            )
+            from app.domains.intelligence.prompts import get_prompt
+
+            synth_tmpl = get_prompt("deep_search_synthesis")
+            source_ids = [
+                str(c.get("article_id")) for c in citations
+                if c.get("article_id") is not None
+            ]
+            _h_check = methodology.get("hallucination_check") if methodology else None
+            record_provenance(self.db, ProvenanceRecord(
+                extraction_method=EXTRACTION_DEEP_SEARCH,
+                deep_search_session_id=deep_search_session_id,
+                model_name=methodology.get("synthesis_model") if methodology else None,
+                prompt_name=synth_tmpl.name,
+                prompt_version=synth_tmpl.version,
+                prompt_fingerprint=synth_tmpl.fingerprint,
+                retrieval_strategy=methodology.get("retrieval_strategy") if methodology else None,
+                source_article_ids=source_ids or None,
+                hallucination_score=(
+                    _h_check.get("hallucination_risk") if isinstance(_h_check, dict) else None
+                ),
+                raw_metadata={
+                    "query": query[:500],
+                    "country": country,
+                    "category": category,
+                    "internal_count": internal_count,
+                    "external_count": external_count,
+                    "weather_used": bool(weather_context),
+                },
+            ))
+        except Exception as _prov_exc:
+            logger.debug(
+                "deep_search record_provenance failed (non-fatal): %s",
+                _prov_exc,
+            )
+
         return {
             "query": query,
             "answer": synthesis,
@@ -190,6 +240,7 @@ class DeepSearchService:
             },
             "methodology": methodology,
             "clarification_needed": clarification_needed,
+            "deep_search_session_id": deep_search_session_id,
             "searched_at": datetime.utcnow().isoformat(),
         }
 

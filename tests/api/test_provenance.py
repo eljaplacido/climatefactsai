@@ -195,6 +195,155 @@ class TestGetProvenance:
 # /api/methodology/audit-trail/* endpoints
 # ---------------------------------------------------------------------------
 
+class TestProvenanceWithSessionIds:
+    """Phase 4 wave 4: deep_search_session_id + cynefin_classification_id
+    can serve as the identity link instead of the article/url/claim columns."""
+
+    def test_deep_search_session_id_satisfies_check(self):
+        db = _CaptureDB()
+        rec = ProvenanceRecord(
+            extraction_method=EXTRACTION_DEEP_SEARCH,
+            deep_search_session_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            model_name="anthropic:claude-sonnet-4-5",
+            prompt_name="deep_search_synthesis",
+            prompt_version="v1.0",
+            prompt_fingerprint="abcdef0123456789",
+        )
+        new_id = record_provenance(db, rec)
+        assert new_id == 1
+        params = db.queries[0]["params"]
+        assert params["deep_search_session_id"] == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        assert params["claim_id"] is None
+        assert params["url_analysis_id"] is None
+        assert params["article_id"] is None
+
+    def test_cynefin_classification_id_satisfies_check(self):
+        from app.domains.intelligence.provenance import EXTRACTION_CYNEFIN
+        db = _CaptureDB()
+        rec = ProvenanceRecord(
+            extraction_method=EXTRACTION_CYNEFIN,
+            cynefin_classification_id="11111111-2222-3333-4444-555555555555",
+        )
+        new_id = record_provenance(db, rec)
+        assert new_id == 1
+        params = db.queries[0]["params"]
+        assert params["cynefin_classification_id"] == "11111111-2222-3333-4444-555555555555"
+
+    def test_no_link_at_all_still_refuses(self):
+        """Regression: removing the original three links AND not setting the
+        new ones still bounces the record."""
+        db = _CaptureDB()
+        rec = ProvenanceRecord(extraction_method=EXTRACTION_URL_ANALYSIS)
+        assert record_provenance(db, rec) is None
+        assert db.queries == []  # no SQL attempted
+
+
+class TestGetProvenanceForDeepSearchSession:
+    def test_returns_rows_for_session(self):
+        from app.domains.intelligence.provenance import (
+            get_provenance_for_deep_search_session,
+        )
+        rows = [
+            {
+                "id": 1,
+                "claim_id": None,
+                "url_analysis_id": None,
+                "article_id": None,
+                "deep_search_session_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                "cynefin_classification_id": None,
+                "extraction_method": EXTRACTION_DEEP_SEARCH,
+                "model_name": "anthropic",
+                "prompt_name": "deep_search_synthesis",
+                "prompt_version": "v1.0",
+                "prompt_fingerprint": "abcdef0123456789",
+                "retrieval_strategy": "internal_corpus+perplexity",
+                "source_article_ids": None,
+                "hallucination_score": 0.15,
+                "confidence": None,
+                "created_at": datetime(2026, 5, 16, 14, 0, 0),
+                "raw_metadata": None,
+            }
+        ]
+        db = _CaptureDB(rows_for_select=rows)
+        out = get_provenance_for_deep_search_session(
+            db, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        )
+        assert len(out) == 1
+        assert out[0]["deep_search_session_id"] == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        assert out[0]["extraction_method"] == EXTRACTION_DEEP_SEARCH
+
+
+class TestCynefinRouterRecordsProvenance:
+    """When the LLM path fires AND a db is passed, CynefinRouter writes one
+    provenance row."""
+
+    def test_llm_path_records_when_db_provided(self, monkeypatch):
+        from app.domains.intelligence import llm_client
+        from app.domains.intelligence.cynefin_router import CynefinRouter
+
+        def fake_chat(**kwargs):
+            return '{"domain": "complex", "confidence": 0.7, "reasoning": "test"}'
+        monkeypatch.setattr(llm_client, "llm_chat", fake_chat)
+
+        captured = []
+        class _DB:
+            def execute_query(self, q, p=None):
+                if "insert into claim_provenance" in " ".join(q.split()).lower():
+                    captured.append(p or {})
+                    return [{"id": 1}]
+                return []
+
+        router = CynefinRouter()
+        result = router.classify(
+            "Intersection of monsoonal variability with grid resilience.",
+            db=_DB(),
+            deep_search_session_id="session-123",
+        )
+        assert result["domain"] == "complex"
+        assert len(captured) == 1
+        params = captured[0]
+        assert params["extraction_method"] == "cynefin_classification"
+        assert params["deep_search_session_id"] == "session-123"
+        # cynefin_classification_id was minted (UUID).
+        assert params["cynefin_classification_id"] is not None
+        assert params["confidence"] == 0.7
+
+    def test_llm_path_no_db_no_record(self, monkeypatch):
+        """No db → don't try to record, but still return the classification."""
+        from app.domains.intelligence import llm_client
+        from app.domains.intelligence.cynefin_router import CynefinRouter
+
+        def fake_chat(**kwargs):
+            return '{"domain": "complex", "confidence": 0.7, "reasoning": "test"}'
+        monkeypatch.setattr(llm_client, "llm_chat", fake_chat)
+
+        router = CynefinRouter()
+        result = router.classify(
+            "Intersection of monsoonal variability with grid resilience.",
+        )
+        # Result still produced normally.
+        assert result["domain"] == "complex"
+
+    def test_keyword_path_does_not_record(self, monkeypatch):
+        """The keyword path matches before LLM, so no provenance is written
+        (we only audit LLM calls in this wave; keyword scoring is local
+        deterministic logic)."""
+        from app.domains.intelligence.cynefin_router import CynefinRouter
+
+        captured = []
+        class _DB:
+            def execute_query(self, q, p=None):
+                if "insert into claim_provenance" in " ".join(q.split()).lower():
+                    captured.append(p or {})
+                    return [{"id": 1}]
+                return []
+
+        router = CynefinRouter()
+        result = router.classify("What is the current temperature?", db=_DB())
+        assert result["domain"] == "clear"  # keyword match
+        assert captured == []
+
+
 class TestAuditTrailEndpoints:
     """End-to-end via FastAPI TestClient. Swap the shared postgres client
     to a deterministic fake."""

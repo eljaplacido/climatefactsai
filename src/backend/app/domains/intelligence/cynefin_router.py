@@ -62,6 +62,8 @@ class CynefinRouter:
         self,
         query: str,
         context: Optional[Dict[str, Any]] = None,
+        db: Any = None,
+        deep_search_session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Classify query complexity using Cynefin framework.
@@ -69,6 +71,13 @@ class CynefinRouter:
         Args:
             query: The user's query text.
             context: Optional context dict (e.g., prior conversation, article data).
+            db: Optional Postgres client. When provided AND the LLM path
+                fires, records a provenance row to `claim_provenance`
+                (Phase 4 wave 4) so the audit trail captures the
+                classification.
+            deep_search_session_id: When set, this classification's
+                provenance row joins the deep-search session's other
+                rows. The audit-trail endpoint groups by this id.
 
         Returns:
             Dict with: domain, confidence, recommended_strategy,
@@ -92,6 +101,11 @@ class CynefinRouter:
             # No keyword matches — try LLM classification
             llm_result = self._llm_classify(query)
             if llm_result:
+                # Phase 4 wave 4: record provenance for the LLM path so
+                # auditors can trace classification → session → prompt.
+                self._maybe_record_provenance(
+                    llm_result, db, deep_search_session_id, query,
+                )
                 return llm_result
             # Default to complicated for non-trivial queries
             domain = "complicated"
@@ -117,6 +131,49 @@ class CynefinRouter:
             "reasoning": reasoning,
             "scores": scores,
         }
+
+    # ------------------------------------------------------------------
+    # Provenance recording (Phase 4 wave 4)
+    # ------------------------------------------------------------------
+
+    def _maybe_record_provenance(
+        self,
+        llm_result: Dict[str, Any],
+        db: Any,
+        deep_search_session_id: Optional[str],
+        query: str,
+    ) -> None:
+        """Best-effort: log one provenance row when we have a DB + the LLM path fired."""
+        if db is None:
+            return
+        try:
+            import uuid as _uuid
+            from app.domains.intelligence.provenance import (
+                EXTRACTION_CYNEFIN,
+                ProvenanceRecord,
+                record_provenance,
+            )
+
+            prompt_block = llm_result.get("prompt") or {}
+            record_provenance(db, ProvenanceRecord(
+                extraction_method=EXTRACTION_CYNEFIN,
+                cynefin_classification_id=str(_uuid.uuid4()),
+                deep_search_session_id=deep_search_session_id,
+                model_name="llm_via_llm_client",  # llm_client resolves which provider
+                prompt_name=prompt_block.get("name"),
+                prompt_version=prompt_block.get("version"),
+                prompt_fingerprint=prompt_block.get("fingerprint"),
+                confidence=llm_result.get("confidence"),
+                raw_metadata={
+                    "query": query[:500],
+                    "domain": llm_result.get("domain"),
+                    "raw_domain": llm_result.get("raw_domain"),
+                    "recommended_strategy": llm_result.get("recommended_strategy"),
+                    "reasoning": llm_result.get("reasoning"),
+                },
+            ))
+        except Exception as exc:
+            logger.debug(f"Cynefin record_provenance failed (non-fatal): {exc}")
 
     # ------------------------------------------------------------------
     # Keyword scoring
