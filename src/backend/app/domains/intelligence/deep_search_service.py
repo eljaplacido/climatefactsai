@@ -104,6 +104,36 @@ class DeepSearchService:
         internal_count = len(internal_results or [])
         external_count = len(perplexity_results.get("citations", []))
 
+        # Hallucination grounding check (T4 — the detector was implemented
+        # but never called on this path; the audit flagged the resulting
+        # "trust me" synthesis as a P1 calibration gap). Entity-overlap and
+        # statistic-verification checks run locally; the LLM-grounding
+        # sub-check degrades to risk=0.5 gracefully when no LLM key is set.
+        hallucination_check: Optional[Dict[str, Any]] = None
+        try:
+            if synthesis:
+                source_texts: List[str] = []
+                for art in internal_results or []:
+                    chunk = (
+                        f"{art.get('title', '')}\n{art.get('excerpt') or ''}".strip()
+                    )
+                    if chunk:
+                        source_texts.append(chunk)
+                external_answer = perplexity_results.get("answer") if isinstance(perplexity_results, dict) else ""
+                if external_answer:
+                    source_texts.append(external_answer)
+
+                if source_texts:
+                    from app.domains.intelligence.hallucination_detector import (
+                        HallucinationDetector,
+                    )
+
+                    detector = HallucinationDetector(self.db)
+                    hallucination_check = await detector.check(synthesis, source_texts)
+        except Exception as exc:
+            logger.warning(f"Hallucination check failed; continuing without it: {exc}")
+            hallucination_check = None
+
         # Methodology: how the answer was assembled. Surfaced in the UI's
         # "How this was answered" drawer so users can audit our pipeline.
         methodology = {
@@ -116,6 +146,9 @@ class DeepSearchService:
             "embedding_model": "openai:text-embedding-ada-002" if os.getenv("OPENAI_API_KEY") else None,
             "external_provider_configured": bool(self.perplexity_key),
             "sources_consulted": sorted({c.get("source_name") for c in citations if c.get("source_name")}),
+            # Hallucination check block (may be None if no sources were available
+            # or the detector errored — clients should treat absence as "not run").
+            "hallucination_check": hallucination_check,
         }
 
         # Clarification: when the corpus + external search both miss, suggest
