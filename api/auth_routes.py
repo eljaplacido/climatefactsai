@@ -6,7 +6,7 @@ Handles user registration, login, password reset, email verification
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, status, Depends, Header
+from fastapi import APIRouter, HTTPException, status, Depends, Header, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from shared.database import get_postgres
@@ -45,6 +45,32 @@ security = HTTPBearer()
 def get_db():
     """Get database connection"""
     return get_postgres()
+
+
+def _request_user_agent(request: Optional[Request]) -> Optional[str]:
+    """Extract user-agent header, truncated for storage."""
+    if request is None:
+        return None
+    try:
+        ua = request.headers.get("user-agent")
+        return ua[:512] if ua else None
+    except Exception:
+        return None
+
+
+def _request_client_ip(request: Optional[Request]) -> Optional[str]:
+    """Extract client IP, honouring X-Forwarded-For when behind a trusted proxy."""
+    if request is None:
+        return None
+    try:
+        # In production behind Cloud Run / nginx, X-Forwarded-For is the
+        # truthy source. We take the leftmost (original client) entry.
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            return xff.split(",")[0].strip()
+        return request.client.host if request.client else None
+    except Exception:
+        return None
 
 
 # =============================================================================
@@ -190,7 +216,7 @@ def get_optional_user(
 # =============================================================================
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(user_data: UserRegister, db=Depends(get_db)):
+async def register(user_data: UserRegister, request: Request, db=Depends(get_db)):
     """
     Register a new user account
     """
@@ -278,7 +304,12 @@ async def register(user_data: UserRegister, db=Depends(get_db)):
             subscription_tier=user["subscription_tier"]
         )
 
-        refresh_token = TokenManager.create_refresh_token(user_id=user_id)
+        refresh_token = TokenManager.create_refresh_token(
+            db,
+            user_id=user_id,
+            user_agent=_request_user_agent(request),
+            ip_address=_request_client_ip(request),
+        )
 
         return TokenResponse(
             access_token=access_token,
@@ -295,7 +326,7 @@ async def register(user_data: UserRegister, db=Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(login_data: UserLogin, db=Depends(get_db)):
+async def login(login_data: UserLogin, request: Request, db=Depends(get_db)):
     """
     Login with email and password
     """
@@ -376,7 +407,12 @@ async def login(login_data: UserLogin, db=Depends(get_db)):
         subscription_tier=user["subscription_tier"]
     )
 
-    refresh_token = TokenManager.create_refresh_token(user_id=user_id)
+    refresh_token = TokenManager.create_refresh_token(
+        db,
+        user_id=user_id,
+        user_agent=_request_user_agent(request),
+        ip_address=_request_client_ip(request),
+    )
 
     logger.info("User logged in", user_id=user_id)
 
@@ -388,44 +424,56 @@ async def login(login_data: UserLogin, db=Depends(get_db)):
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(token_data: RefreshTokenRequest, db=Depends(get_db)):
-    """
-    Refresh access token using refresh token
+async def refresh_token(
+    token_data: RefreshTokenRequest,
+    request: Request,
+    db=Depends(get_db),
+):
+    """Refresh access token using refresh token (S2 — stateful rotation).
+
+    On every successful refresh:
+      1. The presented refresh-token jti is revoked.
+      2. A new refresh token with a fresh jti is issued.
+
+    Presenting a previously-rotated (revoked) refresh token triggers
+    cascade-revocation of ALL the user's active sessions — the standard
+    refresh-token-reuse defence against stolen tokens.
     """
     try:
-        payload = TokenManager.verify_refresh_token(token_data.refresh_token)
-        user_id = payload.get("sub")
+        new_refresh, user_id = TokenManager.rotate_refresh_token(
+            db,
+            token_data.refresh_token,
+            user_agent=_request_user_agent(request),
+            ip_address=_request_client_ip(request),
+        )
 
-        # Fetch user
-        query = """
+        # Fetch user for access-token claims.
+        rows = db.execute_query(
+            """
             SELECT user_id, email, subscription_tier, is_active
             FROM users
             WHERE user_id = :user_id
-        """
-
-        rows = db.execute_query(query, params={"user_id": user_id})
+            """,
+            params={"user_id": user_id},
+        )
 
         if not rows or not rows[0].get("is_active"):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid refresh token"
+                detail="Account deactivated.",
             )
 
         user = rows[0]
-
-        # Generate new tokens
         access_token = TokenManager.create_access_token(
             user_id=str(user["user_id"]),
             email=user["email"],
-            subscription_tier=user["subscription_tier"]
+            subscription_tier=user["subscription_tier"],
         )
-
-        refresh_token = TokenManager.create_refresh_token(user_id=str(user["user_id"]))
 
         return TokenResponse(
             access_token=access_token,
-            refresh_token=refresh_token,
-            expires_in=3600
+            refresh_token=new_refresh,
+            expires_in=3600,
         )
 
     except HTTPException:
@@ -434,8 +482,31 @@ async def refresh_token(token_data: RefreshTokenRequest, db=Depends(get_db)):
         logger.error("Token refresh failed", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token"
+            detail="Invalid refresh token",
         )
+
+
+@router.post("/logout")
+async def logout(token_data: RefreshTokenRequest, db=Depends(get_db)):
+    """Revoke the current session (server-side).
+
+    Accepts the refresh token, decodes its jti claim, and marks the
+    matching `sessions` row as revoked. Idempotent — re-logging out the
+    same token returns 200 with no state change.
+    """
+    try:
+        payload = TokenManager.verify_refresh_token(token_data.refresh_token)
+    except HTTPException:
+        # Even if the token is invalid/expired, treat logout as success so
+        # clients can always "log out" without depending on token state.
+        return {"message": "Logged out"}
+
+    jti = payload.get("jti")
+    if jti:
+        TokenManager.revoke_session(db, jti, reason="logout")
+
+    logger.info("User logged out", user_id=payload.get("sub"), jti=jti)
+    return {"message": "Logged out"}
 
 
 # =============================================================================
@@ -623,6 +694,13 @@ async def reset_password(reset_data: PasswordResetConfirm, db=Depends(get_db)):
         "user_id": user["user_id"]
     })
 
+    # S2: invalidate every active session for this user — a password reset
+    # must terminate stolen-credential sessions even if attacker still holds
+    # a valid refresh token.
+    TokenManager.revoke_all_user_sessions(
+        db, str(user["user_id"]), reason="password_reset",
+    )
+
     logger.info("Password reset successful", user_id=str(user["user_id"]))
 
     return {"message": "Password reset successfully"}
@@ -670,6 +748,12 @@ async def change_password(
         "password_hash": password_hash,
         "user_id": current_user["user_id"]
     })
+
+    # S2: revoke every other active session — the user may have done this
+    # specifically to evict an attacker.
+    TokenManager.revoke_all_user_sessions(
+        db, str(current_user["user_id"]), reason="password_change",
+    )
 
     logger.info("Password changed", user_id=str(current_user["user_id"]))
 

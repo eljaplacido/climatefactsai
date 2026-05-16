@@ -1,0 +1,158 @@
+name: CI
+
+# Block merges on red. Sprint 1 fixes added latent-bug surface (the JWT
+# jwt.JWTError -> jwt.InvalidTokenError fix would have been caught at PR
+# review by this CI run). Future work depends on having green gates.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Backend: pytest on the audit-covered test paths
+  # ---------------------------------------------------------------------------
+  backend:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      JWT_SECRET_KEY: ci-test-secret-key-not-for-prod-32chars-min
+      OTEL_SDK_DISABLED: "true"
+      CLILENS_ENV: test
+      # Block any synthetic-data scripts from running in CI; the audit
+      # explicitly guards these with this env var.
+      CLILENS_ALLOW_FAKE_SEED: "0"
+      CLILENS_ALLOW_MOCK_API: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # Test-only deps not in requirements.txt
+          pip install pytest pytest-asyncio pytest-mock httpx
+
+      - name: Sanity-check Python syntax on hot paths
+        run: |
+          python -c "import ast; [ast.parse(open(f, encoding='utf-8-sig').read()) for f in [
+            'api/main.py','api/auth_routes.py','api/auth_utils.py',
+            'api/oauth_routes.py','api/url_analysis_routes.py',
+            'api/chat_routes.py','api/map_routes.py',
+            'api/green_transition_routes.py','api/deep_search_routes.py',
+            'src/backend/app/domains/intelligence/cynefin_router.py',
+            'src/backend/app/domains/intelligence/carf_integration.py',
+            'src/backend/app/domains/intelligence/deep_search_service.py',
+            'src/backend/app/domains/intelligence/hallucination_detector.py',
+          ]]; print('PY_SYNTAX_OK')"
+
+      - name: Run pytest (audit-covered suites)
+        # Run the suites we actively maintain. As coverage grows, add more
+        # paths here (or switch to `tests/` once flake-free).
+        run: |
+          python -m pytest \
+            tests/api/test_oauth_routes.py \
+            tests/api/test_url_analysis_routes.py \
+            tests/api/test_green_transition_routes.py \
+            tests/api/test_cynefin_router.py \
+            tests/api/test_session_lifecycle.py \
+            tests/api/test_chat_view_context.py \
+            tests/api/test_deep_search_routes.py \
+            tests/api/test_map_routes.py \
+            tests/api/test_chat_routes.py \
+            tests/unit/api/test_rate_limiter.py \
+            --override-ini="addopts=" -p no:warnings -v
+
+  # ---------------------------------------------------------------------------
+  # Frontend: typecheck + build + vitest
+  # ---------------------------------------------------------------------------
+  frontend:
+    name: Frontend (typecheck + build + vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: src/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci || npm install
+        # `npm ci` requires the lockfile to be in sync with package.json;
+        # the fallback to `npm install` covers the transition window after
+        # Sprint 1 added isomorphic-dompurify + bumped next.
+
+      - name: Type-check (tsc --noEmit)
+        # Pre-existing test-file TS errors (ContextualAssistant.test.tsx
+        # vitest Mock typing, SearchPage.test.tsx missing @testing-library/
+        # user-event) are tracked separately. Don't let them block CI on
+        # everything else — exclude with a grep filter.
+        run: |
+          npx tsc --noEmit 2>&1 | tee /tmp/tsc.log
+          grep -v -E "user-event|ContextualAssistant.test" /tmp/tsc.log \
+            | grep -E "error TS" && exit 1 || exit 0
+
+      - name: Lint (next lint)
+        run: npm run lint
+
+      - name: Build (next build)
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:5400
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID: ""
+          NEXT_PUBLIC_MICROSOFT_CLIENT_ID: ""
+        run: npm run build
+
+      - name: Run vitest
+        run: npm test -- --reporter=verbose
+
+  # ---------------------------------------------------------------------------
+  # Security hygiene: pip-audit + npm audit (non-blocking initially)
+  # ---------------------------------------------------------------------------
+  security-audit:
+    name: Security audit (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true  # advisory only until we triage existing findings
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: pip-audit
+        run: pip-audit -r requirements.txt --strict || true
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: npm audit (frontend)
+        working-directory: src/frontend
+        run: npm audit --omit=dev || true

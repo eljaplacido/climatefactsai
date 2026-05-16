@@ -10,7 +10,7 @@ from typing import Optional
 import hashlib
 import secrets
 
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Query, Request
 from pydantic import BaseModel
 
 from shared.database import get_postgres
@@ -97,7 +97,7 @@ async def get_available_providers():
 
 
 @router.post("/callback", response_model=OAuthTokenResponse)
-async def oauth_callback(data: OAuthCallbackRequest):
+async def oauth_callback(data: OAuthCallbackRequest, request: Request):
     """
     Handle OAuth2 callback. Exchange authorization code for tokens,
     fetch user profile, create or link account, return JWT.
@@ -207,13 +207,29 @@ async def oauth_callback(data: OAuthCallbackRequest):
         except Exception:
             pass
 
-    # Generate JWT tokens
+    # Generate JWT tokens (S2: refresh is stateful — write a session row).
     access_token = TokenManager.create_access_token(
         user_id=user_id,
         email=email,
         subscription_tier=user.get("subscription_tier", "freemium"),
     )
-    refresh_token = TokenManager.create_refresh_token(user_id=user_id)
+
+    _ua = None
+    _ip = None
+    try:
+        _ua_raw = request.headers.get("user-agent")
+        _ua = _ua_raw[:512] if _ua_raw else None
+        _xff = request.headers.get("x-forwarded-for")
+        if _xff:
+            _ip = _xff.split(",")[0].strip()
+        elif request.client:
+            _ip = request.client.host
+    except Exception:
+        pass
+
+    refresh_token = TokenManager.create_refresh_token(
+        db, user_id=user_id, user_agent=_ua, ip_address=_ip,
+    )
 
     # Log activity
     try:

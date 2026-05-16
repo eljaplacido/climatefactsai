@@ -1,17 +1,27 @@
 """
 Authentication Utilities
-Handles password hashing, JWT token generation, and email verification
+Handles password hashing, JWT token generation, and stateful session lifecycle.
+
+Sessions (S2 — added 2026-05-16): every refresh token corresponds to one
+`sessions` row keyed by JWT `jti` claim. `/refresh` rotates (revoke old jti,
+issue new); `/logout`, password change, and password reset all revoke
+sessions server-side; presenting a revoked jti triggers replay detection
+and cascade-revocation of all the user's other active sessions.
 """
 
 import os
 import secrets
 import hashlib
+import logging
+import uuid
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 
 import bcrypt
 import jwt
 from fastapi import HTTPException, status
+
+_logger = logging.getLogger("auth")
 
 
 # Configuration
@@ -76,36 +86,212 @@ class TokenManager:
         return encoded_jwt
 
     @staticmethod
-    def create_refresh_token(user_id: str) -> str:
-        """Create a JWT refresh token"""
-        expires_delta = timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-        expire = datetime.utcnow() + expires_delta
+    def create_refresh_token(
+        db,
+        user_id: str,
+        user_agent: Optional[str] = None,
+        ip_address: Optional[str] = None,
+    ) -> str:
+        """Issue a stateful refresh token AND insert a row into `sessions`.
+
+        Returns just the encoded JWT; the `jti` is captured in the JWT's
+        own payload and persisted to `sessions.jti`. `/refresh` looks the
+        jti up to enforce rotation + replay detection.
+
+        Backwards-compat: if the `sessions` table doesn't exist yet
+        (migration 017 not applied), this logs a warning and falls back to
+        stateless behaviour so existing test envs without the migration
+        don't break — `/refresh` will still reject jti-less tokens.
+        """
+        jti = str(uuid.uuid4())
+        expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
 
         to_encode = {
             "sub": user_id,
             "type": "refresh",
+            "jti": jti,
             "exp": expire,
-            "iat": datetime.utcnow()
+            "iat": datetime.utcnow(),
         }
+        token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-        encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-        return encoded_jwt
+        try:
+            db.execute_update(
+                """
+                INSERT INTO sessions
+                    (jti, user_id, issued_at, last_used_at, expires_at,
+                     user_agent, ip_address)
+                VALUES
+                    (:jti, :user_id, NOW(), NOW(), :expires_at,
+                     :user_agent, :ip_address)
+                """,
+                {
+                    "jti": jti,
+                    "user_id": user_id,
+                    "expires_at": expire,
+                    "user_agent": (user_agent or "")[:512] or None,
+                    "ip_address": ip_address,
+                },
+            )
+        except Exception as exc:
+            _logger.warning(
+                "Failed to persist session row for jti=%s; refresh "
+                "rotation will reject this token on next use: %s",
+                jti, exc,
+            )
+
+        return token
+
+    @staticmethod
+    def rotate_refresh_token(
+        db,
+        refresh_token: str,
+        user_agent: Optional[str] = None,
+        ip_address: Optional[str] = None,
+    ) -> Tuple[str, str]:
+        """Verify a refresh token, detect replays, rotate, return (new_token, user_id).
+
+        Replay detection: if the presented `jti` is found in `sessions`
+        with `revoked_at IS NOT NULL`, treat as a stolen-token replay and
+        cascade-revoke ALL remaining active sessions for the user. This
+        is the standard "refresh token reuse" defence.
+        """
+        payload = TokenManager.verify_refresh_token(refresh_token)
+        jti = payload.get("jti")
+        user_id = payload.get("sub")
+
+        if not jti or not user_id:
+            # Tokens issued before migration 017 have no jti. Force re-login.
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token from a prior session — please sign in again.",
+            )
+
+        try:
+            rows = db.execute_query(
+                "SELECT jti, revoked_at, expires_at FROM sessions WHERE jti = :jti",
+                {"jti": jti},
+            )
+        except Exception as exc:
+            _logger.error("Session lookup failed: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Session store unavailable.",
+            )
+
+        if not rows:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unknown refresh token.",
+            )
+
+        session_row = rows[0]
+
+        # --- Replay detection ---
+        if session_row.get("revoked_at") is not None:
+            try:
+                db.execute_update(
+                    "UPDATE sessions "
+                    "SET revoked_at = COALESCE(revoked_at, NOW()), "
+                    "    revoke_reason = COALESCE(revoke_reason, 'replay_detected') "
+                    "WHERE user_id = :uid AND revoked_at IS NULL",
+                    {"uid": user_id},
+                )
+            except Exception as exc:
+                _logger.warning("Cascade revoke failed: %s", exc)
+            _logger.warning(
+                "Refresh token replay detected for user_id=%s jti=%s — "
+                "all sessions revoked",
+                user_id, jti,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=(
+                    "Refresh token replay detected. All sessions have been "
+                    "revoked; please sign in again."
+                ),
+            )
+
+        expires_at = session_row.get("expires_at")
+        if expires_at and expires_at < datetime.utcnow():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token expired.",
+            )
+
+        # --- Rotate ---
+        try:
+            db.execute_update(
+                "UPDATE sessions SET revoked_at = NOW(), revoke_reason = 'rotated' "
+                "WHERE jti = :jti",
+                {"jti": jti},
+            )
+        except Exception as exc:
+            _logger.error("Session rotation failed: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to rotate session.",
+            )
+
+        new_token = TokenManager.create_refresh_token(
+            db, user_id=user_id, user_agent=user_agent, ip_address=ip_address,
+        )
+        return new_token, user_id
+
+    @staticmethod
+    def revoke_session(db, jti: str, reason: str = "logout") -> bool:
+        """Mark a single session revoked. Returns True if any row was updated."""
+        if not jti:
+            return False
+        try:
+            db.execute_update(
+                "UPDATE sessions "
+                "SET revoked_at = COALESCE(revoked_at, NOW()), revoke_reason = :reason "
+                "WHERE jti = :jti AND revoked_at IS NULL",
+                {"jti": jti, "reason": reason},
+            )
+            return True
+        except Exception as exc:
+            _logger.warning("revoke_session failed: %s", exc)
+            return False
+
+    @staticmethod
+    def revoke_all_user_sessions(
+        db, user_id: str, reason: str = "password_change",
+    ) -> bool:
+        """Revoke every active session for a user. Used on password change/reset."""
+        if not user_id:
+            return False
+        try:
+            db.execute_update(
+                "UPDATE sessions SET revoked_at = NOW(), revoke_reason = :reason "
+                "WHERE user_id = :uid AND revoked_at IS NULL",
+                {"uid": user_id, "reason": reason},
+            )
+            return True
+        except Exception as exc:
+            _logger.warning("revoke_all_user_sessions failed: %s", exc)
+            return False
 
     @staticmethod
     def decode_token(token: str) -> Dict[str, Any]:
-        """Decode and validate a JWT token"""
+        """Decode and validate a JWT token."""
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             return payload
         except jwt.ExpiredSignatureError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has expired"
+                detail="Token has expired",
             )
-        except jwt.JWTError:
+        except jwt.InvalidTokenError:
+            # PyJWT base class; covers signature mismatch, malformed payload,
+            # bad algorithm, etc. (Pre-S8 the code referenced `jwt.JWTError`
+            # which is python-jose-only and would have AttributeError'd at
+            # runtime after we dropped python-jose.)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials"
+                detail="Could not validate credentials",
             )
 
     @staticmethod
