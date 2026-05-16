@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import os
 import subprocess
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional  # noqa: F401
 
 from fastapi import APIRouter
 
@@ -297,4 +297,97 @@ async def audit_trail_for_claim(claim_id: str) -> Dict[str, Any]:
         "claim_id": claim_id,
         "records": records,
         "total": len(records),
+    }
+
+
+# =============================================================================
+# Calibration metrics (Phase 5 wave 4)
+# =============================================================================
+# Pairs the reliability_score the URL analysis pipeline records with the
+# ground-truth labels from `calibration_labels` (migration 022), computes
+# Brier + ECE + reliability diagram + (when n >= 5) Platt scaling
+# parameters. The application can apply the fitted Platt at inference to
+# expose a calibrated_confidence alongside the raw value.
+
+@router.get("/calibration")
+async def methodology_calibration(
+    signal: str = "reliability_score",
+    n_bins: int = 10,
+) -> Dict[str, Any]:
+    """Compute live calibration metrics for one signal.
+
+    Joins `calibration_labels.label_truth` against the URL analysis's
+    recorded value for the requested signal (default reliability_score)
+    and runs the calibration math.
+
+    Returns 200 with `available=false` + zeros when no labels exist or
+    the migration hasn't been applied — degrades gracefully so the
+    methodology drawer can render an "awaiting first labels" state.
+    """
+    from app.domains.intelligence.calibration import calibrate
+
+    db = get_postgres()
+    if signal not in {"reliability_score"}:
+        # `agreement_score` and `hallucination_score` live in
+        # claim_provenance.raw_metadata; supporting those requires a JSON
+        # path query. Phase 5 wave 5 (future) adds them. For now restrict
+        # to the column we can read directly.
+        return {
+            "signal": signal,
+            "available": False,
+            "reason": f"signal '{signal}' not yet supported; try 'reliability_score'",
+            "metrics": None,
+        }
+
+    try:
+        rows = db.execute_query(
+            """
+            SELECT
+                cl.label_truth,
+                ua.reliability_score
+            FROM calibration_labels cl
+            JOIN url_analyses ua ON cl.url_analysis_id = ua.analysis_id
+            WHERE ua.reliability_score IS NOT NULL
+            """,
+            {},
+        )
+    except Exception as exc:
+        logger.warning(f"calibration query failed: {exc}")
+        return {
+            "signal": signal,
+            "available": False,
+            "reason": f"calibration_labels query failed: {type(exc).__name__}",
+            "metrics": None,
+        }
+
+    if not rows:
+        return {
+            "signal": signal,
+            "available": True,
+            "metrics": {
+                "n_labels": 0,
+                "note": "No calibration labels recorded yet; awaiting human review.",
+            },
+        }
+
+    # Normalise the raw signal to [0, 1] for the calibration math.
+    # reliability_score is stored as 0–100; divide.
+    predictions: List[float] = []
+    labels: List[float] = []
+    for r in rows:
+        rs = r.get("reliability_score")
+        lt = r.get("label_truth")
+        if rs is None or lt is None:
+            continue
+        try:
+            predictions.append(float(rs) / 100.0)
+            labels.append(float(lt))
+        except (TypeError, ValueError):
+            continue
+
+    result = calibrate(predictions, labels, n_bins=max(1, min(int(n_bins), 50)))
+    return {
+        "signal": signal,
+        "available": True,
+        "metrics": result.as_dict(),
     }

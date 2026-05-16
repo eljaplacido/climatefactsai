@@ -185,6 +185,88 @@ class TestIndicatorsEndpoint:
 # /api/methodology (bundle)
 # ---------------------------------------------------------------------------
 
+class TestCalibrationEndpoint:
+    """Phase 5 wave 4: /api/methodology/calibration computes Brier + ECE +
+    Platt over the labeled dataset."""
+
+    def _swap_db(self, fake):
+        import shared.database as _shared_db
+        prior = _shared_db._postgres_client
+        _shared_db._postgres_client = fake
+        return prior
+
+    def _restore(self, prior):
+        import shared.database as _shared_db
+        _shared_db._postgres_client = prior
+
+    def test_returns_zero_state_when_no_labels(self):
+        class _EmptyDB:
+            def execute_query(self, q, p=None):
+                return []
+        prior = self._swap_db(_EmptyDB())
+        try:
+            r = client.get("/api/methodology/calibration")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["signal"] == "reliability_score"
+            assert body["available"] is True
+            assert body["metrics"]["n_labels"] == 0
+        finally:
+            self._restore(prior)
+
+    def test_degrades_when_migration_missing(self):
+        class _BrokenDB:
+            def execute_query(self, q, p=None):
+                raise RuntimeError("relation calibration_labels does not exist")
+        prior = self._swap_db(_BrokenDB())
+        try:
+            r = client.get("/api/methodology/calibration")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["available"] is False
+            assert "RuntimeError" in body["reason"]
+        finally:
+            self._restore(prior)
+
+    def test_computes_metrics_on_labelled_data(self):
+        """5 labels with mixed accuracy → Brier > 0, n_labels = 5, Platt fitted."""
+        class _LabelledDB:
+            def execute_query(self, q, p=None):
+                return [
+                    {"label_truth": 1.0, "reliability_score": 80},
+                    {"label_truth": 0.0, "reliability_score": 70},
+                    {"label_truth": 1.0, "reliability_score": 90},
+                    {"label_truth": 0.0, "reliability_score": 60},
+                    {"label_truth": 1.0, "reliability_score": 75},
+                ]
+        prior = self._swap_db(_LabelledDB())
+        try:
+            r = client.get("/api/methodology/calibration?n_bins=5")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["signal"] == "reliability_score"
+            assert body["available"] is True
+            m = body["metrics"]
+            assert m["n_labels"] == 5
+            assert isinstance(m["brier_score"], float)
+            assert 0.0 <= m["brier_score"] <= 1.0
+            assert isinstance(m["ece"], float)
+            # Platt fitted because n >= 5.
+            assert m["platt_a"] is not None
+            assert m["platt_b"] is not None
+            # Reliability diagram has the right number of bins.
+            assert len(m["reliability_diagram"]) == 5
+        finally:
+            self._restore(prior)
+
+    def test_unsupported_signal_returns_unavailable(self):
+        r = client.get("/api/methodology/calibration?signal=agreement_score")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["available"] is False
+        assert "not yet supported" in body["reason"]
+
+
 class TestMethodologyBundle:
     def test_bundle_contains_all_blocks(self):
         resp = client.get("/api/methodology")
