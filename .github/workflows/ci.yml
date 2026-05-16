@@ -74,7 +74,26 @@ jobs:
             tests/api/test_deep_search_routes.py \
             tests/api/test_map_routes.py \
             tests/api/test_chat_routes.py \
+            tests/api/test_indicators_climate_trace.py \
+            tests/api/test_indicators_owid.py \
+            tests/api/test_indicators_climate_action_tracker.py \
+            tests/api/test_sustainability_score.py \
+            tests/api/test_prompts_registry.py \
+            tests/api/test_methodology_routes.py \
+            tests/api/test_provenance.py \
+            tests/api/test_drift_detection.py \
+            tests/api/test_multi_llm_verifier.py \
+            tests/api/test_anthropic_claim_extractor.py \
+            tests/api/test_calibration.py \
+            tests/api/test_calibration_store.py \
             tests/unit/api/test_rate_limiter.py \
+            --override-ini="addopts=" -p no:warnings -v
+
+      - name: Run adversarial probes (Phase 6 red-team gate)
+        # The adversarial suite pins behaviour we want the platform to
+        # hold against hostile inputs. A regression here fails the PR.
+        run: |
+          python -m pytest tests/adversarial/ \
             --override-ini="addopts=" -p no:warnings -v
 
   # ---------------------------------------------------------------------------
