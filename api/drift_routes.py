@@ -1,9 +1,12 @@
-"""Drift-detection endpoints — Phase 6 wave 1.
+"""Drift-detection endpoints — Phase 6 waves 1 + 5.
 
 Public-but-cacheable endpoints that surface drift signals an operator
-or external auditor would want to inspect. Today: source-mix KL drift.
-Future waves add prompt-fingerprint drift, latency drift, and per-LLM
-hallucination-rate drift.
+or external auditor would want to inspect:
+
+  * `/api/drift/source-mix`           — wave 1 (article source distribution)
+  * `/api/drift/prompt-fingerprints`  — wave 5 (LLM prompt usage distribution)
+
+Future waves add latency drift and per-LLM hallucination-rate drift.
 """
 
 from __future__ import annotations
@@ -45,6 +48,37 @@ async def get_source_mix_drift(
 
     db = get_postgres()
     report = detect_source_mix_drift(
+        db,
+        recent_days=recent_days,
+        baseline_days=baseline_days,
+    )
+    return report.as_dict()
+
+
+@router.get("/prompt-fingerprints")
+async def get_prompt_fingerprint_drift(
+    recent_days: int = Query(7, ge=1, le=90),
+    baseline_days: int = Query(30, ge=1, le=365),
+) -> Dict[str, Any]:
+    """KL-divergence drift on the per-prompt-fingerprint claim share.
+
+    Identifies silent prompt edits (template changed without a version
+    bump → fingerprint shifts), phase-out of an old prompt version,
+    or adoption of a new one. Each `top_shifts` row carries an extra
+    `display` field with the resolved `name@version` label.
+
+    Verdict thresholds match `/api/drift/source-mix`:
+      * KL < 0.10  — stable
+      * 0.10 ≤ KL < 0.25 — minor
+      * 0.25 ≤ KL < 0.50 — notable
+      * KL ≥ 0.50 — significant (page on-call)
+    """
+    from app.domains.intelligence.drift_detection import (
+        detect_prompt_fingerprint_drift,
+    )
+
+    db = get_postgres()
+    report = detect_prompt_fingerprint_drift(
         db,
         recent_days=recent_days,
         baseline_days=baseline_days,

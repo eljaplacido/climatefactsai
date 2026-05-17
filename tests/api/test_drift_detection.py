@@ -20,7 +20,9 @@ from fastapi.testclient import TestClient
 
 from app.domains.intelligence.drift_detection import (
     DriftReport,
+    detect_prompt_fingerprint_drift,
     detect_source_mix_drift,
+    fetch_prompt_fingerprint_counts,
     fetch_source_counts,
     kl_divergence,
     normalise_distribution,
@@ -228,5 +230,192 @@ class TestSourceMixEndpoint:
             assert body["verdict"] in {"stable", "minor", "notable", "significant"}
             assert body["recent_window_days"] == 7
             assert "top_shifts" in body
+        finally:
+            _shared_db._postgres_client = prior
+
+
+# ---------------------------------------------------------------------------
+# top_shifts_between key_label parameter (Phase 6 wave 5 prerequisite)
+# ---------------------------------------------------------------------------
+
+class TestTopShiftsKeyLabel:
+    def test_default_label_unchanged(self):
+        shifts = top_shifts_between({"a": 1.0}, {"b": 1.0})
+        # Existing callers must continue to see 'source_name'.
+        for s in shifts:
+            assert "source_name" in s
+            assert "prompt_fingerprint" not in s
+
+    def test_custom_label_replaces_source_name(self):
+        shifts = top_shifts_between(
+            {"a1b2": 0.7, "c3d4": 0.3},
+            {"a1b2": 0.5, "c3d4": 0.5},
+            key_label="prompt_fingerprint",
+        )
+        for s in shifts:
+            assert "prompt_fingerprint" in s
+            assert "source_name" not in s
+            # Same numeric fields still present.
+            assert "recent_share" in s
+            assert "baseline_share" in s
+            assert "delta" in s
+
+
+# ---------------------------------------------------------------------------
+# detect_prompt_fingerprint_drift (Phase 6 wave 5)
+# ---------------------------------------------------------------------------
+
+class _FakeDBPrompts:
+    """Mimics claim_provenance query: returns rows with
+    {prompt_fingerprint, prompt_name, prompt_version, n}.
+
+    Like _FakeDB, dispatches by the params['end'] value: '0 days' → recent."""
+
+    def __init__(
+        self,
+        recent: List[Dict[str, Any]],
+        baseline: List[Dict[str, Any]],
+    ):
+        self.recent = recent
+        self.baseline = baseline
+
+    def execute_query(self, query, params=None):
+        params = params or {}
+        end = params.get("end", "")
+        return self.recent if end.startswith("0") else self.baseline
+
+
+def _row(fp: str, name: str, version: str, n: int) -> Dict[str, Any]:
+    return {
+        "prompt_fingerprint": fp,
+        "prompt_name": name,
+        "prompt_version": version,
+        "n": n,
+    }
+
+
+class TestFetchPromptFingerprintCounts:
+    def test_returns_counts_and_display_map(self):
+        db = _FakeDBPrompts(
+            recent=[_row("abcd1234", "synth", "v1.0", 50)],
+            baseline=[],
+        )
+        counts, display = fetch_prompt_fingerprint_counts(db, 7, 0)
+        assert counts == {"abcd1234": 50}
+        assert display == {"abcd1234": "synth@v1.0"}
+
+    def test_skips_rows_without_fingerprint(self):
+        db = _FakeDBPrompts(
+            recent=[
+                _row("abcd", "p", "v1", 5),
+                {"prompt_fingerprint": None, "prompt_name": "p", "prompt_version": "v1", "n": 99},
+            ],
+            baseline=[],
+        )
+        counts, _ = fetch_prompt_fingerprint_counts(db, 7, 0)
+        assert counts == {"abcd": 5}
+
+    def test_falls_back_to_question_mark_for_missing_metadata(self):
+        db = _FakeDBPrompts(
+            recent=[{"prompt_fingerprint": "deadbeef", "prompt_name": None, "prompt_version": None, "n": 3}],
+            baseline=[],
+        )
+        _, display = fetch_prompt_fingerprint_counts(db, 7, 0)
+        assert display["deadbeef"] == "?@?"
+
+    def test_db_error_returns_empty(self):
+        class _Broken:
+            def execute_query(self, query, params=None):
+                raise RuntimeError("table doesn't exist yet")
+        counts, display = fetch_prompt_fingerprint_counts(_Broken(), 7, 0)
+        assert counts == {}
+        assert display == {}
+
+
+class TestDetectPromptFingerprintDrift:
+    def test_identical_distributions_yield_stable_verdict(self):
+        recent = [_row("aa", "p1", "v1", 50), _row("bb", "p2", "v1", 50)]
+        baseline = [_row("aa", "p1", "v1", 500), _row("bb", "p2", "v1", 500)]
+        report = detect_prompt_fingerprint_drift(_FakeDBPrompts(recent, baseline))
+        assert report.metric == "prompt_fingerprint"
+        assert report.verdict == "stable"
+        assert report.kl_divergence < 0.05
+
+    def test_silent_prompt_edit_produces_drift(self):
+        """A new fingerprint appears in `recent` that wasn't in `baseline` — the
+        signature of a silent prompt edit. Drift should be notable or worse."""
+        recent = [_row("NEW_FP", "synth", "v1.0", 100)]
+        baseline = [_row("OLD_FP", "synth", "v1.0", 100)]
+        report = detect_prompt_fingerprint_drift(_FakeDBPrompts(recent, baseline))
+        # Completely disjoint distributions push KL high.
+        assert report.verdict in {"notable", "significant"}
+        # top_shifts should call out both fingerprints.
+        fps = {s.get("prompt_fingerprint") for s in report.top_shifts}
+        assert {"NEW_FP", "OLD_FP"} <= fps
+
+    def test_top_shifts_include_display_label(self):
+        recent = [_row("aa11", "synth", "v1.0", 80), _row("bb22", "classifier", "v0.9", 20)]
+        baseline = [_row("aa11", "synth", "v0.9", 50), _row("bb22", "classifier", "v0.9", 50)]
+        report = detect_prompt_fingerprint_drift(_FakeDBPrompts(recent, baseline))
+        # Recent labels should win (so the synth fingerprint shows v1.0).
+        for s in report.top_shifts:
+            assert "display" in s
+            if s["prompt_fingerprint"] == "aa11":
+                assert s["display"] == "synth@v1.0"
+            elif s["prompt_fingerprint"] == "bb22":
+                assert s["display"] == "classifier@v0.9"
+
+    def test_empty_windows_return_stable_with_note(self):
+        report = detect_prompt_fingerprint_drift(_FakeDBPrompts([], []))
+        assert report.verdict == "stable"
+        assert report.kl_divergence == 0.0
+        assert report.recent_count == 0
+        assert report.baseline_count == 0
+        assert report.notes is not None
+        assert "prompt" in report.notes.lower()
+
+    def test_report_shape_matches_source_mix(self):
+        """The endpoint surface must look the same across drift metrics so a
+        single dashboard can render any metric type."""
+        recent = [_row("aa", "p", "v1", 10)]
+        baseline = [_row("aa", "p", "v1", 10)]
+        report = detect_prompt_fingerprint_drift(_FakeDBPrompts(recent, baseline))
+        out = report.as_dict()
+        for key in (
+            "metric", "kl_divergence", "verdict",
+            "recent_window_days", "baseline_window_days",
+            "recent_count", "baseline_count",
+            "top_shifts", "recent_end", "baseline_end",
+        ):
+            assert key in out
+        assert out["metric"] == "prompt_fingerprint"
+
+
+# ---------------------------------------------------------------------------
+# /api/drift/prompt-fingerprints endpoint (Phase 6 wave 5)
+# ---------------------------------------------------------------------------
+
+class TestPromptFingerprintEndpoint:
+    def test_endpoint_returns_report(self, monkeypatch):
+        import shared.database as _shared_db
+        from api.main import app
+
+        recent = [_row("ff00", "synth", "v1.0", 5), _row("ee11", "classifier", "v0.9", 3)]
+        baseline = [_row("ff00", "synth", "v1.0", 50), _row("ee11", "classifier", "v0.9", 50)]
+        prior = _shared_db._postgres_client
+        _shared_db._postgres_client = _FakeDBPrompts(recent, baseline)
+        try:
+            client = TestClient(app)
+            r = client.get("/api/drift/prompt-fingerprints?recent_days=7&baseline_days=30")
+            assert r.status_code == 200, r.text
+            body = r.json()
+            assert body["metric"] == "prompt_fingerprint"
+            assert body["verdict"] in {"stable", "minor", "notable", "significant"}
+            assert body["recent_window_days"] == 7
+            assert body["baseline_window_days"] == 30
+            assert "top_shifts" in body
+            # Display labels should propagate to the wire format.
+            displays = {s.get("display") for s in body["top_shifts"]}
+            assert any(d and "@" in d for d in displays)
         finally:
             _shared_db._postgres_client = prior

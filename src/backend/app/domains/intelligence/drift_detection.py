@@ -146,11 +146,16 @@ def top_shifts_between(
     recent: Dict[str, float],
     baseline: Dict[str, float],
     limit: int = 10,
+    key_label: str = "source_name",
 ) -> List[Dict[str, float]]:
-    """Return the biggest absolute share changes per source.
+    """Return the biggest absolute share changes per key.
 
     Used by the API surface to explain WHY the KL flagged. The list is
     ordered by |Δshare| descending and truncated to `limit`.
+
+    `key_label` controls the label on the returned dict (default "source_name"
+    so existing callers stay backwards-compatible). Pass e.g. "prompt_fingerprint"
+    for fingerprint-drift output.
     """
     union = set(recent.keys()) | set(baseline.keys())
     diffs: List[Tuple[str, float, float, float]] = []
@@ -161,7 +166,7 @@ def top_shifts_between(
     diffs.sort(key=lambda t: abs(t[3]), reverse=True)
     return [
         {
-            "source_name": src,
+            key_label: src,
             "recent_share": round(r, 4),
             "baseline_share": round(b, 4),
             "delta": round(d, 4),
@@ -252,6 +257,138 @@ def detect_source_mix_drift(
         recent_count=sum(recent_counts.values()),
         baseline_count=sum(baseline_counts.values()),
         top_shifts=top_shifts_between(p_recent, q_baseline, limit=10),
+        recent_end=now_iso,
+        baseline_end=baseline_end_iso,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Prompt-fingerprint drift (Phase 6 wave 5)
+# ---------------------------------------------------------------------------
+#
+# Why this matters: every prompt the platform ships with is fingerprinted
+# (SHA-256 prefix of template + system, stored in claim_provenance.prompt_fingerprint).
+# If a prompt's text changes without a version bump, the fingerprint shifts —
+# this drift detector is the canary. It also catches:
+#   * Phase-out of an old prompt version (fingerprint's share collapses).
+#   * Adoption of a new prompt version (a fingerprint appears in `recent`
+#     that wasn't in `baseline`).
+#   * Mis-routing where one prompt unexpectedly dominates calls that used
+#     to go through several.
+#
+# Verdict thresholds match the source-mix detector — a `notable` or
+# `significant` KL is the on-call signal to inspect the prompt registry.
+
+def fetch_prompt_fingerprint_counts(
+    db,
+    days_back_start: int,
+    days_back_end: int,
+) -> Tuple[Dict[str, int], Dict[str, str]]:
+    """Counts of claim_provenance rows per prompt_fingerprint in a window.
+
+    Returns:
+        counts: fingerprint → count
+        display: fingerprint → "name@version" (best-effort, for top_shifts UX)
+
+    Same window semantics as `fetch_source_counts`.
+    """
+    try:
+        rows = db.execute_query(
+            """
+            SELECT
+                prompt_fingerprint,
+                MAX(prompt_name)    AS prompt_name,
+                MAX(prompt_version) AS prompt_version,
+                COUNT(*)             AS n
+            FROM claim_provenance
+            WHERE created_at > NOW() - :start::interval
+              AND created_at <= NOW() - :end::interval
+              AND prompt_fingerprint IS NOT NULL
+            GROUP BY prompt_fingerprint
+            """,
+            {
+                "start": f"{int(days_back_start)} days",
+                "end": f"{int(days_back_end)} days",
+            },
+        )
+    except Exception as exc:
+        _logger.warning(f"fetch_prompt_fingerprint_counts failed: {exc}")
+        return {}, {}
+
+    counts: Dict[str, int] = {}
+    display: Dict[str, str] = {}
+    for r in rows or []:
+        fp = r.get("prompt_fingerprint")
+        if not fp:
+            continue
+        counts[fp] = int(r.get("n", 0) or 0)
+        name = r.get("prompt_name") or "?"
+        version = r.get("prompt_version") or "?"
+        display[fp] = f"{name}@{version}"
+    return counts, display
+
+
+def detect_prompt_fingerprint_drift(
+    db,
+    recent_days: int = 7,
+    baseline_days: int = 30,
+) -> DriftReport:
+    """Compare prompt-fingerprint usage between two non-overlapping windows.
+
+    Identical math to `detect_source_mix_drift` but pulling counts from
+    `claim_provenance.prompt_fingerprint`. Top-shifts entries carry an
+    extra `display` field with the resolved "name@version" so operators
+    can quickly identify the affected prompt.
+    """
+    recent_counts, recent_display = fetch_prompt_fingerprint_counts(
+        db, days_back_start=recent_days, days_back_end=0,
+    )
+    baseline_counts, baseline_display = fetch_prompt_fingerprint_counts(
+        db, days_back_start=recent_days + baseline_days, days_back_end=recent_days,
+    )
+
+    # Prefer recent display labels (more current) but fall back to baseline
+    # when a fingerprint disappeared from `recent`.
+    display_map: Dict[str, str] = {**baseline_display, **recent_display}
+
+    support = sorted(set(recent_counts.keys()) | set(baseline_counts.keys()))
+    if not support:
+        return DriftReport(
+            metric="prompt_fingerprint",
+            kl_divergence=0.0,
+            verdict="stable",
+            recent_window_days=recent_days,
+            baseline_window_days=baseline_days,
+            recent_count=0,
+            baseline_count=0,
+            top_shifts=[],
+            notes="No claim_provenance rows with prompt_fingerprint in either window.",
+        )
+
+    p_recent = normalise_distribution(recent_counts, keys=support)
+    q_baseline = normalise_distribution(baseline_counts, keys=support)
+    kl = kl_divergence(p_recent, q_baseline)
+
+    shifts = top_shifts_between(
+        p_recent, q_baseline, limit=10, key_label="prompt_fingerprint",
+    )
+    for s in shifts:
+        fp = s.get("prompt_fingerprint")
+        if isinstance(fp, str):
+            s["display"] = display_map.get(fp, "?")
+
+    now_iso = datetime.utcnow().isoformat()
+    baseline_end_iso = (datetime.utcnow() - timedelta(days=recent_days)).isoformat()
+
+    return DriftReport(
+        metric="prompt_fingerprint",
+        kl_divergence=kl,
+        verdict=verdict_for(kl),
+        recent_window_days=recent_days,
+        baseline_window_days=baseline_days,
+        recent_count=sum(recent_counts.values()),
+        baseline_count=sum(baseline_counts.values()),
+        top_shifts=shifts,
         recent_end=now_iso,
         baseline_end=baseline_end_iso,
     )
