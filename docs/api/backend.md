@@ -187,6 +187,40 @@ Authorization: Bearer <token>
 }
 ```
 
+#### Refresh Access Token (stateful sessions)
+```http
+POST /api/auth/refresh
+Content-Type: application/json
+
+{ "refresh_token": "eyJ..." }
+```
+
+Each refresh rotates the token and revokes the prior `jti`. Reuse of an
+already-rotated token is detected and triggers cascade-revocation of
+every active session for the user (see `sessions` table — migration 017).
+
+#### Logout (revoke session)
+```http
+POST /api/auth/logout
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "refresh_token": "eyJ..." }
+```
+
+Marks the matching `sessions` row revoked. Idempotent.
+
+#### Google / Microsoft OAuth
+```http
+GET  /api/auth/oauth/state                 # opaque CSRF state, store in sessionStorage
+POST /api/auth/oauth/google { code, state, redirect_uri }
+POST /api/auth/oauth/microsoft { code, state, redirect_uri }
+```
+
+The `state` parameter must match what `/state` issued; the OAuth callback
+rejects mismatches. Google's `email_verified=false` is treated as an
+unverified identity and refused with `403`.
+
 ### Subscriptions
 
 #### Create Subscription
@@ -293,6 +327,125 @@ GET /api/stats
   "last_updated": "2025-01-15T14:30:00Z"
 }
 ```
+
+### Methodology & Transparency (public)
+
+Every endpoint under `/api/methodology/*` is unauthenticated — designed for
+external auditors and the live `/methodology` page on the frontend.
+
+#### Methodology snapshot bundle
+```http
+GET /api/methodology
+```
+Returns versioned prompt registry + sustainability formula + indicator
+catalogue + git revision in one call. Pin this response to a snapshot
+for audit pinning.
+
+#### Versioned prompts
+```http
+GET /api/methodology/prompts
+```
+Lists every LLM prompt the platform uses with name, version, and 16-hex
+SHA-256 fingerprint. Template content is intentionally not exposed
+(prompt-injection / IP risk) — fingerprint + version are enough to
+detect deployment-vs-source drift.
+
+#### Sustainability score formula
+```http
+GET /api/methodology/sustainability-formula
+```
+Weighted-component table + confidence-band schedule + normalizer
+docs + methodology version + URL.
+
+#### Indicator catalogue
+```http
+GET /api/methodology/indicators
+```
+Every indicator the platform defines, joined with per-indicator country
+coverage counts. `available=false` when migration 020 hasn't been
+applied — caller degrades gracefully.
+
+#### Calibration metrics
+```http
+GET /api/methodology/calibration?signal=reliability_score
+```
+`signal` is one of `reliability_score`, `agreement_score`,
+`hallucination_score`. Returns Brier score + ECE + reliability diagram +
+fitted Platt parameters (when ≥5 labels exist).
+
+#### Submit a reviewer label (admin)
+```http
+POST /api/methodology/calibration/labels
+X-Admin-Secret: <secret>           # only when CLILENS_CALIBRATION_ADMIN_SECRET is set
+Content-Type: application/json
+
+{
+  "url_analysis_id": "uuid",
+  "label_truth": 0.8,                # 0-1 graded verdict
+  "labeled_by": "reviewer-name",
+  "label_method": "human_review",    # or external_factcheck | consensus_panel | …
+  "label_notes": "optional"
+}
+```
+Idempotent on `(analysis_id, labeled_by, label_method)` — duplicate
+returns 409.
+
+#### Refit calibration (admin / Cloud Scheduler)
+```http
+POST /api/methodology/calibration/refit?signal=reliability_score&min_labels=5
+X-Admin-Secret: <secret>
+```
+Recomputes Brier + ECE + Platt and persists into `calibration_fits`.
+Nightly Celery task (`app.tasks.calibration.nightly_calibration_refit`)
+runs this at 03:00 UTC for every supported signal.
+
+#### Hallucination-rate dashboard
+```http
+GET /api/methodology/hallucination-rates?window_days=30&top_sources=50
+```
+Mean risk + high-risk rate (>0.5) grouped by extraction method, model,
+and source (article + source_article_ids JSONB unnest joined to
+`articles.source_name`).
+
+#### Audit-trail lookup
+```http
+GET /api/methodology/audit-trail/url-analysis/{analysis_id}
+GET /api/methodology/audit-trail/article/{article_id}
+GET /api/methodology/audit-trail/claim/{claim_id}
+```
+Returns every `claim_provenance` row for that artifact — model + prompt
+fingerprint + retrieval strategy + source articles + hallucination
+verdict.
+
+### Drift monitoring (public)
+
+KL-divergence between the recent 7-day window and the prior 30-day
+baseline. Verdict buckets: `stable` (<0.10) / `minor` (<0.25) /
+`notable` (<0.50) / `significant` (≥0.50).
+
+```http
+GET /api/drift/source-mix?recent_days=7&baseline_days=30
+GET /api/drift/prompt-fingerprints?recent_days=7&baseline_days=30
+```
+
+`top_shifts[]` lists the biggest contributors to the divergence; the
+prompt-fingerprint endpoint adds a `display` field (`name@version`) so
+operators can identify the affected prompt immediately.
+
+### Indicator sync (scheduler)
+
+Cloud Scheduler HTTP triggers (auth via `X-Scheduler-Secret` header when
+`SCHEDULER_SECRET` is set in env):
+
+```http
+POST /api/scheduler/indicators/sync?source=climate_trace   # daily
+POST /api/scheduler/indicators/sync?source=owid            # weekly
+POST /api/scheduler/indicators/sync?source=cat             # weekly
+GET  /api/scheduler/indicators/sync/recent?limit=20        # last N sync runs
+```
+
+Each invocation upserts into `country_indicators` and logs into
+`indicator_sync_logs` (fetched/upserted/skipped counts + duration).
 
 ## Error Responses
 
