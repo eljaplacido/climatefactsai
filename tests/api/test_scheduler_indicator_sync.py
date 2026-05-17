@@ -159,13 +159,17 @@ class TestIndicatorSyncEndpoint:
         monkeypatch.setattr(ind_mod.ClimateTRACEAdapter, "sync", _make_fake("climate_trace"))
         monkeypatch.setattr(ind_mod.OWIDAdapter, "sync", _make_fake("owid"))
         monkeypatch.setattr(ind_mod.ClimateActionTrackerAdapter, "sync", _make_fake("cat"))
+        # Wave 6 adapters — patch so source=all doesn't hit external HTTP.
+        monkeypatch.setattr(ind_mod.UNFCCCNdcAdapter, "sync", _make_fake("unfccc_ndc"))
+        monkeypatch.setattr(ind_mod.IRENAAdapter, "sync", _make_fake("irena"))
+        monkeypatch.setattr(ind_mod.NDGainAdapter, "sync", _make_fake("nd_gain"))
 
         prior = _swap_db(_CaptureDB())
         try:
             r = client.post("/api/scheduler/indicators/sync?source=all")
             assert r.status_code == 200
-            assert sorted(ran) == ["cat", "climate_trace", "owid"]
-            assert len(r.json()["results"]) == 3
+            assert sorted(ran) == ["cat", "climate_trace", "irena", "nd_gain", "owid", "unfccc_ndc"]
+            assert len(r.json()["results"]) == 6
         finally:
             _restore_db(prior)
 
@@ -198,6 +202,18 @@ class TestIndicatorSyncEndpoint:
                 fetched_count=0, upserted_count=0, skipped_count=0, errors=[],
             )
         monkeypatch.setattr(ind_mod.ClimateActionTrackerAdapter, "sync", _cat_stub)
+        # Wave 6 adapters — stub so source=all only exercises the failure isolation
+        # logic for one bad adapter, not network flakiness on three more.
+        async def _passing_stub(self_arg, db):
+            return SyncResult(
+                source_name=type(self_arg).source_name,
+                started_at=datetime(2026, 5, 16, 12, 0, 0),
+                finished_at=datetime(2026, 5, 16, 12, 0, 1),
+                fetched_count=0, upserted_count=0, skipped_count=0, errors=[],
+            )
+        monkeypatch.setattr(ind_mod.UNFCCCNdcAdapter, "sync", _passing_stub)
+        monkeypatch.setattr(ind_mod.IRENAAdapter, "sync", _passing_stub)
+        monkeypatch.setattr(ind_mod.NDGainAdapter, "sync", _passing_stub)
 
         prior = _swap_db(_CaptureDB())
         try:
