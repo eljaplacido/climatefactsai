@@ -32,6 +32,13 @@ _logger = logging.getLogger("calibration_store")
 # Data → predictions/labels
 # ---------------------------------------------------------------------------
 
+SUPPORTED_SIGNALS = {
+    "reliability_score",
+    "agreement_score",
+    "hallucination_score",
+}
+
+
 def fetch_labelled_predictions(
     db,
     signal_name: str = "reliability_score",
@@ -41,31 +48,41 @@ def fetch_labelled_predictions(
     Predictions are normalised to [0, 1] so Brier / ECE / Platt math
     works uniformly across signals stored on different scales:
 
-      * reliability_score (0–100) → divided by 100.
-      * agreement_score, hallucination_score (already 0–1) → unchanged.
+      * reliability_score (0–100, on url_analyses) → divided by 100.
+      * agreement_score (0–1, in claim_provenance.raw_metadata JSONB) → as-is.
+      * hallucination_score (0–1, dedicated claim_provenance column) → as-is.
+        Note: hallucination_score is INVERTED for calibration — a low
+        hallucination_risk means a TRUSTWORTHY answer, so the "prediction"
+        we fit against label_truth is (1 - hallucination_score). This way
+        a well-calibrated platform shows agreement between
+        (1 - hallucination_risk) and the ground-truth verdict.
 
     Returns:
         (predictions, labels). Empty when no labels exist or the
         migration hasn't been applied — caller handles the empty case
         gracefully.
     """
-    if signal_name not in {"reliability_score", "agreement_score", "hallucination_score"}:
+    if signal_name not in SUPPORTED_SIGNALS:
         _logger.debug(f"Unknown signal_name={signal_name}; returning empty")
         return [], []
 
-    # Only reliability_score lives in a column today; the multi-LLM
-    # agreement_score and hallucination_score live in
-    # claim_provenance.raw_metadata. Phase 5 wave 5 wires reliability_score
-    # fully; the other two come once we add JSONB-path queries.
-    if signal_name != "reliability_score":
-        return [], []
+    if signal_name == "reliability_score":
+        return _fetch_reliability_score(db)
+    if signal_name == "agreement_score":
+        return _fetch_agreement_score(db)
+    if signal_name == "hallucination_score":
+        return _fetch_hallucination_score(db)
+    return [], []
 
+
+def _fetch_reliability_score(db) -> Tuple[List[float], List[float]]:
+    """Normalise 0–100 reliability_score to [0, 1] for the calibration math."""
     try:
         rows = db.execute_query(
             """
             SELECT
                 cl.label_truth,
-                ua.reliability_score
+                ua.reliability_score AS raw
             FROM calibration_labels cl
             JOIN url_analyses ua ON cl.url_analysis_id = ua.analysis_id
             WHERE ua.reliability_score IS NOT NULL
@@ -73,20 +90,109 @@ def fetch_labelled_predictions(
             {},
         )
     except Exception as exc:
-        _logger.warning(f"fetch_labelled_predictions failed: {exc}")
+        _logger.warning(f"_fetch_reliability_score failed: {exc}")
         return [], []
+    return _rows_to_pairs(rows, divisor=100.0)
 
+
+def _fetch_agreement_score(db) -> Tuple[List[float], List[float]]:
+    """Read agreement_score from claim_provenance.raw_metadata JSONB.
+
+    The multi-LLM verifier writes it at
+    raw_metadata.multi_llm_verification.agreement_score in [0, 1].
+    Picks the most-recent provenance row per analysis (in case
+    multiple syncs / replays exist).
+    """
+    try:
+        rows = db.execute_query(
+            """
+            SELECT
+                cl.label_truth,
+                (cp.raw_metadata #>> '{multi_llm_verification,agreement_score}')::float
+                    AS raw
+            FROM calibration_labels cl
+            JOIN LATERAL (
+                SELECT raw_metadata
+                FROM claim_provenance
+                WHERE url_analysis_id = cl.url_analysis_id
+                  AND raw_metadata #>> '{multi_llm_verification,agreement_score}' IS NOT NULL
+                ORDER BY created_at DESC
+                LIMIT 1
+            ) cp ON TRUE
+            """,
+            {},
+        )
+    except Exception as exc:
+        _logger.warning(f"_fetch_agreement_score failed: {exc}")
+        return [], []
+    return _rows_to_pairs(rows, divisor=1.0)
+
+
+def _fetch_hallucination_score(db) -> Tuple[List[float], List[float]]:
+    """Read hallucination_score from claim_provenance.hallucination_score
+    (dedicated column from migration 021).
+
+    INVERTS the value before returning — a low hallucination_risk means
+    a trustworthy output, so the "prediction" the math sees is
+    (1 - hallucination_score). With that flip, a perfectly calibrated
+    detector matches label_truth directly.
+    """
+    try:
+        rows = db.execute_query(
+            """
+            SELECT
+                cl.label_truth,
+                (1.0 - cp.hallucination_score) AS raw
+            FROM calibration_labels cl
+            JOIN LATERAL (
+                SELECT hallucination_score
+                FROM claim_provenance
+                WHERE url_analysis_id = cl.url_analysis_id
+                  AND hallucination_score IS NOT NULL
+                ORDER BY created_at DESC
+                LIMIT 1
+            ) cp ON TRUE
+            """,
+            {},
+        )
+    except Exception as exc:
+        _logger.warning(f"_fetch_hallucination_score failed: {exc}")
+        return [], []
+    return _rows_to_pairs(rows, divisor=1.0)
+
+
+def _rows_to_pairs(
+    rows,
+    *,
+    divisor: float,
+) -> Tuple[List[float], List[float]]:
+    """Common (label_truth, raw) → (predictions, labels) shaping logic.
+
+    Accepts either the new aliased `raw` column (current production SQL)
+    or the legacy column name (`reliability_score`) for backward compat
+    with tests + earlier SQL shapes.
+    """
     predictions: List[float] = []
     labels: List[float] = []
     for r in rows or []:
-        rs = r.get("reliability_score")
+        raw = r.get("raw")
+        if raw is None:
+            # Legacy column name used by older tests / earlier SQL.
+            raw = r.get("reliability_score")
         lt = r.get("label_truth")
-        if rs is None or lt is None:
+        if raw is None or lt is None:
             continue
         try:
-            predictions.append(float(rs) / 100.0)
+            p = float(raw) / float(divisor)
+        except (TypeError, ValueError, ZeroDivisionError):
+            continue
+        # Clamp into [0, 1] in case of arithmetic edge cases.
+        p = max(0.0, min(1.0, p))
+        predictions.append(p)
+        try:
             labels.append(float(lt))
         except (TypeError, ValueError):
+            predictions.pop()  # roll back the prediction we just added
             continue
     return predictions, labels
 

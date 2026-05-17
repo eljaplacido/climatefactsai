@@ -347,65 +347,37 @@ async def methodology_calibration(
     methodology drawer can render an "awaiting first labels" state.
     """
     from app.domains.intelligence.calibration import calibrate
+    from app.domains.intelligence.calibration_store import (
+        SUPPORTED_SIGNALS,
+        fetch_labelled_predictions,
+    )
+
+    if signal not in SUPPORTED_SIGNALS:
+        return {
+            "signal": signal,
+            "available": False,
+            "reason": (
+                f"signal '{signal}' not supported. "
+                f"Available: {sorted(SUPPORTED_SIGNALS)}"
+            ),
+            "metrics": None,
+        }
 
     db = get_postgres()
-    if signal not in {"reliability_score"}:
-        # `agreement_score` and `hallucination_score` live in
-        # claim_provenance.raw_metadata; supporting those requires a JSON
-        # path query. Phase 5 wave 5 (future) adds them. For now restrict
-        # to the column we can read directly.
-        return {
-            "signal": signal,
-            "available": False,
-            "reason": f"signal '{signal}' not yet supported; try 'reliability_score'",
-            "metrics": None,
-        }
+    predictions, labels = fetch_labelled_predictions(db, signal)
 
-    try:
-        rows = db.execute_query(
-            """
-            SELECT
-                cl.label_truth,
-                ua.reliability_score
-            FROM calibration_labels cl
-            JOIN url_analyses ua ON cl.url_analysis_id = ua.analysis_id
-            WHERE ua.reliability_score IS NOT NULL
-            """,
-            {},
-        )
-    except Exception as exc:
-        logger.warning(f"calibration query failed: {exc}")
-        return {
-            "signal": signal,
-            "available": False,
-            "reason": f"calibration_labels query failed: {type(exc).__name__}",
-            "metrics": None,
-        }
-
-    if not rows:
+    if not predictions:
         return {
             "signal": signal,
             "available": True,
             "metrics": {
                 "n_labels": 0,
-                "note": "No calibration labels recorded yet; awaiting human review.",
+                "note": (
+                    "No calibration labels recorded yet for this signal; "
+                    "awaiting reviewer input via POST /api/methodology/calibration/labels."
+                ),
             },
         }
-
-    # Normalise the raw signal to [0, 1] for the calibration math.
-    # reliability_score is stored as 0–100; divide.
-    predictions: List[float] = []
-    labels: List[float] = []
-    for r in rows:
-        rs = r.get("reliability_score")
-        lt = r.get("label_truth")
-        if rs is None or lt is None:
-            continue
-        try:
-            predictions.append(float(rs) / 100.0)
-            labels.append(float(lt))
-        except (TypeError, ValueError):
-            continue
 
     result = calibrate(predictions, labels, n_bins=max(1, min(int(n_bins), 50)))
     return {

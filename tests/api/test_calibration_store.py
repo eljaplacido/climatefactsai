@@ -114,13 +114,39 @@ class TestFetchLabelledPredictions:
         # No SQL was attempted.
         assert db.queries == []
 
-    def test_agreement_score_not_yet_supported(self):
-        """agreement_score lives in JSONB; wave 5 doesn't query it."""
-        db = _RecordingDB(select_rows=[{"label_truth": 1.0, "reliability_score": 80}])
+    def test_agreement_score_reads_from_jsonb_path(self):
+        """Phase 5 wave 6: agreement_score is read from claim_provenance.raw_metadata
+        via a JSONB path query. Values come back already in [0, 1] so no divisor."""
+        db = _RecordingDB(select_rows=[
+            {"label_truth": 1.0, "raw": 0.85},
+            {"label_truth": 0.0, "raw": 0.20},
+        ])
         preds, labels = fetch_labelled_predictions(db, "agreement_score")
-        assert preds == []
-        # No SQL was attempted.
-        assert db.queries == []
+        assert preds == [0.85, 0.20]
+        assert labels == [1.0, 0.0]
+        # The query joined calibration_labels with claim_provenance via LATERAL.
+        last_query = db.queries[-1]["q"]
+        assert "from calibration_labels" in last_query
+        assert "claim_provenance" in last_query
+        assert "multi_llm_verification" in last_query
+        assert "agreement_score" in last_query
+
+    def test_hallucination_score_is_inverted_for_calibration(self):
+        """Phase 5 wave 6: hallucination_score is a RISK (low=good), so the
+        calibration math sees (1 - hallucination_score) as the prediction."""
+        db = _RecordingDB(select_rows=[
+            # The SELECT returns the already-inverted value (1 - raw_score)
+            # — verified by the SQL pattern below. Values here mimic what
+            # the DB would return after the subtraction.
+            {"label_truth": 1.0, "raw": 0.9},  # 1 - 0.1 hallucination
+            {"label_truth": 0.0, "raw": 0.2},  # 1 - 0.8 hallucination
+        ])
+        preds, labels = fetch_labelled_predictions(db, "hallucination_score")
+        assert preds == [0.9, 0.2]
+        assert labels == [1.0, 0.0]
+        # The query inverts via (1.0 - cp.hallucination_score).
+        last_query = db.queries[-1]["q"]
+        assert "1.0 - cp.hallucination_score" in last_query
 
     def test_db_error_returns_empty(self):
         db = _RecordingDB(raise_on_select=True)

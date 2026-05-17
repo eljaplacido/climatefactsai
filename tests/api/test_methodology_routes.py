@@ -215,6 +215,10 @@ class TestCalibrationEndpoint:
             self._restore(prior)
 
     def test_degrades_when_migration_missing(self):
+        """Phase 5 wave 6: fetch_labelled_predictions catches table-missing
+        errors and returns empty, so the endpoint surfaces the same
+        "awaiting reviewer input" state in both "migration missing" and
+        "no labels yet" cases. DB internals don't leak to the API."""
         class _BrokenDB:
             def execute_query(self, q, p=None):
                 raise RuntimeError("relation calibration_labels does not exist")
@@ -223,8 +227,9 @@ class TestCalibrationEndpoint:
             r = client.get("/api/methodology/calibration")
             assert r.status_code == 200
             body = r.json()
-            assert body["available"] is False
-            assert "RuntimeError" in body["reason"]
+            assert body["available"] is True
+            assert body["metrics"]["n_labels"] == 0
+            assert "awaiting reviewer input" in body["metrics"]["note"].lower()
         finally:
             self._restore(prior)
 
@@ -260,11 +265,70 @@ class TestCalibrationEndpoint:
             self._restore(prior)
 
     def test_unsupported_signal_returns_unavailable(self):
-        r = client.get("/api/methodology/calibration?signal=agreement_score")
+        """Phase 5 wave 6: agreement_score + hallucination_score ARE supported
+        now; only invented names should return available=false."""
+        r = client.get("/api/methodology/calibration?signal=made_up_signal")
         assert r.status_code == 200
         body = r.json()
         assert body["available"] is False
-        assert "not yet supported" in body["reason"]
+        assert "not supported" in body["reason"]
+
+    def test_agreement_score_signal_supported(self):
+        """Phase 5 wave 6: agreement_score now goes through the JSONB path query."""
+        import shared.database as _shared_db
+
+        class _AgreementDB:
+            def execute_query(self, q, p=None):
+                qn = " ".join(q.split()).lower()
+                if "from calibration_labels" in qn and "agreement_score" in qn:
+                    return [
+                        {"label_truth": 1.0, "raw": 0.85},
+                        {"label_truth": 0.0, "raw": 0.30},
+                        {"label_truth": 1.0, "raw": 0.90},
+                        {"label_truth": 0.0, "raw": 0.40},
+                        {"label_truth": 1.0, "raw": 0.75},
+                    ]
+                return []
+
+        prior = _shared_db._postgres_client
+        _shared_db._postgres_client = _AgreementDB()
+        try:
+            r = client.get("/api/methodology/calibration?signal=agreement_score")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["signal"] == "agreement_score"
+            assert body["available"] is True
+            assert body["metrics"]["n_labels"] == 5
+            # Platt fitted (n >= 5).
+            assert body["metrics"]["platt_a"] is not None
+        finally:
+            _shared_db._postgres_client = prior
+
+    def test_hallucination_score_signal_supported(self):
+        """Phase 5 wave 6: hallucination_score path works too."""
+        import shared.database as _shared_db
+
+        class _HallucinationDB:
+            def execute_query(self, q, p=None):
+                qn = " ".join(q.split()).lower()
+                if "1.0 - cp.hallucination_score" in qn:
+                    return [
+                        {"label_truth": 1.0, "raw": 0.9},
+                        {"label_truth": 0.0, "raw": 0.3},
+                    ]
+                return []
+
+        prior = _shared_db._postgres_client
+        _shared_db._postgres_client = _HallucinationDB()
+        try:
+            r = client.get("/api/methodology/calibration?signal=hallucination_score")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["signal"] == "hallucination_score"
+            assert body["available"] is True
+            assert body["metrics"]["n_labels"] == 2
+        finally:
+            _shared_db._postgres_client = prior
 
 
 class TestCalibrationAdminEndpoints:
