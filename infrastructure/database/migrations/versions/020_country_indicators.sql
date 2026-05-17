@@ -171,6 +171,8 @@ INSERT INTO indicator_definitions (indicator_id, display_name, unit, category, d
      'https://gain.nd.edu/our-work/country-index/')
 ON CONFLICT (indicator_id) DO NOTHING;
 
-COMMENT ON COLUMN country_indicators.is_higher_better IS
-    'NULL on this column; semantics live in indicator_definitions.is_higher_better. '
-    'Scoring code joins to get direction.';
+-- Note on `is_higher_better`: this column lives on `indicator_definitions`,
+-- not `country_indicators`. Scoring code joins indicator_definitions to
+-- know whether higher or lower is better per indicator. (Removed an
+-- earlier `COMMENT ON COLUMN country_indicators.is_higher_better` that
+-- referenced a non-existent column.)
