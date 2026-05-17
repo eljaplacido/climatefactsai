@@ -9,7 +9,7 @@ import { I18nProvider } from '@/lib/i18n-context'
 import { ViewContextProvider } from '@/lib/view-context'
 
 export const metadata: Metadata = {
-  title: 'CliLens.AI - Fact-Checked Climate News',
+  title: 'Climatefacts.ai - Fact-Checked Climate News',
   description: 'AI-powered climate news verification and fact-checking platform',
 }
 

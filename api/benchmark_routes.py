@@ -258,7 +258,7 @@ async def get_article_audit_trail(article_id: str):
         source_score = article.get("source_profile_score") or article.get("source_credibility_score")
         audit_trail.append(AuditTrailEntry(
             step=step, action="Source credibility assessed",
-            source="CliLens Source Profile Database",
+            source="Climatefacts.ai Source Profile Database",
             confidence=float(source_score) / 100 if source_score else 0.5,
             timestamp=str(article.get("created_at", "")),
             details=f"Editorial: {article.get('editorial_standards', 'unknown')}, "
@@ -277,7 +277,7 @@ async def get_article_audit_trail(article_id: str):
 
         audit_trail.append(AuditTrailEntry(
             step=step, action=f"Claims extraction: {claims_status}",
-            source="CliLens NLP Pipeline (LLM-based)",
+            source="Climatefacts.ai NLP Pipeline (LLM-based)",
             confidence=claims_conf,
             timestamp=str(article.get("created_at", "")),
             details=f"{article.get('claims_count', 0)} claims extracted, "
@@ -300,7 +300,7 @@ async def get_article_audit_trail(article_id: str):
             audit_trail.append(AuditTrailEntry(
                 step=step,
                 action=f"Fact-check: {fc.get('verification_status', 'UNKNOWN')}",
-                source="CliLens Verification Pipeline",
+                source="Climatefacts.ai Verification Pipeline",
                 confidence=float(fc.get("confidence_score", 0)),
                 timestamp=str(article.get("created_at", "")),
                 details=f"Claim: \"{fc.get('claim_text', '')[:100]}\" | "
@@ -313,7 +313,7 @@ async def get_article_audit_trail(article_id: str):
         rel_score = article.get("reliability_score")
         audit_trail.append(AuditTrailEntry(
             step=step, action="Reliability score computed",
-            source="CliLens Bayesian Credibility Model",
+            source="Climatefacts.ai Bayesian Credibility Model",
             confidence=float(rel_score) / 100 if rel_score else 0.5,
             timestamp=str(article.get("created_at", "")),
             details=f"Final reliability: {rel_score}/100, "
@@ -424,7 +424,7 @@ async def evaluate_source(source_name: str):
         )
 
         confidence_explanation = (
-            f"This evaluation is based on {total} articles analyzed by CliLens. "
+            f"This evaluation is based on {total} articles analyzed by Climatefacts.ai. "
             f"Source profile data {'is available' if sp else 'is NOT available — scoring uses article-level metrics only'}. "
             f"Confidence is {'HIGH' if total >= 20 and sp else 'MEDIUM' if total >= 5 else 'LOW'} "
             f"({'sufficient' if total >= 20 else 'limited'} sample size). "

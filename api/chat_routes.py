@@ -916,7 +916,7 @@ async def _generate_answer(
         )
 
         system_prompt = (
-            "You are CliLens.AI's climate intelligence assistant. You help users understand "
+            "You are Climatefacts.ai's climate intelligence assistant. You help users understand "
             "climate news, platform features, and analysis results.\n\n"
             f"{view_section}"
             f"{cynefin_section}"

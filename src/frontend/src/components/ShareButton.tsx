@@ -19,7 +19,7 @@ export default function ShareButton({ articleId, title, excerpt }: ShareButtonPr
       ? `${window.location.origin}/articles/${articleId}?ref=share`
       : `/articles/${articleId}?ref=share`;
 
-  const shareText = `${title} — CliLens.AI Analysis`;
+  const shareText = `${title} — Climatefacts.ai Analysis`;
 
   // Close menu when clicking outside
   useEffect(() => {

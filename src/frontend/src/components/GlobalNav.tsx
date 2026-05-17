@@ -121,7 +121,7 @@ export default function GlobalNav() {
               <Globe className="h-5 w-5 text-white" />
             </div>
             <div className="hidden sm:block">
-              <p className="text-lg font-bold text-gray-900 leading-tight">CliLens.AI</p>
+              <p className="text-lg font-bold text-gray-900 leading-tight">Climatefacts.ai</p>
               <p className="text-[10px] text-gray-400 leading-tight -mt-0.5">Climate Intelligence</p>
             </div>
           </Link>

@@ -253,7 +253,7 @@ export default function Home() {
                 <div className="w-8 h-8 bg-clilens-primary rounded-full flex items-center justify-center">
                   <span className="text-white font-bold text-sm">C</span>
                 </div>
-                <span className="font-bold text-xl text-gray-900">CliLens.AI</span>
+                <span className="font-bold text-xl text-gray-900">Climatefacts.ai</span>
               </div>
               <p className="text-sm text-gray-600">
                 Global climate trust intelligence: making claims auditable, uncertainty explicit, and evidence usable.
@@ -291,7 +291,7 @@ export default function Home() {
           </div>
 
           <div className="mt-8 pt-8 border-t border-gray-200 text-center text-sm text-gray-500">
-            <p>&copy; {new Date().getFullYear()} CliLens.AI. Powered by Multi-Agent AI System.</p>
+            <p>&copy; {new Date().getFullYear()} Climatefacts.ai. Powered by Multi-Agent AI System.</p>
           </div>
         </div>
       </footer>

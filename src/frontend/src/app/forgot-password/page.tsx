@@ -50,7 +50,7 @@ export default function ForgotPasswordPage() {
             </div>
             <div className="text-left">
               <p className="text-2xl font-bold text-white leading-tight">
-                CliLens.AI
+                Climatefacts.ai
               </p>
               <p className="text-xs text-teal-200 leading-tight">
                 Climate Intelligence

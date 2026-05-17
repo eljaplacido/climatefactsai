@@ -128,7 +128,7 @@ class CountryGreenProfile(BaseModel):
     # available.
     score_basis: str = "coverage_index"
     coverage_caveat: str = (
-        "The `overall_green_score` field reflects how broadly CliLens.AI's "
+        "The `overall_green_score` field reflects how broadly Climatefacts.ai's "
         "article corpus covers green-transition topics for this country "
         "(0–10, derived from article counts across 7 dimensions). It is "
         "NOT a verified sustainability performance metric. When primary-"

@@ -1,4 +1,4 @@
-# CliLens.AI: Climate Intelligence Platform
+# Climatefacts.ai: Climate Intelligence Platform
 
 **Trust as a Service** — Evidence-backed climate stories with transparent provenance and credibility scoring.
 
@@ -10,9 +10,9 @@
 
 ---
 
-## What is CliLens?
+## What is Climatefacts.ai?
 
-CliLens.AI is an AI-powered platform that discovers, verifies, and publishes climate news with transparent credibility scoring. Every claim ships with evidence trails and confidence scores.
+Climatefacts.ai is an AI-powered platform that discovers, verifies, and publishes climate news with transparent credibility scoring. Every claim ships with evidence trails and confidence scores.
 
 **Key Features:**
 - News discovery across 198 reference countries (live coverage depends on ingestion)

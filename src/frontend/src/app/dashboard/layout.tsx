@@ -162,7 +162,7 @@ function DashboardSidebar() {
           </div>
           <div>
             <p className="text-base font-bold text-gray-900 leading-tight">
-              CliLens.AI
+              Climatefacts.ai
             </p>
             <p className="text-[10px] text-gray-400 leading-tight -mt-0.5">
               Dashboard

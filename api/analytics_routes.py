@@ -1,5 +1,5 @@
 """
-Advanced analytics API endpoints for CliLens dashboard.
+Advanced analytics API endpoints for Climatefacts.ai dashboard.
 
 Provides trend analysis, source performance, claim category breakdowns,
 verification pipeline status, and time-series data.

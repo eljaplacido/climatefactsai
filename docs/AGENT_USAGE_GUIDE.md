@@ -1,6 +1,6 @@
 # Agent Usage Guide: Cursor vs Claude Code vs Codex
 
-**Purpose:** Clear guidance on when to use Cursor agents, Claude Code, or Codex for CliLens development  
+**Purpose:** Clear guidance on when to use Cursor agents, Claude Code, or Codex for Climatefacts.ai development  
 **Last Updated:** 2025-12-18
 
 ---
@@ -327,7 +327,7 @@ Claude Code:
    - Test automation
    - Build pipelines
 
-### ❌ **Current Status for CliLens**
+### ❌ **Current Status for Climatefacts.ai**
 
 - Not currently configured for this project
 - Focus on Cursor + Claude Code for now
@@ -545,7 +545,7 @@ Generic prompt without context
 
 ✅ **Right:**
 ```
-"Using the CliLens development skill from .claude/skills/clilens-development/SKILL.md, 
+"Using the Climatefacts.ai development skill from .claude/skills/clilens-development/SKILL.md, 
 ensure frontend/backend sync means:
 1. Types match
 2. API returns real data (not mock)

@@ -124,7 +124,7 @@ function LoginForm() {
             </div>
             <div className="text-left">
               <p className="text-2xl font-bold text-white leading-tight">
-                CliLens.AI
+                Climatefacts.ai
               </p>
               <p className="text-xs text-teal-200 leading-tight">
                 Climate Intelligence
@@ -139,7 +139,7 @@ function LoginForm() {
             Welcome back
           </h1>
           <p className="text-sm text-gray-500 text-center mb-6">
-            Sign in to your CliLens account
+            Sign in to your Climatefacts.ai account
           </p>
 
           {/* OAuth buttons */}

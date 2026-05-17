@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment (DPIA)
 
-**Subject:** CliLens.AI platform — climate news verification + intelligence.
+**Subject:** Climatefacts.ai platform — climate news verification + intelligence.
 **Date completed:** 2026-05-17
 **Reviewer:** Platform Engineering, Data Protection Contact (`support@clilens.ai`)
 **Next review:** Annually, or on any change to processing purposes / sub-processors / data flows.
@@ -17,7 +17,7 @@ EU/UK supervisory authorities.
 
 ### 1.1 What we do
 
-CliLens.AI ingests climate news from ~230 public RSS sources, runs
+Climatefacts.ai ingests climate news from ~230 public RSS sources, runs
 claim extraction via DeepSeek (with optional Anthropic cross-verification),
 indexes content with pgvector for hybrid search, and surfaces per-country
 indicators from Climate TRACE, OWID, Climate Action Tracker, and (soon)
@@ -59,7 +59,7 @@ sensitive personal data about non-public individuals.
         │ HTTPS
         ▼
    ┌──────────────────────────────────────┐
-   │  CliLens.AI API (FastAPI)            │
+   │  Climatefacts.ai API (FastAPI)            │
    │  - Auth: bcrypt + JWT sessions       │
    │  - Routes: /api/* (37+ routers)      │
    └─────┬───────────┬──────────┬─────────┘

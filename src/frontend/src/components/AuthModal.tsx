@@ -68,7 +68,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
       <div className="bg-white rounded-2xl w-full max-w-md mx-4 p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-bold text-gray-900">
-            {mode === "login" ? "Sign in to CliLens" : "Create account"}
+            {mode === "login" ? "Sign in to Climatefacts.ai" : "Create account"}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="h-5 w-5" /></button>
         </div>

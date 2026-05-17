@@ -97,7 +97,7 @@ const PAGE_HELP: Record<string, string> = {
   articles: "You're viewing an **Article**. Each article shows credibility scores, extracted claims, and fact-check status. Click Transparency to see the full analysis breakdown.",
   transparency: "You're viewing a **Transparency Report**. This shows how the article was analyzed: confidence scores, source reliability, claim verification status, and evidence chains. Amber sections are still being processed.",
   sources: "You're on the **Sources** page. Browse all data sources the platform monitors. Each source has a reliability tier and coverage area. You can suggest new sources for the platform admins to review.",
-  default: "Welcome to **CliLens.AI** - your climate intelligence platform. Explore the map, search articles, analyze URLs, configure your feed, and get AI-powered insights across all features.",
+  default: "Welcome to **Climatefacts.ai** - your climate intelligence platform. Explore the map, search articles, analyze URLs, configure your feed, and get AI-powered insights across all features.",
 };
 
 export default function AgenticAssistant({

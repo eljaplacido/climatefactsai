@@ -189,7 +189,7 @@ export default function MethodologyPage() {
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex items-center justify-between">
           <Link href="/" className="text-2xl font-bold text-clilens-primary">
-            CliLens
+            Climatefacts.ai
           </Link>
           <nav className="text-sm text-gray-500 flex gap-4">
             <Link href="/about" className="hover:text-gray-800">About</Link>
@@ -201,12 +201,14 @@ export default function MethodologyPage() {
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
         <header>
-          <h1 className="text-4xl font-bold text-gray-900 mb-3">Methodology</h1>
+          <h1 className="text-4xl font-bold text-gray-900 mb-3">Our Methodology</h1>
           <p className="text-lg text-gray-600 max-w-3xl">
-            How CliLens.AI works, in full. Every prompt, formula, indicator,
-            and quality signal the platform uses is documented here — and
-            the numbers below come straight from the live API, so what you
-            read is what the platform is doing right now.
+            How Climatefacts.ai analyses and scores information, in full.
+            Every prompt, formula, indicator, and quality signal the
+            platform uses is published below — and the numbers come live
+            from the API, so what you see is what the platform is doing
+            right now. This page exists so our methodology can be
+            objectively reviewed and challenged.
           </p>
           {bundle?.git_revision && (
             <p className="mt-3 text-xs text-gray-500 flex items-center gap-1.5">
@@ -373,6 +375,54 @@ export default function MethodologyPage() {
               tone="bg-gray-50 border-gray-200 text-gray-900"
               description="Insufficient evidence to make a determination." />
           </div>
+        </section>
+
+        {/* Section: Feedback ---------------------------------------------- */}
+        <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-3">
+          <h2 className="text-2xl font-bold text-gray-900">Feedback & corrections</h2>
+          <p className="text-sm text-gray-700">
+            We want this methodology to be challenged. If you spot a
+            weakness in a prompt, disagree with an indicator weight, find
+            a calibration label we got wrong, or have a primary source
+            you think we should add — tell us, and we'll respond.
+          </p>
+          <div className="grid sm:grid-cols-3 gap-3 text-sm">
+            <a
+              href="mailto:methodology@climatefacts.ai?subject=Methodology%20feedback"
+              className="block bg-teal-50 border border-teal-200 rounded p-3 hover:bg-teal-100"
+            >
+              <div className="font-semibold text-teal-900">Methodology suggestions</div>
+              <div className="text-xs text-teal-800">
+                methodology@climatefacts.ai
+              </div>
+            </a>
+            <a
+              href="mailto:corrections@climatefacts.ai?subject=Correction%20request"
+              className="block bg-amber-50 border border-amber-200 rounded p-3 hover:bg-amber-100"
+            >
+              <div className="font-semibold text-amber-900">Corrections</div>
+              <div className="text-xs text-amber-800">
+                corrections@climatefacts.ai
+              </div>
+            </a>
+            <a
+              href="mailto:research@climatefacts.ai?subject=New%20data%20source"
+              className="block bg-emerald-50 border border-emerald-200 rounded p-3 hover:bg-emerald-100"
+            >
+              <div className="font-semibold text-emerald-900">New data sources</div>
+              <div className="text-xs text-emerald-800">
+                research@climatefacts.ai
+              </div>
+            </a>
+          </div>
+          <p className="text-xs text-gray-500 pt-1">
+            Reviewer-graded calibration labels can also be submitted by
+            authorised partners via{" "}
+            <code className="bg-gray-100 px-1 py-0.5 rounded font-mono">
+              POST /api/methodology/calibration/labels
+            </code>{" "}
+            — contact us for credentials.
+          </p>
         </section>
 
         {/* Section: Compliance ------------------------------------------- */}

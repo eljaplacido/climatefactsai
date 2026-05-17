@@ -1091,7 +1091,7 @@ async def _llm_generate_map_answer(
         )
 
         system_prompt = (
-            "You are CliLens.AI's climate map assistant. Answer the user's question "
+            "You are Climatefacts.ai's climate map assistant. Answer the user's question "
             "about climate news using the article data below. Cite articles by their "
             "number [1], [2] etc. Be concise (2-4 sentences). Mention relevant "
             "countries and credibility when appropriate."

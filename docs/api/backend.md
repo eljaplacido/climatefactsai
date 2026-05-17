@@ -1,4 +1,4 @@
-# CliLens.AI Backend API Reference
+# Climatefacts.ai Backend API Reference
 
 ## Base URL
 - **Development**: `http://localhost:5400`

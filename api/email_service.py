@@ -23,7 +23,7 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
 
 FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@clilens.ai")
-FROM_NAME = os.getenv("FROM_NAME", "CliLens.AI")
+FROM_NAME = os.getenv("FROM_NAME", "Climatefacts.ai")
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5300")
 
@@ -70,7 +70,7 @@ def send_verification_email(to_email: str, token: str, full_name: str = ""):
 
     html = f"""
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #0d9488;">CliLens.AI - Verify Your Email</h2>
+        <h2 style="color: #0d9488;">Climatefacts.ai - Verify Your Email</h2>
         <p>{greeting}</p>
         <p>Please verify your email address by clicking the button below:</p>
         <p style="text-align: center; margin: 30px 0;">
@@ -86,7 +86,7 @@ def send_verification_email(to_email: str, token: str, full_name: str = ""):
         <p style="color: #999; font-size: 12px;">This link expires in 24 hours.</p>
     </div>
     """
-    send_email(to_email, "Verify your CliLens.AI email", html)
+    send_email(to_email, "Verify your Climatefacts.ai email", html)
 
 
 def send_password_reset_email(to_email: str, token: str):
@@ -95,7 +95,7 @@ def send_password_reset_email(to_email: str, token: str):
 
     html = f"""
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #0d9488;">CliLens.AI - Password Reset</h2>
+        <h2 style="color: #0d9488;">Climatefacts.ai - Password Reset</h2>
         <p>You requested a password reset. Click the button below to set a new password:</p>
         <p style="text-align: center; margin: 30px 0;">
             <a href="{reset_url}"
@@ -112,4 +112,4 @@ def send_password_reset_email(to_email: str, token: str):
         </p>
     </div>
     """
-    send_email(to_email, "Reset your CliLens.AI password", html)
+    send_email(to_email, "Reset your Climatefacts.ai password", html)

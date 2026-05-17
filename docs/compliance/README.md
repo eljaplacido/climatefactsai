@@ -1,4 +1,4 @@
-# CliLens.AI Compliance Documentation
+# Climatefacts.ai Compliance Documentation
 
 This directory contains the platform's legal + data-protection docs.
 

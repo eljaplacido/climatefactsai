@@ -103,7 +103,7 @@ def generate_og_svg(title: str, score: int, source_name: str, category: Optional
   <rect y="560" width="1200" height="70" fill="#0d9488"/>
   <circle cx="110" cy="595" r="18" fill="white"/>
   <text x="110" y="602" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#0d9488" text-anchor="middle">C</text>
-  <text x="140" y="602" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="white">CliLens.AI</text>
+  <text x="140" y="602" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="white">Climatefacts.ai</text>
   <text x="310" y="600" font-family="Arial, sans-serif" font-size="14" fill="#99f6e4">Climate Intelligence, Verified by AI</text>
 </svg>'''
 

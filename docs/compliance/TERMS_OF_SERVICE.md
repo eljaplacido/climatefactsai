@@ -1,17 +1,17 @@
-# CliLens.AI Terms of Service
+# Climatefacts.ai Terms of Service
 
 **Effective date:** 2026-05-17
 **Last reviewed:** 2026-05-17
 **Document version:** 1.0
 
-By using CliLens.AI ("the platform", "we") you agree to these Terms of
+By using Climatefacts.ai ("the platform", "we") you agree to these Terms of
 Service. If you don't agree, please don't use the platform.
 
 ---
 
-## 1. What CliLens.AI is
+## 1. What Climatefacts.ai is
 
-CliLens.AI is an AI-powered climate news verification and intelligence
+Climatefacts.ai is an AI-powered climate news verification and intelligence
 platform. It:
 
 - Aggregates climate news from public sources
@@ -116,7 +116,7 @@ law, we exclude warranties of merchantability, fitness for a particular
 purpose, and non-infringement.
 
 For the avoidance of doubt: **don't make legally-binding or
-safety-critical decisions based solely on a CliLens.AI score**.
+safety-critical decisions based solely on a Climatefacts.ai score**.
 Cross-reference with primary sources (linked from every analysis).
 
 ---
@@ -142,7 +142,7 @@ permitted by law.
 
 ## 8. Indemnity
 
-You agree to indemnify CliLens.AI against third-party claims arising
+You agree to indemnify Climatefacts.ai against third-party claims arising
 from your misuse of the platform, your violation of these Terms, or
 your violation of someone else's rights.
 

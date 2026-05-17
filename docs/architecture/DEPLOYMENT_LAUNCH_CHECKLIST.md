@@ -1,4 +1,4 @@
-# CliLens.AI Launch Checklist — Truth-Machine Build
+# Climatefacts.ai Launch Checklist — Truth-Machine Build
 
 This is the end-to-end deployment checklist for the 36+ commits that
 landed in the 2026-05-16 → 2026-05-17 truth-machine session, taking the

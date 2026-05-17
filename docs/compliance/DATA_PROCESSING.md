@@ -64,7 +64,7 @@ performance + cost ratio. Risk mitigations:
   source website) plus the user's **query text** (which is the user's
   own input). No personal identifiers, no email, no IP, no session
   data is included in the API call.
-- The DeepSeek API call is initiated server-side by CliLens.AI; the
+- The DeepSeek API call is initiated server-side by Climatefacts.ai; the
   user's browser does not connect directly to DeepSeek.
 - Per DeepSeek's API terms (as of 2026-05), customer-submitted data is
   not used to train their models.

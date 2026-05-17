@@ -2,7 +2,7 @@
 API Key Management Routes - Professional+ Feature
 
 Allows Professional and Enterprise users to generate API keys for
-programmatic access to CliLens.AI services.
+programmatic access to Climatefacts.ai services.
 """
 
 from typing import List, Optional

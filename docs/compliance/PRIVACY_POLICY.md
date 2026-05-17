@@ -1,10 +1,10 @@
-# CliLens.AI Privacy Policy
+# Climatefacts.ai Privacy Policy
 
 **Effective date:** 2026-05-17
 **Last reviewed:** 2026-05-17
 **Document version:** 1.0
 
-This privacy policy describes what personal data CliLens.AI ("the platform")
+This privacy policy describes what personal data Climatefacts.ai ("the platform")
 collects, how we use it, who we share it with, and the rights you have over
 your data. It is written to satisfy the EU General Data Protection
 Regulation (GDPR), the UK Data Protection Act 2018, and equivalent
@@ -17,7 +17,7 @@ write to **support@clilens.ai** with the subject "Privacy".
 
 ## 1. Who we are
 
-CliLens.AI is operated by the entity identified in the Terms of Service.
+Climatefacts.ai is operated by the entity identified in the Terms of Service.
 For data-protection purposes we act as the **data controller** for the
 personal data described below. Our processors are listed in
 `DATA_PROCESSING.md`.
@@ -215,7 +215,7 @@ will not pursue good-faith research.
 
 ## 9. Children
 
-CliLens.AI is intended for users 16 and older (the GDPR-Lite age
+Climatefacts.ai is intended for users 16 and older (the GDPR-Lite age
 threshold for several EU member states). We don't knowingly collect data
 from children under 16. If you believe we have, write to
 **support@clilens.ai** and we will delete it.

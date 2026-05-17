@@ -66,7 +66,7 @@ export default function DataSourcesPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <Link href="/" className="text-2xl font-bold text-clilens-primary">
-                CliLens
+                Climatefacts.ai
               </Link>
               <span className="text-gray-300">/</span>
               <h1 className="text-lg font-semibold text-gray-900">Source Trust Profiles</h1>

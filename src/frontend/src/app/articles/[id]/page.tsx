@@ -68,13 +68,13 @@ export async function generateMetadata({ params }: { params: { id: string } }) {
   const article = await getArticle(params.id);
   if (!article) return { title: "Article Not Found" };
   return {
-    title: `${article.title} — CliLens.AI Analysis`,
+    title: `${article.title} — Climatefacts.ai Analysis`,
     description: article.executive_brief || article.excerpt || article.title,
     openGraph: {
       title: article.title,
       description: article.executive_brief || article.excerpt || "",
       type: "article",
-      siteName: "CliLens.AI",
+      siteName: "Climatefacts.ai",
     },
   };
 }
