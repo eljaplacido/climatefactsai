@@ -66,6 +66,10 @@ class SmartFakeDB:
         self._users: Dict[str, Dict[str, Any]] = {}  # email -> user record
         self._users_by_id: Dict[str, Dict[str, Any]] = {}  # user_id -> user record
 
+        # Session state (added for stateful refresh-token flow — migration 017).
+        # Keyed by jti so /refresh can look up by JTI from the JWT payload.
+        self._sessions: Dict[str, Dict[str, Any]] = {}
+
     def _article_listing(self, params: Optional[Dict]) -> List[Dict]:
         limit = (params or {}).get("limit", 20)
         offset = (params or {}).get("offset", 0)
@@ -80,6 +84,20 @@ class SmartFakeDB:
     def execute_query(self, query: str, params: Optional[Dict] = None) -> List[Dict]:
         params = params or {}
         q = " ".join(query.split()).lower()
+
+        # ---- SESSIONS: SELECT by jti (refresh-token lookup) ----
+        if "from sessions" in q and "where jti" in q:
+            jti = params.get("jti")
+            row = self._sessions.get(jti)
+            if not row:
+                return []
+            # Return only the requested columns; auth_utils selects
+            # (jti, revoked_at, expires_at).
+            return [{
+                "jti": row["jti"],
+                "revoked_at": row.get("revoked_at"),
+                "expires_at": row.get("expires_at"),
+            }]
 
         # ---- AUTH: INSERT INTO users ----
         if "insert into users" in q and "returning" in q:
@@ -210,6 +228,51 @@ class SmartFakeDB:
         return []
 
     def execute_update(self, query: str, params: Optional[Dict] = None) -> None:
+        params = params or {}
+        q = " ".join(query.split()).lower()
+
+        # ---- SESSIONS: INSERT (issued by create_refresh_token) ----
+        if "insert into sessions" in q:
+            jti = params.get("jti")
+            if jti:
+                self._sessions[jti] = {
+                    "jti": jti,
+                    "user_id": params.get("user_id"),
+                    "issued_at": self.now,
+                    "last_used_at": self.now,
+                    "expires_at": params.get("expires_at"),
+                    "user_agent": params.get("user_agent"),
+                    "ip_address": params.get("ip_address"),
+                    "revoked_at": None,
+                    "revoke_reason": None,
+                }
+            return None
+
+        # ---- SESSIONS: UPDATE (rotate / revoke / cascade-revoke) ----
+        if "update sessions" in q:
+            jti = params.get("jti")
+            user_id = params.get("uid") or params.get("user_id")
+            reason = params.get("reason")
+            # Single-session revoke / rotation: WHERE jti.
+            if jti and jti in self._sessions:
+                row = self._sessions[jti]
+                if row.get("revoked_at") is None:
+                    row["revoked_at"] = self.now
+                    # `rotated`, `logout`, or the explicit reason if passed.
+                    if "set revoked_at = now(), revoke_reason = 'rotated'" in q:
+                        row["revoke_reason"] = "rotated"
+                    elif reason:
+                        row["revoke_reason"] = reason
+                    else:
+                        row["revoke_reason"] = "revoked"
+            # Cascade revoke for a user: WHERE user_id AND revoked_at IS NULL.
+            elif user_id and "where user_id" in q:
+                for row in self._sessions.values():
+                    if row.get("user_id") == user_id and row.get("revoked_at") is None:
+                        row["revoked_at"] = self.now
+                        row["revoke_reason"] = reason or "replay_detected"
+            return None
+
         return None
 
     def execute_scalar(self, query: str, params: Optional[Dict] = None) -> int:

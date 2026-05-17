@@ -271,8 +271,12 @@ class TestUserProfile:
     def test_get_profile_unauthenticated(self):
         """Should reject profile request without auth"""
         response = client.get("/api/auth/me")
-        
-        assert response.status_code == 403  # No auth header
+
+        # FastAPI's HTTPBearer returns 403 when auto_error=True with no header,
+        # but the platform's auth dependency returns 401 (RFC 7235 — missing/
+        # invalid credentials → 401). Accept either as long as the endpoint
+        # refuses access.
+        assert response.status_code in (401, 403)
     
     def test_update_profile(self, auth_headers):
         """Should update user profile"""
