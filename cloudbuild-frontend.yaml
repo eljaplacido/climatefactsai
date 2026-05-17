@@ -1,0 +1,28 @@
+# One-shot Cloud Build for the rebranded Climatefacts.ai frontend.
+# Submit from repo root: gcloud builds submit --config=cloudbuild-frontend.yaml
+
+substitutions:
+  _PROJECT_ID: climatenews-495412
+  _REGION: europe-west4
+  _REPO: climatenews
+  _TAG: v1.0-climatefacts
+  _API_URL: https://climatenews-api-srzwxdzmaq-ez.a.run.app
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --platform=linux/amd64
+      - --build-arg=NEXT_PUBLIC_API_URL=${_API_URL}
+      - -f
+      - infrastructure/gcp/frontend-prod.Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:${_TAG}
+      - src/frontend
+
+images:
+  - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:${_TAG}

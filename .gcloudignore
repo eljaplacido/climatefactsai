@@ -1,0 +1,26 @@
+# Cloud Build source upload exclusions — keep the tarball small.
+node_modules
+**/node_modules
+.next
+**/.next
+.git
+.gitignore
+.gitattributes
+*.md
+.env*.local
+coverage
+**/coverage
+test-results
+**/test-results
+htmlcov
+**/htmlcov
+*.tsbuildinfo
+**/tsconfig.tsbuildinfo
+.pytest_cache
+**/.pytest_cache
+__pycache__
+**/__pycache__
+*.pyc
+archive/
+docs/archive/
+.claude/checkpoints/
