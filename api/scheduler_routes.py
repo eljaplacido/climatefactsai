@@ -180,3 +180,176 @@ async def scheduled_batch_translate(
 async def scheduler_health():
     """Health endpoint for scheduler subsystem."""
     return {"status": "ok", "scheduler_secret_configured": bool(SCHEDULER_SECRET)}
+
+
+# =============================================================================
+# INDICATOR ADAPTER SYNCS (Phase 3 wave 5)
+# =============================================================================
+
+# Map source name → adapter class. Adding a new adapter is one line here.
+_INDICATOR_ADAPTERS = {
+    "climate_trace": "ClimateTRACEAdapter",
+    "owid":          "OWIDAdapter",
+    "cat":           "ClimateActionTrackerAdapter",
+}
+
+
+def _persist_sync_result(db, result, triggered_by: str) -> None:
+    """Write one indicator_sync_logs row from a SyncResult. Best-effort."""
+    import json as _json
+    try:
+        db.execute_update(
+            """
+            INSERT INTO indicator_sync_logs (
+                source_name, started_at, finished_at, duration_seconds,
+                fetched_count, upserted_count, skipped_count, error_count,
+                errors, triggered_by
+            ) VALUES (
+                :source, :started, :finished, :duration,
+                :fetched, :upserted, :skipped, :err_count,
+                CAST(:errors AS jsonb), :triggered_by
+            )
+            """,
+            {
+                "source": result.source_name,
+                "started": result.started_at,
+                "finished": result.finished_at,
+                "duration": result.duration_seconds,
+                "fetched": result.fetched_count,
+                "upserted": result.upserted_count,
+                "skipped": result.skipped_count,
+                "err_count": len(result.errors or []),
+                # Preserve first 5 errors verbatim; cap to keep the row small.
+                "errors": _json.dumps((result.errors or [])[:5]) if result.errors else None,
+                "triggered_by": triggered_by,
+            },
+        )
+    except Exception as exc:
+        logger.warning(f"sync log persist failed: {exc}")
+
+
+@router.post("/indicators/sync")
+async def scheduled_indicator_sync(
+    source: str = "all",
+    x_scheduler_secret: Optional[str] = Header(None, alias="X-Scheduler-Secret"),
+):
+    """Run one or all indicator adapters and persist the SyncResult.
+
+    Query params:
+      * source = 'climate_trace' | 'owid' | 'cat' | 'all' (default 'all').
+
+    Returns the list of SyncResult dicts. Each adapter runs sequentially
+    (rather than concurrently) to keep upstream rate-limit pressure
+    bounded — adapters' polite-scraper delays are per-adapter, not
+    cross-adapter, so concurrency would race the throttle.
+    """
+    _verify_scheduler_secret(x_scheduler_secret)
+
+    sources_to_run: list[str]
+    if source == "all":
+        sources_to_run = list(_INDICATOR_ADAPTERS.keys())
+    elif source in _INDICATOR_ADAPTERS:
+        sources_to_run = [source]
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown source '{source}'. Available: "
+                f"{', '.join(_INDICATOR_ADAPTERS.keys())} | all"
+            ),
+        )
+
+    # Lazy-import adapters so the route file stays cheap to load.
+    try:
+        from app.domains.content import indicators as _ind_module
+    except Exception as exc:
+        return {"status": "error", "detail": f"Indicators module unavailable: {exc}"}
+
+    try:
+        from app.core.database import get_db as _get_db_fn  # type: ignore
+        db = _get_db_fn()
+    except Exception:
+        # Fallback to shared database helper used by other routes.
+        from shared.database import get_postgres as _get_postgres
+        db = _get_postgres()
+
+    results: list[dict] = []
+    for src in sources_to_run:
+        adapter_cls_name = _INDICATOR_ADAPTERS[src]
+        adapter_cls = getattr(_ind_module, adapter_cls_name, None)
+        if adapter_cls is None:
+            results.append({
+                "source_name": src,
+                "status": "error",
+                "errors": [f"Adapter class {adapter_cls_name} not exported"],
+            })
+            continue
+
+        try:
+            adapter = adapter_cls()
+            sync_result = await adapter.sync(db)
+            _persist_sync_result(db, sync_result, triggered_by="scheduler")
+            results.append(sync_result.as_dict())
+        except Exception as exc:
+            logger.error(f"Adapter {src} failed: {exc}")
+            results.append({
+                "source_name": src,
+                "status": "error",
+                "errors": [f"{type(exc).__name__}: {exc}"],
+            })
+
+    return {"status": "ok", "results": results}
+
+
+@router.get("/indicators/sync/recent")
+async def recent_indicator_syncs(
+    source: Optional[str] = None,
+    limit: int = 20,
+):
+    """Read the last N indicator_sync_logs rows for ops dashboards."""
+    from shared.database import get_postgres
+    db = get_postgres()
+    limit = max(1, min(limit, 200))
+
+    where = ""
+    params: dict = {"lim": limit}
+    if source:
+        where = "WHERE source_name = :src"
+        params["src"] = source
+
+    try:
+        rows = db.execute_query(
+            f"""
+            SELECT
+                source_name, started_at, finished_at, duration_seconds,
+                fetched_count, upserted_count, skipped_count, error_count,
+                errors, triggered_by
+            FROM indicator_sync_logs
+            {where}
+            ORDER BY started_at DESC
+            LIMIT :lim
+            """,
+            params,
+        )
+    except Exception as exc:
+        return {
+            "available": False,
+            "reason": f"indicator_sync_logs query failed: {type(exc).__name__}",
+            "rows": [],
+        }
+
+    out = []
+    for r in rows or []:
+        out.append({
+            "source_name": r.get("source_name"),
+            "started_at": str(r.get("started_at")) if r.get("started_at") else None,
+            "finished_at": str(r.get("finished_at")) if r.get("finished_at") else None,
+            "duration_seconds": r.get("duration_seconds"),
+            "fetched_count": r.get("fetched_count"),
+            "upserted_count": r.get("upserted_count"),
+            "skipped_count": r.get("skipped_count"),
+            "error_count": r.get("error_count"),
+            "errors": r.get("errors"),
+            "triggered_by": r.get("triggered_by"),
+        })
+    return {"available": True, "rows": out, "total": len(out)}
