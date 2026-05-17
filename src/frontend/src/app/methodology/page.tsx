@@ -1,243 +1,806 @@
-'use client'
+"use client";
 
-import Link from 'next/link'
-import { CheckCircle, AlertTriangle, XCircle, HelpCircle } from 'lucide-react'
+// Public methodology page (Phase 4 wave 6).
+//
+// Surfaces the full `/api/methodology/*` bundle — prompts, sustainability
+// formula, indicators, calibration metrics, hallucination rates, drift
+// verdicts — to anonymous visitors so auditors / journalists / researchers
+// can pin a date+commit-aligned methodology snapshot without running a
+// deep search first.
+//
+// Each block is fetched independently so a partial backend outage degrades
+// section-by-section instead of blanking the page.
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import {
+  Brain, FileText, Sliders, Database, Activity, ShieldCheck,
+  ShieldAlert, Fingerprint, Route, ExternalLink, GitCommit, Loader2,
+  CheckCircle, AlertTriangle, XCircle, HelpCircle,
+} from "lucide-react";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
+
+// --- Types (mirrored from the backend response shapes; loose on purpose so
+// the page survives small schema drift) ----------------------------------
+
+interface PromptMeta {
+  version: string;
+  fingerprint: string;
+  description?: string;
+  rationale?: string;
+  has_system_prompt?: boolean;
+  max_tokens?: number;
+  temperature?: number;
+}
+
+interface FormulaComponent {
+  indicator_id: string;
+  weight: number;
+  description: string;
+  normalizer: string;
+  normalizer_doc: string;
+}
+
+interface ConfidenceBandRow {
+  indicators_used: number;
+  band_plus_minus: number;
+}
+
+interface Indicator {
+  indicator_id: string;
+  display_name: string;
+  unit: string;
+  category: string;
+  description: string;
+  is_higher_better: boolean;
+  methodology_url?: string;
+}
+
+interface MethodologyBundle {
+  git_revision?: string;
+  prompts: {
+    prompts: Record<string, PromptMeta>;
+    total: number;
+  };
+  sustainability_formula: {
+    methodology_version: string;
+    methodology_url: string;
+    components: FormulaComponent[];
+    confidence_band_table: ConfidenceBandRow[];
+    scoring_summary: string;
+    weight_total: number;
+  };
+  indicators: {
+    indicators: Indicator[];
+    available: boolean;
+    total_indicators: number;
+    coverage_by_indicator: Record<string, number>;
+  };
+}
+
+interface CalibrationResponse {
+  signal: string;
+  available: boolean;
+  reason?: string;
+  metrics?: {
+    n_labels: number;
+    brier_score?: number;
+    ece?: number;
+    note?: string;
+  };
+}
+
+interface HallucinationRow {
+  n: number;
+  mean_risk: number;
+  high_risk_rate: number;
+  extraction_method?: string;
+  model_name?: string;
+  source_name?: string;
+}
+
+interface HallucinationResponse {
+  window_days: number;
+  available: boolean;
+  overall: { n: number; mean_risk: number; high_risk_rate: number };
+  by_extraction_method: HallucinationRow[];
+  by_model: HallucinationRow[];
+  by_source: HallucinationRow[];
+  notes?: string[] | null;
+}
+
+interface DriftResponse {
+  metric: string;
+  kl_divergence: number;
+  verdict: "stable" | "minor" | "notable" | "significant" | string;
+  recent_window_days: number;
+  baseline_window_days: number;
+  recent_count: number;
+  baseline_count: number;
+  top_shifts: Array<{
+    [key: string]: string | number | undefined;
+    recent_share: number;
+    baseline_share: number;
+    delta: number;
+  }>;
+  notes?: string | null;
+}
+
+async function fetchJson<T>(path: string): Promise<T | null> {
+  try {
+    const r = await fetch(`${API_BASE_URL}${path}`, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!r.ok) return null;
+    return (await r.json()) as T;
+  } catch {
+    return null;
+  }
+}
 
 export default function MethodologyPage() {
+  const [bundle, setBundle] = useState<MethodologyBundle | null>(null);
+  const [bundleLoading, setBundleLoading] = useState(true);
+
+  const [reliability, setReliability] = useState<CalibrationResponse | null>(null);
+  const [agreement, setAgreement] = useState<CalibrationResponse | null>(null);
+  const [hallucinationCal, setHallucinationCal] = useState<CalibrationResponse | null>(null);
+
+  const [halRates, setHalRates] = useState<HallucinationResponse | null>(null);
+  const [sourceDrift, setSourceDrift] = useState<DriftResponse | null>(null);
+  const [promptDrift, setPromptDrift] = useState<DriftResponse | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const b = await fetchJson<MethodologyBundle>("/api/methodology");
+      setBundle(b);
+      setBundleLoading(false);
+    })();
+
+    (async () => {
+      const [rel, agr, hal] = await Promise.all([
+        fetchJson<CalibrationResponse>("/api/methodology/calibration?signal=reliability_score"),
+        fetchJson<CalibrationResponse>("/api/methodology/calibration?signal=agreement_score"),
+        fetchJson<CalibrationResponse>("/api/methodology/calibration?signal=hallucination_score"),
+      ]);
+      setReliability(rel);
+      setAgreement(agr);
+      setHallucinationCal(hal);
+    })();
+
+    (async () => {
+      setHalRates(await fetchJson<HallucinationResponse>("/api/methodology/hallucination-rates"));
+    })();
+
+    (async () => {
+      const [src, prm] = await Promise.all([
+        fetchJson<DriftResponse>("/api/drift/source-mix"),
+        fetchJson<DriftResponse>("/api/drift/prompt-fingerprints"),
+      ]);
+      setSourceDrift(src);
+      setPromptDrift(prm);
+    })();
+  }, []);
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="bg-white border-b border-gray-200">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex items-center justify-between">
           <Link href="/" className="text-2xl font-bold text-clilens-primary">
             CliLens
           </Link>
+          <nav className="text-sm text-gray-500 flex gap-4">
+            <Link href="/about" className="hover:text-gray-800">About</Link>
+            <Link href="/methodology" className="text-gray-900 font-medium">Methodology</Link>
+            <Link href="/sources" className="hover:text-gray-800">Sources</Link>
+          </nav>
         </div>
       </div>
 
-      {/* Main Content */}
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 space-y-8">
-          <div>
-            <h1 className="text-4xl font-bold text-gray-900 mb-4">
-              Our Methodology
-            </h1>
-            <p className="text-xl text-gray-600">
-              How we fact-check climate news with transparency and scientific rigor
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
+        <header>
+          <h1 className="text-4xl font-bold text-gray-900 mb-3">Methodology</h1>
+          <p className="text-lg text-gray-600 max-w-3xl">
+            How CliLens.AI works, in full. Every prompt, formula, indicator,
+            and quality signal the platform uses is documented here — and
+            the numbers below come straight from the live API, so what you
+            read is what the platform is doing right now.
+          </p>
+          {bundle?.git_revision && (
+            <p className="mt-3 text-xs text-gray-500 flex items-center gap-1.5">
+              <GitCommit className="w-3.5 h-3.5" />
+              Live snapshot pinned to commit{" "}
+              <code className="bg-gray-100 px-1.5 py-0.5 rounded font-mono">{bundle.git_revision}</code>
             </p>
+          )}
+        </header>
+
+        {/* Section: How verification works (narrative) ------------------- */}
+        <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-5">
+          <h2 className="text-2xl font-bold text-gray-900">How verification works</h2>
+          <p className="text-sm text-gray-700">
+            Every URL the platform analyses runs through five stages. Each
+            stage emits a versioned audit record so a displayed score can
+            be traced back to the exact prompt, model, retrieval strategy,
+            and source articles that produced it.
+          </p>
+
+          <ol className="space-y-3">
+            <ProcessStep n={1} title="Article ingestion & extraction"
+              body="Title, author, publish date, source, language, and full body are extracted. The fetcher validates URLs against SSRF blocklists and re-validates after every redirect hop." />
+            <ProcessStep n={2} title="Claim extraction"
+              body="A versioned LLM prompt identifies factual claims. The prompt name + version + content-fingerprint are recorded on every output (see Models & Prompts below)." />
+            <ProcessStep n={3} title="Evidence retrieval"
+              body="Hybrid retrieval combines internal corpus (FTS + HNSW vector search + knowledge graph), external web search via Perplexity (when configured), and weather context. Retrieval strategy is recorded per call." />
+            <ProcessStep n={4} title="Multi-LLM verification"
+              body="The primary model's claims are cross-checked against a secondary LLM. Token-level Jaccard similarity yields an agreement score; large disagreements downgrade confidence." />
+            <ProcessStep n={5} title="Hallucination grounding"
+              body="A separate hallucination check compares the synthesised answer against the retrieved articles. Entity overlap + statistic verification + LLM grounding feed into the final risk score, which is calibrated against ground-truth labels." />
+          </ol>
+
+          <div className="grid md:grid-cols-2 gap-3 pt-3">
+            <div className="bg-green-50 border border-green-200 rounded p-3 text-sm">
+              <div className="flex items-center gap-2 font-semibold text-green-900">
+                <CheckCircle className="w-4 h-4" /> What we surface
+              </div>
+              <ul className="list-disc list-inside text-xs text-green-800 mt-1 space-y-0.5">
+                <li>Versioned prompt + fingerprint per LLM call</li>
+                <li>Source articles that fed each output</li>
+                <li>Reliability + agreement + hallucination scores</li>
+                <li>Calibration metrics tied to reviewer labels</li>
+                <li>Drift verdicts on source mix and prompts</li>
+              </ul>
+            </div>
+            <div className="bg-yellow-50 border border-yellow-200 rounded p-3 text-sm">
+              <div className="flex items-center gap-2 font-semibold text-yellow-900">
+                <AlertTriangle className="w-4 h-4" /> Known limits
+              </div>
+              <ul className="list-disc list-inside text-xs text-yellow-800 mt-1 space-y-0.5">
+                <li>LLMs occasionally misread subtle scientific nuance</li>
+                <li>Calibration requires labelled reviews to accumulate</li>
+                <li>Paywalled sources are not retrievable</li>
+                <li>Predictive claims are flagged but not adjudicated</li>
+              </ul>
+            </div>
           </div>
+        </section>
 
-          {/* Overview */}
-          <section className="space-y-4">
-            <h2 className="text-2xl font-bold text-gray-900">Overview</h2>
-            <p className="text-gray-700 leading-relaxed">
-              CliLens uses a combination of <strong>AI-powered analysis</strong> and <strong>scientific databases</strong> to
-              verify climate news. Every step is transparent, and you can always see our sources and confidence levels.
-            </p>
-          </section>
+        {/* Section: Prompts ----------------------------------------------- */}
+        <Section
+          icon={<Brain className="w-5 h-5 text-teal-600" />}
+          title="Models & versioned prompts"
+          intro="Every LLM call goes through a registered, fingerprinted prompt. The fingerprint is a SHA-256 prefix of template + system content; two prompts with the same fingerprint are byte-identical. Drift detection (below) watches the distribution of these fingerprints over time."
+        >
+          {bundleLoading ? (
+            <Loading />
+          ) : bundle ? (
+            <PromptsTable prompts={bundle.prompts.prompts} />
+          ) : (
+            <Unavailable reason="methodology bundle could not be loaded" />
+          )}
+        </Section>
 
-          {/* The Process */}
-          <section className="space-y-6">
-            <h2 className="text-2xl font-bold text-gray-900">The Verification Process</h2>
+        {/* Section: Sustainability formula -------------------------------- */}
+        <Section
+          icon={<Sliders className="w-5 h-5 text-teal-600" />}
+          title="Sustainability score formula"
+          intro="Country sustainability scores are a weighted combination of Bayesian-normalised indicators. Weights of missing components redistribute across the available subset; the confidence band widens when fewer indicators contribute."
+        >
+          {bundleLoading ? (
+            <Loading />
+          ) : bundle ? (
+            <FormulaBlock formula={bundle.sustainability_formula} />
+          ) : (
+            <Unavailable reason="formula could not be loaded" />
+          )}
+        </Section>
 
-            {/* Step 1 */}
-            <div className="border-l-4 border-clilens-primary pl-6 py-2">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                1. Article Ingestion &amp; Extraction
-              </h3>
-              <p className="text-gray-700 mb-3">
-                When an article is submitted (by curators or users), we:
-              </p>
-              <ul className="list-disc list-inside space-y-1 text-gray-600 ml-4">
-                <li>Scrape the full article content</li>
-                <li>Extract title, author, publication date, source</li>
-                <li>Identify the article geographic focus (if applicable)</li>
-                <li>Store metadata for transparency</li>
-              </ul>
-            </div>
+        {/* Section: Indicators -------------------------------------------- */}
+        <Section
+          icon={<Database className="w-5 h-5 text-teal-600" />}
+          title="Indicator catalogue"
+          intro="Every climate indicator the platform stores, with its authoritative source. Indicators flow into country_indicators from per-source adapters (Climate TRACE, Our World in Data, Climate Action Tracker) and feed the sustainability formula above."
+        >
+          {bundleLoading ? (
+            <Loading />
+          ) : bundle?.indicators?.available ? (
+            <IndicatorsTable
+              indicators={bundle.indicators.indicators}
+              coverage={bundle.indicators.coverage_by_indicator}
+            />
+          ) : (
+            <Unavailable reason="indicator catalogue is empty — adapters may not have run yet" />
+          )}
+        </Section>
 
-            {/* Step 2 */}
-            <div className="border-l-4 border-blue-500 pl-6 py-2">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                2. AI-Powered Claim Extraction
-              </h3>
-              <p className="text-gray-700 mb-3">
-                Using <strong>large language models</strong>, we identify specific, verifiable claims:
-              </p>
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-3">
-                <p className="text-sm text-blue-900 font-medium mb-2">What Makes a Good Claim?</p>
-                <ul className="list-disc list-inside space-y-1 text-sm text-blue-800 ml-2">
-                  <li><strong>Specific</strong>: &quot;Arctic sea ice declined 13% per decade since 1979&quot;</li>
-                  <li><strong>Verifiable</strong>: Can be checked against data</li>
-                  <li><strong>Factual</strong>: Not opinions or predictions (unless explicitly stated)</li>
-                  <li><strong>Self-contained</strong>: Understandable without full article context</li>
-                </ul>
-              </div>
-            </div>
+        {/* Section: Calibration ------------------------------------------- */}
+        <Section
+          icon={<Activity className="w-5 h-5 text-teal-600" />}
+          title="Calibration"
+          intro="Brier score, Expected Calibration Error, and Platt scaling for each calibratable signal. A well-calibrated system has Brier ≈ 0 and ECE close to 0. When labels are sparse, the metrics show 'awaiting reviews' — calibration data accumulates as reviewers grade analyses."
+        >
+          <div className="grid md:grid-cols-3 gap-4">
+            <CalibrationCard signal="Reliability" data={reliability} />
+            <CalibrationCard signal="Agreement" data={agreement} />
+            <CalibrationCard signal="Hallucination" data={hallucinationCal} />
+          </div>
+        </Section>
 
-            {/* Step 3 */}
-            <div className="border-l-4 border-purple-500 pl-6 py-2">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                3. Evidence Retrieval
-              </h3>
-              <p className="text-gray-700 mb-3">
-                For each claim, we search trusted scientific sources:
-              </p>
-              <div className="grid md:grid-cols-2 gap-3 mb-3">
-                <div className="bg-purple-50 border border-purple-200 rounded p-3">
-                  <h4 className="font-semibold text-purple-900 text-sm mb-1">Primary Sources</h4>
-                  <ul className="text-xs text-purple-800 space-y-1">
-                    <li>NASA Climate Data</li>
-                    <li>NOAA (National Oceanic &amp; Atmospheric Admin)</li>
-                    <li>IPCC Reports</li>
-                    <li>Peer-reviewed journals (Nature, Science)</li>
-                  </ul>
-                </div>
-                <div className="bg-purple-50 border border-purple-200 rounded p-3">
-                  <h4 className="font-semibold text-purple-900 text-sm mb-1">Secondary Sources</h4>
-                  <ul className="text-xs text-purple-800 space-y-1">
-                    <li>Google Fact Check API</li>
-                    <li>Climate Feedback</li>
-                    <li>FactCheck.org</li>
-                    <li>Scientific American</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
+        {/* Section: Hallucination rates ----------------------------------- */}
+        <Section
+          icon={<ShieldCheck className="w-5 h-5 text-teal-600" />}
+          title="Hallucination rates"
+          intro="Per-extraction-method, per-model, and per-source hallucination scores over the last 30 days. Each LLM output is checked against its retrieved sources; the resulting risk score is recorded in claim_provenance and aggregated here."
+        >
+          <HallucinationBlock data={halRates} />
+        </Section>
 
-            {/* Step 4 */}
-            <div className="border-l-4 border-green-500 pl-6 py-2">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                4. Verdict Adjudication
-              </h3>
-              <p className="text-gray-700 mb-3">
-                The AI analyzes the evidence and assigns a verdict:
-              </p>
-              <div className="space-y-2">
-                <div className="flex items-start space-x-3 p-3 bg-green-50 border border-green-200 rounded">
-                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="font-semibold text-green-900 text-sm">Verified</h4>
-                    <p className="text-xs text-green-800">
-                      Multiple credible sources confirm the claim with high confidence
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start space-x-3 p-3 bg-yellow-50 border border-yellow-200 rounded">
-                  <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="font-semibold text-yellow-900 text-sm">Partially True</h4>
-                    <p className="text-xs text-yellow-800">
-                      Some evidence supports, some contradicts, or context is needed
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start space-x-3 p-3 bg-red-50 border border-red-200 rounded">
-                  <XCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="font-semibold text-red-900 text-sm">Disputed / False</h4>
-                    <p className="text-xs text-red-800">
-                      Scientific consensus contradicts the claim
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start space-x-3 p-3 bg-gray-50 border border-gray-200 rounded">
-                  <HelpCircle className="w-5 h-5 text-gray-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="font-semibold text-gray-900 text-sm">Unverified</h4>
-                    <p className="text-xs text-gray-800">
-                      Insufficient evidence to make a determination
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
+        {/* Section: Drift detection --------------------------------------- */}
+        <Section
+          icon={<Route className="w-5 h-5 text-teal-600" />}
+          title="Drift detection"
+          intro="KL-divergence between the recent 7-day window and the prior 30-day baseline, computed independently for the article source mix and the prompt-fingerprint distribution. A 'significant' verdict signals a meaningful shift — operators investigate."
+        >
+          <div className="grid md:grid-cols-2 gap-4">
+            <DriftCard label="Article source mix" data={sourceDrift} keyField="source_name" />
+            <DriftCard label="Prompt fingerprints" data={promptDrift} keyField="prompt_fingerprint" />
+          </div>
+        </Section>
 
-            {/* Step 5 */}
-            <div className="border-l-4 border-orange-500 pl-6 py-2">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                5. Confidence Scoring
-              </h3>
-              <p className="text-gray-700 mb-3">
-                Every verdict includes a confidence score (0-100%) based on:
-              </p>
-              <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                <ul className="space-y-2 text-sm text-orange-900">
-                  <li><strong>Source Quality</strong>: Peer-reviewed papers score higher than news articles</li>
-                  <li><strong>Evidence Quantity</strong>: More sources = higher confidence</li>
-                  <li><strong>Consensus</strong>: Do all sources agree?</li>
-                  <li><strong>Recency</strong>: Newer data weighted more heavily</li>
-                  <li><strong>Specificity</strong>: Precise claims easier to verify</li>
-                </ul>
-              </div>
-            </div>
-          </section>
+        {/* Section: Verdict glossary -------------------------------------- */}
+        <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-3">
+          <h2 className="text-2xl font-bold text-gray-900">Verdict labels</h2>
+          <p className="text-sm text-gray-700">
+            How the platform classifies an analysed claim once evidence is gathered.
+          </p>
+          <div className="grid sm:grid-cols-2 gap-2">
+            <VerdictRow icon={<CheckCircle className="w-4 h-4 text-green-600" />}
+              label="Verified"
+              tone="bg-green-50 border-green-200 text-green-900"
+              description="Multiple credible sources confirm with high confidence." />
+            <VerdictRow icon={<AlertTriangle className="w-4 h-4 text-yellow-600" />}
+              label="Partially true"
+              tone="bg-yellow-50 border-yellow-200 text-yellow-900"
+              description="Some evidence supports, some contradicts, or context is needed." />
+            <VerdictRow icon={<XCircle className="w-4 h-4 text-red-600" />}
+              label="Disputed / false"
+              tone="bg-red-50 border-red-200 text-red-900"
+              description="Scientific consensus contradicts the claim." />
+            <VerdictRow icon={<HelpCircle className="w-4 h-4 text-gray-600" />}
+              label="Unverified"
+              tone="bg-gray-50 border-gray-200 text-gray-900"
+              description="Insufficient evidence to make a determination." />
+          </div>
+        </section>
 
-          {/* Transparency */}
-          <section className="space-y-4">
-            <h2 className="text-2xl font-bold text-gray-900">Transparency &amp; Limitations</h2>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-              <h3 className="font-semibold text-blue-900 mb-3">What We Show You:</h3>
-              <ul className="list-disc list-inside space-y-2 text-blue-800">
-                <li>Every source we consulted</li>
-                <li>The AI model used for analysis</li>
-                <li>Confidence scores with explanations</li>
-                <li>Full justifications for verdicts</li>
-                <li>Links to original sources</li>
-              </ul>
-            </div>
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-              <h3 className="font-semibold text-yellow-900 mb-3">Current Limitations:</h3>
-              <ul className="list-disc list-inside space-y-2 text-yellow-800">
-                <li>AI may occasionally misinterpret complex scientific nuance</li>
-                <li>Evidence retrieval depends on publicly available data</li>
-                <li>Some claims are too recent to verify against scientific literature</li>
-                <li>We cannot verify predictions (only past/present facts)</li>
-                <li>Paywalled sources may be inaccessible</li>
-              </ul>
-              <p className="text-sm text-yellow-900 mt-3">
-                <strong>Always use your judgment</strong> and consult multiple sources for critical decisions.
-              </p>
-            </div>
-          </section>
+        {/* Section: Compliance ------------------------------------------- */}
+        <Section
+          icon={<FileText className="w-5 h-5 text-teal-600" />}
+          title="Privacy, terms & GDPR"
+          intro="Required reading for EU users and enterprise customers. The full documents are version-controlled in the repository; older versions remain reachable by git SHA."
+        >
+          <ul className="space-y-2 text-sm">
+            <DocLink href="https://github.com/eljaplacido/climatenews/blob/main/docs/compliance/PRIVACY_POLICY.md"
+                     label="Privacy Policy"
+                     description="What we collect, why, who we share with, your rights" />
+            <DocLink href="https://github.com/eljaplacido/climatenews/blob/main/docs/compliance/TERMS_OF_SERVICE.md"
+                     label="Terms of Service"
+                     description="The contract between the platform and you" />
+            <DocLink href="https://github.com/eljaplacido/climatenews/blob/main/docs/compliance/GDPR_DPIA.md"
+                     label="GDPR DPIA"
+                     description="Article 35 Data Protection Impact Assessment" />
+            <DocLink href="https://github.com/eljaplacido/climatenews/blob/main/docs/compliance/DATA_PROCESSING.md"
+                     label="Sub-processor inventory"
+                     description="Every third party that touches user data" />
+          </ul>
+        </Section>
 
-          {/* Data Sources */}
-          <section className="space-y-4">
-            <h2 className="text-2xl font-bold text-gray-900">Trusted Data Sources</h2>
-            <p className="text-gray-700">
-              We prioritize scientific consensus and peer-reviewed research. See our full list on the{' '}
-              <Link href="/sources" className="text-clilens-primary underline">Data Sources page</Link>.
-            </p>
-          </section>
-
-          {/* Updates */}
-          <section className="space-y-4">
-            <h2 className="text-2xl font-bold text-gray-900">Continuous Improvement</h2>
-            <p className="text-gray-700">
-              Our methodology evolves as AI and climate science advance. We regularly:
-            </p>
-            <ul className="list-disc list-inside space-y-1 text-gray-700 ml-4">
-              <li>Add new scientific data sources</li>
-              <li>Improve AI prompts for better accuracy</li>
-              <li>Refine confidence scoring algorithms</li>
-              <li>Incorporate user feedback</li>
-            </ul>
-          </section>
-
-          {/* Call to Action */}
-          <section className="bg-gray-100 rounded-lg p-6 text-center">
-            <p className="text-gray-700 mb-4">
-              Have questions about our methodology?
-            </p>
-            <Link
-              href="/about"
-              className="inline-flex px-6 py-3 bg-clilens-primary text-white rounded-lg font-medium hover:bg-clilens-teal-600 transition-colors"
-            >
-              Learn More About CliLens
-            </Link>
-          </section>
-        </div>
+        <footer className="text-xs text-gray-500 pt-6 border-t border-gray-200">
+          Methodology snapshot generated live from{" "}
+          <code className="bg-gray-100 px-1.5 py-0.5 rounded font-mono">GET /api/methodology</code>{" "}
+          and related endpoints. To pin a snapshot for audit, request the
+          bundle directly and attach the response to your record.
+        </footer>
       </main>
     </div>
-  )
+  );
+}
+
+// --- Building blocks ------------------------------------------------------
+
+function Section({
+  icon, title, intro, children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  intro: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
+      <header>
+        <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2.5">
+          {icon}
+          {title}
+        </h2>
+        <p className="text-sm text-gray-600 mt-1 max-w-3xl">{intro}</p>
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function ProcessStep({ n, title, body }: { n: number; title: string; body: string }) {
+  return (
+    <li className="flex gap-3">
+      <span className="flex-shrink-0 w-7 h-7 rounded-full bg-teal-100 text-teal-700 font-semibold text-sm flex items-center justify-center">
+        {n}
+      </span>
+      <div>
+        <h3 className="font-semibold text-gray-900 text-sm">{title}</h3>
+        <p className="text-sm text-gray-700">{body}</p>
+      </div>
+    </li>
+  );
+}
+
+function VerdictRow({
+  icon, label, description, tone,
+}: { icon: React.ReactNode; label: string; description: string; tone: string }) {
+  return (
+    <div className={`border rounded p-3 text-sm flex items-start gap-2 ${tone}`}>
+      {icon}
+      <div>
+        <div className="font-semibold">{label}</div>
+        <div className="text-xs opacity-90">{description}</div>
+      </div>
+    </div>
+  );
+}
+
+function Loading() {
+  return (
+    <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
+      <Loader2 className="w-4 h-4 animate-spin" />
+      Loading…
+    </div>
+  );
+}
+
+function Unavailable({ reason }: { reason: string }) {
+  return (
+    <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+      Unavailable — {reason}.
+    </div>
+  );
+}
+
+function PromptsTable({ prompts }: { prompts: Record<string, PromptMeta> }) {
+  const entries = Object.entries(prompts);
+  if (entries.length === 0) return <Unavailable reason="no prompts registered" />;
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs uppercase tracking-wider text-gray-500 border-b border-gray-200">
+            <th className="py-2 pr-3">Name</th>
+            <th className="py-2 pr-3">Version</th>
+            <th className="py-2 pr-3">Fingerprint</th>
+            <th className="py-2 pr-3">Description</th>
+            <th className="py-2 pr-3">Why</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map(([name, meta]) => (
+            <tr key={name} className="border-b border-gray-100 align-top">
+              <td className="py-2 pr-3 font-mono text-gray-900">{name}</td>
+              <td className="py-2 pr-3 font-mono text-teal-700">{meta.version}</td>
+              <td className="py-2 pr-3 font-mono text-xs text-gray-500" title={meta.fingerprint}>
+                <span className="inline-flex items-center gap-1">
+                  <Fingerprint className="w-3 h-3" />
+                  {meta.fingerprint}
+                </span>
+              </td>
+              <td className="py-2 pr-3 text-gray-700 max-w-md">{meta.description || "—"}</td>
+              <td className="py-2 pr-3 text-gray-600 max-w-md text-xs">{meta.rationale || "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function FormulaBlock({ formula }: { formula: MethodologyBundle["sustainability_formula"] }) {
+  const weightTotalPct = Math.round(formula.weight_total * 100);
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-700">{formula.scoring_summary}</p>
+      <div className="text-xs text-gray-500">
+        Methodology version:{" "}
+        <code className="bg-gray-100 px-1 py-0.5 rounded font-mono">{formula.methodology_version}</code>
+        {formula.methodology_url && (
+          <>
+            {" · "}
+            <a className="text-teal-700 hover:underline" href={formula.methodology_url} target="_blank" rel="noreferrer">
+              Detailed methodology <ExternalLink className="inline w-3 h-3" />
+            </a>
+          </>
+        )}
+        {" · "}weights sum to {weightTotalPct}%
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wider text-gray-500 border-b border-gray-200">
+              <th className="py-2 pr-3">Indicator</th>
+              <th className="py-2 pr-3">Weight</th>
+              <th className="py-2 pr-3">Description</th>
+              <th className="py-2 pr-3">Normalizer</th>
+            </tr>
+          </thead>
+          <tbody>
+            {formula.components.map((c) => (
+              <tr key={c.indicator_id} className="border-b border-gray-100 align-top">
+                <td className="py-2 pr-3 font-mono text-gray-900">{c.indicator_id}</td>
+                <td className="py-2 pr-3 font-medium text-teal-700">{Math.round(c.weight * 100)}%</td>
+                <td className="py-2 pr-3 text-gray-700">{c.description}</td>
+                <td className="py-2 pr-3 text-xs text-gray-600">
+                  <code className="bg-gray-100 px-1 py-0.5 rounded font-mono mr-1">{c.normalizer}</code>
+                  {c.normalizer_doc}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div>
+        <h4 className="text-xs uppercase tracking-wider text-gray-500 mb-1">Confidence bands</h4>
+        <div className="flex flex-wrap gap-2 text-xs">
+          {formula.confidence_band_table.map((row) => (
+            <div key={row.indicators_used} className="bg-gray-100 rounded px-2 py-1">
+              <span className="text-gray-500">{row.indicators_used} indicators →</span>{" "}
+              <span className="font-mono text-gray-900">±{row.band_plus_minus}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IndicatorsTable({
+  indicators, coverage,
+}: { indicators: Indicator[]; coverage: Record<string, number> }) {
+  if (indicators.length === 0) return <Unavailable reason="no indicators defined" />;
+
+  const byCategory = indicators.reduce<Record<string, Indicator[]>>((acc, i) => {
+    (acc[i.category] = acc[i.category] || []).push(i);
+    return acc;
+  }, {});
+
+  return (
+    <div className="space-y-4">
+      {Object.entries(byCategory).map(([category, items]) => (
+        <div key={category}>
+          <h4 className="text-xs uppercase tracking-wider text-gray-500 mb-1">{category}</h4>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
+                  <th className="py-1.5 pr-3">Indicator</th>
+                  <th className="py-1.5 pr-3">Unit</th>
+                  <th className="py-1.5 pr-3">Direction</th>
+                  <th className="py-1.5 pr-3">Countries</th>
+                  <th className="py-1.5 pr-3">Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((i) => (
+                  <tr key={i.indicator_id} className="border-b border-gray-100">
+                    <td className="py-1.5 pr-3">
+                      <div className="font-mono text-gray-900">{i.indicator_id}</div>
+                      <div className="text-xs text-gray-500">{i.display_name}</div>
+                    </td>
+                    <td className="py-1.5 pr-3 text-gray-700">{i.unit}</td>
+                    <td className="py-1.5 pr-3 text-xs">
+                      {i.is_higher_better ? (
+                        <span className="text-teal-700">higher is better</span>
+                      ) : (
+                        <span className="text-orange-700">lower is better</span>
+                      )}
+                    </td>
+                    <td className="py-1.5 pr-3 text-gray-700">
+                      {coverage[i.indicator_id] ?? "—"}
+                    </td>
+                    <td className="py-1.5 pr-3">
+                      {i.methodology_url ? (
+                        <a className="text-teal-700 hover:underline text-xs" href={i.methodology_url} target="_blank" rel="noreferrer">
+                          methodology <ExternalLink className="inline w-3 h-3" />
+                        </a>
+                      ) : (
+                        <span className="text-gray-400 text-xs">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CalibrationCard({ signal, data }: { signal: string; data: CalibrationResponse | null }) {
+  if (data === null) {
+    return (
+      <div className="border border-gray-200 rounded-lg p-4">
+        <Loading />
+      </div>
+    );
+  }
+  if (!data.available) {
+    return (
+      <div className="border border-gray-200 rounded-lg p-4">
+        <h3 className="font-semibold text-gray-900 mb-1">{signal}</h3>
+        <p className="text-xs text-amber-700">Unavailable: {data.reason || "no data"}</p>
+      </div>
+    );
+  }
+  const m = data.metrics;
+  if (!m || (m.n_labels ?? 0) === 0) {
+    return (
+      <div className="border border-gray-200 rounded-lg p-4">
+        <h3 className="font-semibold text-gray-900 mb-1">{signal}</h3>
+        <p className="text-xs text-gray-500">
+          Awaiting reviewer labels — calibration accumulates as analyses are graded.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="border border-gray-200 rounded-lg p-4 space-y-1">
+      <h3 className="font-semibold text-gray-900">{signal}</h3>
+      <p className="text-xs text-gray-500">
+        {m.n_labels} labels · Brier {(m.brier_score ?? 0).toFixed(3)} · ECE {(m.ece ?? 0).toFixed(3)}
+      </p>
+      <p className="text-xs text-gray-600">{m.note || ""}</p>
+    </div>
+  );
+}
+
+function HallucinationBlock({ data }: { data: HallucinationResponse | null }) {
+  if (data === null) return <Loading />;
+  if (!data.available) return <Unavailable reason="provenance store empty or unavailable" />;
+  if (data.overall.n === 0) {
+    return (
+      <p className="text-sm text-gray-500">
+        No scored extractions in the last {data.window_days} days. Numbers will populate as the platform runs.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      <div className="bg-gray-50 rounded p-3 text-sm">
+        <div className="text-xs text-gray-500 mb-1">
+          Last {data.window_days} days · {data.overall.n} scored extractions
+        </div>
+        <div className="flex gap-6 text-gray-900">
+          <span>mean risk: <strong>{(data.overall.mean_risk * 100).toFixed(1)}%</strong></span>
+          <span>high-risk rate: <strong>{(data.overall.high_risk_rate * 100).toFixed(1)}%</strong></span>
+        </div>
+      </div>
+
+      <HalRateMiniTable label="By extraction method" rows={data.by_extraction_method} keyField="extraction_method" />
+      <HalRateMiniTable label="By model" rows={data.by_model} keyField="model_name" />
+      <HalRateMiniTable label="By source (top 10)" rows={data.by_source.slice(0, 10)} keyField="source_name" />
+    </div>
+  );
+}
+
+function HalRateMiniTable({
+  label, rows, keyField,
+}: { label: string; rows: HallucinationRow[]; keyField: keyof HallucinationRow }) {
+  if (rows.length === 0) return null;
+  return (
+    <div>
+      <h4 className="text-xs uppercase tracking-wider text-gray-500 mb-1">{label}</h4>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
+              <th className="py-1 pr-3">Name</th>
+              <th className="py-1 pr-3">n</th>
+              <th className="py-1 pr-3">Mean risk</th>
+              <th className="py-1 pr-3">High-risk rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <tr key={i} className="border-b border-gray-100">
+                <td className="py-1 pr-3 font-mono text-gray-900 text-xs">{String(row[keyField] ?? "unknown")}</td>
+                <td className="py-1 pr-3 text-gray-700">{row.n}</td>
+                <td className="py-1 pr-3 text-gray-700">{(row.mean_risk * 100).toFixed(1)}%</td>
+                <td className="py-1 pr-3 text-gray-700">{(row.high_risk_rate * 100).toFixed(1)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function DriftCard({
+  label, data, keyField,
+}: { label: string; data: DriftResponse | null; keyField: string }) {
+  if (data === null) {
+    return <div className="border border-gray-200 rounded-lg p-4"><Loading /></div>;
+  }
+  const verdictTone: Record<string, string> = {
+    stable: "bg-teal-50 text-teal-800 border-teal-200",
+    minor: "bg-yellow-50 text-yellow-800 border-yellow-200",
+    notable: "bg-orange-50 text-orange-800 border-orange-200",
+    significant: "bg-red-50 text-red-800 border-red-200",
+  };
+  const tone = verdictTone[data.verdict] || "bg-gray-50 text-gray-800 border-gray-200";
+
+  return (
+    <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+      <header className="flex items-center justify-between">
+        <h3 className="font-semibold text-gray-900">{label}</h3>
+        <span className={`text-xs px-2 py-0.5 rounded border ${tone}`}>{data.verdict}</span>
+      </header>
+      <div className="text-xs text-gray-500">
+        KL divergence:{" "}
+        <strong className="text-gray-900 font-mono">{data.kl_divergence.toFixed(3)}</strong>
+        {" · "}{data.recent_count} recent / {data.baseline_count} baseline
+      </div>
+      {data.top_shifts && data.top_shifts.length > 0 && (
+        <div>
+          <h4 className="text-xs uppercase tracking-wider text-gray-500 mb-1">Top shifts</h4>
+          <ul className="text-xs space-y-0.5">
+            {data.top_shifts.slice(0, 5).map((s, i) => {
+              const name = String(s[keyField] ?? s.display ?? "unknown");
+              const delta = Number(s.delta);
+              const sign = delta >= 0 ? "+" : "";
+              return (
+                <li key={i} className="flex items-center justify-between">
+                  <code className="text-gray-700 font-mono truncate max-w-[60%]">{name}</code>
+                  <span className={delta >= 0 ? "text-teal-700" : "text-red-700"}>
+                    {sign}{(delta * 100).toFixed(1)}pp
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+      {data.notes && <p className="text-xs text-gray-500 italic">{data.notes}</p>}
+    </div>
+  );
+}
+
+function DocLink({
+  href, label, description,
+}: { href: string; label: string; description: string }) {
+  return (
+    <li>
+      <a href={href} target="_blank" rel="noreferrer"
+         className="flex items-start gap-2 text-teal-700 hover:underline">
+        <ShieldAlert className="w-4 h-4 mt-0.5 flex-shrink-0" />
+        <span>
+          <span className="font-medium">{label}</span>
+          <span className="text-gray-600"> — {description}</span>
+          <ExternalLink className="inline w-3 h-3 ml-1" />
+        </span>
+      </a>
+    </li>
+  );
 }
