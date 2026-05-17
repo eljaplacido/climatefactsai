@@ -72,6 +72,13 @@ class ChatResponse(BaseModel):
     highlighted_countries: Optional[List[str]] = None
     relevant_articles: Optional[List[dict]] = None
     cynefin_classification: Optional[dict] = None
+    # Phase 6 wave 4 (2026-05-17): HallucinationDetector runs on every
+    # chat synthesis against the retrieved article excerpts. Surfaces
+    # hallucination_risk + is_grounded + flagged_segments so the UI can
+    # warn when the answer is poorly grounded. Local checks (entity
+    # overlap + statistic verification) always run; the LLM-grounding
+    # sub-check degrades to risk=0.5 gracefully when no LLM key is set.
+    hallucination_check: Optional[dict] = None
 
 
 class ChatSessionInfo(BaseModel):
@@ -252,6 +259,7 @@ async def ask_general_question(
         highlighted_countries=highlighted_countries,
         relevant_articles=relevant_articles_extra,
         cynefin_classification=cynefin_classification,
+        hallucination_check=answer_data.get("hallucination_check"),
     )
 
 
@@ -971,10 +979,42 @@ Instructions:
             high_cred = sum(1 for s in sources[:5] if s.credibility == "HIGH")
             confidence = min(0.95, confidence + high_cred * 0.05)
 
+        # Phase 6 wave 4: ground the synthesized answer against the article
+        # excerpts that fed into it. Returns hallucination_risk +
+        # flagged_segments so the UI can warn the user when the answer
+        # isn't well-grounded. Best-effort — never blocks the response.
+        hallucination_check: Optional[dict] = None
+        try:
+            if answer and sources:
+                from app.domains.intelligence.hallucination_detector import (
+                    HallucinationDetector,
+                )
+                # The detector's db parameter is vestigial (only used in
+                # earlier prototypes); the check() method doesn't touch it.
+                # Pass None to avoid threading another argument through.
+                detector = HallucinationDetector(db=None)
+                source_texts = []
+                for s in sources[:5]:
+                    chunk = f"{s.title or ''}".strip()
+                    if chunk:
+                        source_texts.append(chunk)
+                if source_texts:
+                    hallucination_check = await detector.check(
+                        generated_text=answer[:4000],
+                        source_texts=source_texts,
+                    )
+                    # Downgrade confidence when the grounding is weak.
+                    risk = hallucination_check.get("hallucination_risk")
+                    if isinstance(risk, (int, float)) and risk > 0.5:
+                        confidence = max(0.1, confidence - 0.25)
+        except Exception as _h_exc:
+            logger.debug(f"Chat hallucination check failed (non-fatal): {_h_exc}")
+
         return {
             "answer": answer,
             "confidence": round(confidence, 2),
             "model": f"deepseek:{model}",
+            "hallucination_check": hallucination_check,
         }
 
     except ImportError:
