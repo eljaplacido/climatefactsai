@@ -468,3 +468,208 @@ async def refit_calibration(
     db = get_postgres()
     result = refit_and_persist(db, signal_name=signal, min_labels=int(min_labels))
     return result.as_dict()
+
+
+# =============================================================================
+# Hallucination-rate dashboard (Phase 6 wave 6)
+# =============================================================================
+# Aggregates `claim_provenance.hallucination_score` across the recent window
+# by extraction_method, model_name, and (via JSONB unnest + article join)
+# source_name. Powers the per-source hallucination dashboard called out as a
+# Robustness lift in the truth-machine roadmap. Each grouping is computed
+# independently so a single failing CTE doesn't black-hole the others.
+
+def _row_stats(rows: List[Dict[str, Any]], key: str) -> List[Dict[str, Any]]:
+    """Normalise SQL aggregate rows for the wire format.
+
+    Each row is expected to have: <key>, n, mean_risk, high_risk_rate.
+    """
+    out: List[Dict[str, Any]] = []
+    for r in rows or []:
+        n = int(r.get("n") or 0)
+        if n == 0:
+            continue
+        mean = float(r.get("mean_risk") or 0.0)
+        high = float(r.get("high_risk_rate") or 0.0)
+        out.append({
+            key: r.get(key) or "unknown",
+            "n": n,
+            "mean_risk": round(mean, 4),
+            "high_risk_rate": round(high, 4),
+        })
+    return out
+
+
+@router.get("/hallucination-rates")
+async def get_hallucination_rates(
+    window_days: int = 30,
+    top_sources: int = 50,
+) -> Dict[str, Any]:
+    """Per-source / per-model hallucination-rate snapshot.
+
+    Aggregates `claim_provenance.hallucination_score` over the trailing
+    `window_days` window into three groupings:
+
+      * overall              — single rolled-up stat across all extractions
+      * by_extraction_method — url_analysis_claim_extraction, deep_search_synthesis, etc.
+      * by_model             — deepseek-chat, claude-sonnet-4-5, gpt-4o, …
+      * by_source            — joins through claim_provenance.article_id AND
+                                source_article_ids[] → articles.source_name
+
+    Each grouping reports:
+      * n              — number of extractions in scope
+      * mean_risk      — average hallucination_score (0–1, lower is better)
+      * high_risk_rate — fraction with hallucination_score > 0.5
+
+    `top_sources` caps the by_source list (sorted by n desc) so the
+    response stays bounded even on large corpora.
+
+    Returns `available=False` if claim_provenance is missing (migration
+    not applied) or contains no scored rows in the window. Individual
+    sub-queries degrade independently — a failing source join still
+    returns method+model groupings.
+    """
+    window_days = max(1, min(int(window_days), 365))
+    top_sources = max(1, min(int(top_sources), 500))
+    interval = f"{window_days} days"
+
+    db = get_postgres()
+    available = True
+    overall: Dict[str, Any] = {"n": 0, "mean_risk": 0.0, "high_risk_rate": 0.0}
+    by_method: List[Dict[str, Any]] = []
+    by_model: List[Dict[str, Any]] = []
+    by_source: List[Dict[str, Any]] = []
+    notes: List[str] = []
+
+    # --- Overall ----------------------------------------------------------
+    try:
+        rows = db.execute_query(
+            """
+            SELECT
+                COUNT(*)                                                  AS n,
+                AVG(hallucination_score)                                  AS mean_risk,
+                AVG(CASE WHEN hallucination_score > 0.5 THEN 1.0 ELSE 0.0 END)
+                                                                          AS high_risk_rate
+            FROM claim_provenance
+            WHERE hallucination_score IS NOT NULL
+              AND created_at > NOW() - :interval::interval
+            """,
+            {"interval": interval},
+        )
+        if rows:
+            r0 = rows[0]
+            n = int(r0.get("n") or 0)
+            if n > 0:
+                overall = {
+                    "n": n,
+                    "mean_risk": round(float(r0.get("mean_risk") or 0.0), 4),
+                    "high_risk_rate": round(float(r0.get("high_risk_rate") or 0.0), 4),
+                }
+    except Exception as exc:
+        logger.warning(f"hallucination_rates overall query failed: {exc}")
+        available = False
+        notes.append("claim_provenance unavailable (migration 021 not applied?)")
+
+    # --- By extraction_method ---------------------------------------------
+    if available:
+        try:
+            rows = db.execute_query(
+                """
+                SELECT
+                    COALESCE(extraction_method, 'unknown') AS extraction_method,
+                    COUNT(*)                               AS n,
+                    AVG(hallucination_score)               AS mean_risk,
+                    AVG(CASE WHEN hallucination_score > 0.5 THEN 1.0 ELSE 0.0 END)
+                                                           AS high_risk_rate
+                FROM claim_provenance
+                WHERE hallucination_score IS NOT NULL
+                  AND created_at > NOW() - :interval::interval
+                GROUP BY extraction_method
+                ORDER BY COUNT(*) DESC
+                """,
+                {"interval": interval},
+            )
+            by_method = _row_stats(rows, "extraction_method")
+        except Exception as exc:
+            logger.warning(f"hallucination_rates by_method query failed: {exc}")
+            notes.append("by_extraction_method aggregation skipped")
+
+    # --- By model_name ----------------------------------------------------
+    if available:
+        try:
+            rows = db.execute_query(
+                """
+                SELECT
+                    COALESCE(model_name, 'unknown') AS model_name,
+                    COUNT(*)                         AS n,
+                    AVG(hallucination_score)         AS mean_risk,
+                    AVG(CASE WHEN hallucination_score > 0.5 THEN 1.0 ELSE 0.0 END)
+                                                     AS high_risk_rate
+                FROM claim_provenance
+                WHERE hallucination_score IS NOT NULL
+                  AND created_at > NOW() - :interval::interval
+                GROUP BY model_name
+                ORDER BY COUNT(*) DESC
+                """,
+                {"interval": interval},
+            )
+            by_model = _row_stats(rows, "model_name")
+        except Exception as exc:
+            logger.warning(f"hallucination_rates by_model query failed: {exc}")
+            notes.append("by_model aggregation skipped")
+
+    # --- By source (article_id + source_article_ids JSONB unnest) ---------
+    # Sources can attach via either:
+    #   * Direct article_id (article_ingestion_enrichment path)
+    #   * source_article_ids[] JSONB array (deep_search + url_analysis paths)
+    # Use UNION ALL to combine both, LEFT JOIN articles so a deleted source
+    # article shows as 'unknown' instead of dropping the row.
+    if available:
+        try:
+            rows = db.execute_query(
+                """
+                WITH per_link AS (
+                    SELECT cp.id AS cp_id, cp.hallucination_score, cp.article_id AS art_id
+                    FROM claim_provenance cp
+                    WHERE cp.hallucination_score IS NOT NULL
+                      AND cp.created_at > NOW() - :interval::interval
+                      AND cp.article_id IS NOT NULL
+                    UNION ALL
+                    SELECT cp.id AS cp_id, cp.hallucination_score,
+                           NULLIF(src_id, '')::uuid AS art_id
+                    FROM claim_provenance cp
+                    CROSS JOIN LATERAL
+                        jsonb_array_elements_text(cp.source_article_ids) AS src_id
+                    WHERE cp.hallucination_score IS NOT NULL
+                      AND cp.created_at > NOW() - :interval::interval
+                      AND cp.source_article_ids IS NOT NULL
+                      AND jsonb_typeof(cp.source_article_ids) = 'array'
+                )
+                SELECT
+                    COALESCE(a.source_name, 'unknown') AS source_name,
+                    COUNT(*)                            AS n,
+                    AVG(per_link.hallucination_score)   AS mean_risk,
+                    AVG(CASE WHEN per_link.hallucination_score > 0.5
+                             THEN 1.0 ELSE 0.0 END)     AS high_risk_rate
+                FROM per_link
+                LEFT JOIN articles a ON a.id = per_link.art_id
+                GROUP BY a.source_name
+                ORDER BY COUNT(*) DESC
+                LIMIT :limit
+                """,
+                {"interval": interval, "limit": top_sources},
+            )
+            by_source = _row_stats(rows, "source_name")
+        except Exception as exc:
+            logger.warning(f"hallucination_rates by_source query failed: {exc}")
+            notes.append("by_source aggregation skipped (UUID cast or join failure)")
+
+    return {
+        "window_days": window_days,
+        "available": available,
+        "overall": overall,
+        "by_extraction_method": by_method,
+        "by_model": by_model,
+        "by_source": by_source,
+        "notes": notes or None,
+    }

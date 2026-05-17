@@ -521,3 +521,247 @@ class TestMethodologyBundle:
         """/api/methodology and /api/methodology/ both work."""
         resp = client.get("/api/methodology/")
         assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# /api/methodology/hallucination-rates (Phase 6 wave 6)
+# ---------------------------------------------------------------------------
+
+class TestHallucinationRatesEndpoint:
+    """Per-source / per-model hallucination-rate dashboard.
+
+    Mocks the four DB queries the endpoint runs (overall, by_method,
+    by_model, by_source) so each test exercises a specific scenario
+    without needing the migrations or seeded data.
+    """
+
+    def _swap_db(self, fake):
+        import shared.database as _shared_db
+        prior = _shared_db._postgres_client
+        _shared_db._postgres_client = fake
+        return prior
+
+    def _restore(self, prior):
+        import shared.database as _shared_db
+        _shared_db._postgres_client = prior
+
+    def test_graceful_degradation_when_table_missing(self):
+        """Migration 021 not applied → available=False, all blocks empty,
+        no 500."""
+        class _BrokenDB:
+            def execute_query(self, query, params=None):
+                raise RuntimeError("relation claim_provenance does not exist")
+
+        prior = self._swap_db(_BrokenDB())
+        try:
+            r = client.get("/api/methodology/hallucination-rates")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["available"] is False
+            assert body["overall"]["n"] == 0
+            assert body["by_extraction_method"] == []
+            assert body["by_model"] == []
+            assert body["by_source"] == []
+            # The note should explain why.
+            assert body["notes"] and any("claim_provenance" in n for n in body["notes"])
+        finally:
+            self._restore(prior)
+
+    def test_overall_stats_populated_from_db(self):
+        class _OverallDB:
+            def execute_query(self, query, params=None):
+                q = " ".join(query.split()).lower()
+                # Strip aliases to match across all four queries.
+                if "from claim_provenance" in q and "group by" not in q and "with per_link" not in q:
+                    # Overall: aggregate without grouping.
+                    return [{"n": 100, "mean_risk": 0.12, "high_risk_rate": 0.04}]
+                if "group by extraction_method" in q:
+                    return []
+                if "group by model_name" in q:
+                    return []
+                if "with per_link" in q:
+                    return []
+                return []
+
+        prior = self._swap_db(_OverallDB())
+        try:
+            r = client.get("/api/methodology/hallucination-rates?window_days=30")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["available"] is True
+            assert body["window_days"] == 30
+            assert body["overall"]["n"] == 100
+            assert body["overall"]["mean_risk"] == 0.12
+            assert body["overall"]["high_risk_rate"] == 0.04
+        finally:
+            self._restore(prior)
+
+    def test_by_method_sorted_descending(self):
+        class _MethodDB:
+            def execute_query(self, query, params=None):
+                q = " ".join(query.split()).lower()
+                if "from claim_provenance" in q and "group by" not in q and "with per_link" not in q:
+                    return [{"n": 1, "mean_risk": 0.0, "high_risk_rate": 0.0}]
+                if "group by extraction_method" in q:
+                    return [
+                        {"extraction_method": "url_analysis_claim_extraction", "n": 80, "mean_risk": 0.15, "high_risk_rate": 0.05},
+                        {"extraction_method": "deep_search_synthesis", "n": 20, "mean_risk": 0.08, "high_risk_rate": 0.02},
+                    ]
+                return []
+
+        prior = self._swap_db(_MethodDB())
+        try:
+            r = client.get("/api/methodology/hallucination-rates")
+            assert r.status_code == 200
+            body = r.json()
+            methods = body["by_extraction_method"]
+            assert len(methods) == 2
+            # Sorted by n descending.
+            assert methods[0]["extraction_method"] == "url_analysis_claim_extraction"
+            assert methods[0]["n"] == 80
+            assert methods[1]["extraction_method"] == "deep_search_synthesis"
+        finally:
+            self._restore(prior)
+
+    def test_by_model_aggregation(self):
+        class _ModelDB:
+            def execute_query(self, query, params=None):
+                q = " ".join(query.split()).lower()
+                if "group by model_name" in q:
+                    return [
+                        {"model_name": "deepseek-chat", "n": 60, "mean_risk": 0.14, "high_risk_rate": 0.05},
+                        {"model_name": "claude-sonnet-4-5", "n": 20, "mean_risk": 0.06, "high_risk_rate": 0.01},
+                        # NULL model_name → coerced to 'unknown'
+                        {"model_name": None, "n": 5, "mean_risk": 0.20, "high_risk_rate": 0.10},
+                    ]
+                if "from claim_provenance" in q and "group by" not in q and "with per_link" not in q:
+                    return [{"n": 1, "mean_risk": 0.0, "high_risk_rate": 0.0}]
+                return []
+
+        prior = self._swap_db(_ModelDB())
+        try:
+            r = client.get("/api/methodology/hallucination-rates")
+            body = r.json()
+            models = body["by_model"]
+            assert len(models) == 3
+            # NULL model handled gracefully (or coerced to 'unknown' in row_stats).
+            names = {m["model_name"] for m in models}
+            assert "deepseek-chat" in names
+            assert "claude-sonnet-4-5" in names
+            assert "unknown" in names
+        finally:
+            self._restore(prior)
+
+    def test_by_source_aggregation_with_top_n_limit(self):
+        class _SourceDB:
+            def execute_query(self, query, params=None):
+                q = " ".join(query.split()).lower()
+                if "with per_link" in q:
+                    # Verify the LIMIT parameter is honoured downstream.
+                    assert params is not None
+                    assert "limit" in params
+                    # Return more rows than top_sources to verify capping happens
+                    # at SQL level (we trust the DB; here just return the canned
+                    # rows that should pass through).
+                    return [
+                        {"source_name": "reuters.com", "n": 30, "mean_risk": 0.08, "high_risk_rate": 0.03},
+                        {"source_name": "bbc.com", "n": 25, "mean_risk": 0.10, "high_risk_rate": 0.04},
+                        {"source_name": "unknown", "n": 5, "mean_risk": 0.20, "high_risk_rate": 0.10},
+                    ]
+                if "from claim_provenance" in q and "group by" not in q and "with per_link" not in q:
+                    return [{"n": 1, "mean_risk": 0.0, "high_risk_rate": 0.0}]
+                return []
+
+        prior = self._swap_db(_SourceDB())
+        try:
+            r = client.get("/api/methodology/hallucination-rates?top_sources=2")
+            body = r.json()
+            sources = body["by_source"]
+            # We return 3 rows from the fake (the fake doesn't enforce LIMIT);
+            # the real DB would cap. Here we just verify the wire shape.
+            assert any(s["source_name"] == "reuters.com" for s in sources)
+            # Sorted by n descending.
+            ns = [s["n"] for s in sources]
+            assert ns == sorted(ns, reverse=True)
+        finally:
+            self._restore(prior)
+
+    def test_partial_failure_degrades_gracefully(self):
+        """If the by_source CTE fails (e.g. malformed UUID in source_article_ids)
+        but the simpler queries succeed, we return what we have plus a note."""
+        class _PartialFailDB:
+            def execute_query(self, query, params=None):
+                q = " ".join(query.split()).lower()
+                if "with per_link" in q:
+                    raise RuntimeError("invalid input syntax for type uuid")
+                if "from claim_provenance" in q and "group by" not in q:
+                    return [{"n": 50, "mean_risk": 0.10, "high_risk_rate": 0.03}]
+                if "group by extraction_method" in q:
+                    return [{"extraction_method": "deep_search_synthesis", "n": 50, "mean_risk": 0.10, "high_risk_rate": 0.03}]
+                if "group by model_name" in q:
+                    return [{"model_name": "deepseek-chat", "n": 50, "mean_risk": 0.10, "high_risk_rate": 0.03}]
+                return []
+
+        prior = self._swap_db(_PartialFailDB())
+        try:
+            r = client.get("/api/methodology/hallucination-rates")
+            body = r.json()
+            assert r.status_code == 200
+            assert body["available"] is True
+            assert body["overall"]["n"] == 50
+            assert len(body["by_extraction_method"]) == 1
+            assert len(body["by_model"]) == 1
+            # by_source failed → empty + note
+            assert body["by_source"] == []
+            assert body["notes"] and any("by_source" in n for n in body["notes"])
+        finally:
+            self._restore(prior)
+
+    def test_window_days_param_clamped(self):
+        """Out-of-range window_days clamps to [1, 365] — protects against
+        accidental DoS on very large windows."""
+        captured = {}
+
+        class _CapturingDB:
+            def execute_query(self, query, params=None):
+                if params and "interval" in params:
+                    captured["interval"] = params["interval"]
+                return [{"n": 1, "mean_risk": 0.0, "high_risk_rate": 0.0}]
+
+        prior = self._swap_db(_CapturingDB())
+        try:
+            # Negative → clamp to 1
+            r = client.get("/api/methodology/hallucination-rates?window_days=-5")
+            assert r.status_code == 200
+            assert r.json()["window_days"] == 1
+            # Excessive → clamp to 365
+            r = client.get("/api/methodology/hallucination-rates?window_days=99999")
+            assert r.json()["window_days"] == 365
+            assert captured["interval"] == "365 days"
+        finally:
+            self._restore(prior)
+
+    def test_zero_division_safety_with_empty_window(self):
+        """Empty result set (no hallucination scores in window) → n=0, no NaN
+        leakage."""
+        class _EmptyDB:
+            def execute_query(self, query, params=None):
+                q = " ".join(query.split()).lower()
+                # Aggregate query with no rows → return single row with NULLs.
+                if "from claim_provenance" in q and "group by" not in q and "with per_link" not in q:
+                    return [{"n": 0, "mean_risk": None, "high_risk_rate": None}]
+                return []
+
+        prior = self._swap_db(_EmptyDB())
+        try:
+            r = client.get("/api/methodology/hallucination-rates")
+            body = r.json()
+            assert r.status_code == 200
+            assert body["available"] is True
+            assert body["overall"]["n"] == 0
+            assert body["overall"]["mean_risk"] == 0.0
+            assert body["overall"]["high_risk_rate"] == 0.0
+            # No NaN should leak to the wire.
+            assert isinstance(body["overall"]["mean_risk"], (int, float))
+        finally:
+            self._restore(prior)
