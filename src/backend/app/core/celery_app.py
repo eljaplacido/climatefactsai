@@ -37,6 +37,7 @@ app.autodiscover_tasks([
     "app.tasks.feed_scheduler",
     "app.tasks.translation",
     "app.tasks.fact_check_pipeline",
+    "app.tasks.calibration",
 ])
 
 
@@ -192,6 +193,16 @@ app.conf.beat_schedule = {
         "task": "app.tasks.fact_check_pipeline.pipeline_health_check",
         "schedule": crontab(minute=0),  # Every hour on the hour
         "kwargs": {},
+    },
+    # Calibration refit — nightly at 03:00 UTC, after the day's URL-analysis
+    # activity has settled and reviewers have had a chance to label the
+    # previous day's outputs. Refits all 3 signals (reliability, agreement,
+    # hallucination); a signal with fewer than `min_labels` labels is
+    # skipped (logged as insufficient_data) — see Phase 5 wave 7.
+    "nightly-calibration-refit": {
+        "task": "app.tasks.calibration.nightly_calibration_refit",
+        "schedule": crontab(hour=3, minute=0),
+        "kwargs": {"min_labels": 5},
     },
 }
 
