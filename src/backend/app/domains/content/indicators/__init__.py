@@ -24,7 +24,10 @@ from .base import (
 )
 from .climate_action_tracker import ClimateActionTrackerAdapter
 from .climate_trace import ClimateTRACEAdapter
+from .irena import IRENAAdapter
+from .nd_gain import NDGainAdapter
 from .owid import OWIDAdapter
+from .unfccc_ndc import UNFCCCNdcAdapter
 
 __all__ = [
     "IndicatorAdapter",
@@ -32,5 +35,8 @@ __all__ = [
     "SyncResult",
     "ClimateActionTrackerAdapter",
     "ClimateTRACEAdapter",
+    "IRENAAdapter",
+    "NDGainAdapter",
     "OWIDAdapter",
+    "UNFCCCNdcAdapter",
 ]

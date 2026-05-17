@@ -191,6 +191,9 @@ _INDICATOR_ADAPTERS = {
     "climate_trace": "ClimateTRACEAdapter",
     "owid":          "OWIDAdapter",
     "cat":           "ClimateActionTrackerAdapter",
+    "unfccc_ndc":    "UNFCCCNdcAdapter",
+    "irena":         "IRENAAdapter",
+    "nd_gain":       "NDGainAdapter",
 }
 
 
