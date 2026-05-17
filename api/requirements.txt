@@ -17,7 +17,7 @@ prometheus-client==0.21.0
 
 # Authentication
 bcrypt==4.1.2
-PyJWT==2.8.0
+PyJWT==2.10.1
 
 # Stripe for payments
 stripe==11.1.1
