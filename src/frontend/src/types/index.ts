@@ -369,6 +369,29 @@ export interface DeepSearchWeatherContext {
   }[];
 }
 
+export interface PromptFingerprint {
+  name: string;
+  version: string;
+  fingerprint: string;
+}
+
+export interface HallucinationFlagged {
+  text: string;
+  reason: string;
+  severity: "low" | "medium" | "high" | string;
+}
+
+export interface HallucinationCheck {
+  hallucination_risk: number;       // 0..1; lower = better grounded
+  is_grounded: boolean;
+  flagged_segments: HallucinationFlagged[];
+  entity_overlap_score?: number;    // 0..1; higher = better
+  statistic_accuracy?: number;      // 0..1; higher = better
+  overall_confidence?: number;      // 0..1
+  checks_performed?: string[];
+  prompt?: PromptFingerprint;        // present when the LLM-grounding sub-check ran
+}
+
 export interface DeepSearchMethodology {
   queries_run?: { layer: string; scope?: Record<string, any>; hits?: number; skipped?: boolean }[];
   weather_used?: boolean;
@@ -376,6 +399,16 @@ export interface DeepSearchMethodology {
   embedding_model?: string;
   external_provider_configured?: boolean;
   sources_consulted?: string[];
+  // Phase 4 wave 1 (2026-05-16): the synthesis prompt template is version-
+  // pinned via the central registry; this records which version produced
+  // this answer.
+  retrieval_strategy?: string;
+  prompts_used?: { synthesis?: PromptFingerprint } & Record<string, PromptFingerprint | undefined>;
+  // Phase 6 wave 2 (2026-05-16): HallucinationDetector runs against the
+  // synthesised text + source articles. Null when no sources / detector
+  // erored — clients should render "not run" rather than treating absence
+  // as "all good".
+  hallucination_check?: HallucinationCheck | null;
 }
 
 export interface ComparativeAnalysisStructured {

@@ -1,8 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Layers, Brain, Cloud, Globe, FileText, AlertCircle } from "lucide-react";
-import type { DeepSearchMethodology } from "@/types";
+import {
+  ChevronDown,
+  Layers,
+  Brain,
+  Cloud,
+  Globe,
+  FileText,
+  AlertCircle,
+  ShieldCheck,
+  ShieldAlert,
+  Fingerprint,
+  Route,
+} from "lucide-react";
+import type { DeepSearchMethodology, HallucinationCheck } from "@/types";
 
 interface Props {
   methodology?: DeepSearchMethodology | null;
@@ -124,6 +136,52 @@ export default function MethodologyDrawer({
           </div>
         )}
 
+        {/* Retrieval strategy (Phase 4 wave 1) */}
+        {methodology.retrieval_strategy && (
+          <div className="flex items-center gap-1.5 text-[11px]">
+            <Route className="w-3 h-3 text-slate-500" />
+            <span className="text-slate-500">Retrieval:</span>
+            <code className="text-slate-300 bg-slate-800/60 px-1.5 py-0.5 rounded text-[10px]">
+              {methodology.retrieval_strategy}
+            </code>
+          </div>
+        )}
+
+        {/* Prompt fingerprints used (Phase 4 wave 1) */}
+        {methodology.prompts_used && Object.keys(methodology.prompts_used).length > 0 && (
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-slate-500 mb-1.5 flex items-center gap-1.5">
+              <Fingerprint className="w-3 h-3" /> Versioned prompts
+            </p>
+            <ul className="space-y-1">
+              {Object.entries(methodology.prompts_used).map(([role, prompt]) =>
+                prompt ? (
+                  <li
+                    key={role}
+                    className="flex items-center gap-2 text-[11px] pl-1"
+                    title={`fingerprint=${prompt.fingerprint}`}
+                  >
+                    <span className="text-slate-500">{role}:</span>
+                    <code className="text-slate-300">{prompt.name}</code>
+                    <span className="text-teal-400 font-mono">{prompt.version}</span>
+                    <code
+                      className="text-slate-500 text-[10px] font-mono truncate"
+                      style={{ maxWidth: 110 }}
+                    >
+                      {prompt.fingerprint}
+                    </code>
+                  </li>
+                ) : null,
+              )}
+            </ul>
+          </div>
+        )}
+
+        {/* Hallucination grounding (Phase 6 wave 2) */}
+        {methodology.hallucination_check && (
+          <HallucinationBlock check={methodology.hallucination_check} />
+        )}
+
         {/* External-not-configured advisory */}
         {!methodology.external_provider_configured && (
           <div className="flex items-start gap-1.5 text-[11px] text-amber-400/80 bg-amber-950/20 border border-amber-900/40 rounded px-2 py-1.5">
@@ -136,6 +194,67 @@ export default function MethodologyDrawer({
         )}
       </div>
     </details>
+  );
+}
+
+function HallucinationBlock({ check }: { check: HallucinationCheck }) {
+  const risk = check.hallucination_risk;
+  const grounded = check.is_grounded;
+  const flaggedCount = check.flagged_segments?.length ?? 0;
+
+  // Colour the badge per severity bucket.
+  const tone = grounded
+    ? { wrap: "border-teal-900/40 bg-teal-950/20 text-teal-300", icon: ShieldCheck }
+    : risk > 0.7
+      ? { wrap: "border-red-900/40 bg-red-950/20 text-red-300", icon: ShieldAlert }
+      : { wrap: "border-amber-900/40 bg-amber-950/20 text-amber-300", icon: ShieldAlert };
+
+  const Icon = tone.icon;
+  const pct = Math.round((risk ?? 0) * 100);
+
+  return (
+    <div className={`border rounded px-2 py-1.5 text-[11px] ${tone.wrap}`}>
+      <div className="flex items-center gap-1.5">
+        <Icon className="w-3 h-3 flex-shrink-0" />
+        <span className="font-medium">
+          Hallucination grounding: {grounded ? "grounded" : "weakly grounded"}
+        </span>
+        <span className="ml-auto font-mono">risk {pct}%</span>
+      </div>
+      {(check.entity_overlap_score !== undefined || check.statistic_accuracy !== undefined) && (
+        <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] opacity-90">
+          {check.entity_overlap_score !== undefined && (
+            <span>
+              entity match: {Math.round(check.entity_overlap_score * 100)}%
+            </span>
+          )}
+          {check.statistic_accuracy !== undefined && (
+            <span>
+              statistic match: {Math.round(check.statistic_accuracy * 100)}%
+            </span>
+          )}
+        </div>
+      )}
+      {flaggedCount > 0 && (
+        <details className="mt-1">
+          <summary className="cursor-pointer text-[10px] underline decoration-dotted opacity-80">
+            {flaggedCount} flagged segment{flaggedCount === 1 ? "" : "s"} — show
+          </summary>
+          <ul className="mt-1 space-y-1 max-h-32 overflow-y-auto pr-1">
+            {check.flagged_segments.map((f, i) => (
+              <li
+                key={i}
+                className="pl-2 border-l border-current/30 text-[10px] opacity-95"
+              >
+                <span className="opacity-70 uppercase text-[9px] mr-1">{f.severity}</span>
+                <span className="italic">&ldquo;{f.text}&rdquo;</span>
+                <span className="opacity-70"> — {f.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
   );
 }
 
