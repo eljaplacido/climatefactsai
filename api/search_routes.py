@@ -110,7 +110,8 @@ async def basic_search(
                 plainto_tsquery('english', :query)
             ) as relevance
         FROM articles a
-        WHERE to_tsvector('english', a.title || ' ' || COALESCE(a.excerpt, ''))
+        WHERE a.is_synthetic = FALSE
+          AND to_tsvector('english', a.title || ' ' || COALESCE(a.excerpt, ''))
               @@ plainto_tsquery('english', :query)
     """
 
@@ -244,7 +245,8 @@ async def semantic_search(
                 SELECT article_id,
                        1 - (embedding <=> :embedding::vector) AS sem_score
                 FROM articles
-                WHERE embedding IS NOT NULL
+                WHERE is_synthetic = FALSE
+                  AND embedding IS NOT NULL
             ),
             fts AS (
                 SELECT article_id,
@@ -253,7 +255,8 @@ async def semantic_search(
                            plainto_tsquery('english', :query)
                        ) AS fts_score
                 FROM articles
-                WHERE to_tsvector('english', title || ' ' || COALESCE(excerpt, ''))
+                WHERE is_synthetic = FALSE
+                  AND to_tsvector('english', title || ' ' || COALESCE(excerpt, ''))
                       @@ plainto_tsquery('english', :query)
             )
             SELECT
@@ -269,7 +272,8 @@ async def semantic_search(
             FROM articles a
             LEFT JOIN semantic s ON a.article_id = s.article_id
             LEFT JOIN fts f ON a.article_id = f.article_id
-            WHERE (s.sem_score IS NOT NULL OR f.fts_score IS NOT NULL)
+            WHERE a.is_synthetic = FALSE
+              AND (s.sem_score IS NOT NULL OR f.fts_score IS NOT NULL)
         """
         params = {"embedding": vector_str, "query": request.query, "limit": request.limit}
 
@@ -296,7 +300,8 @@ async def semantic_search(
                     plainto_tsquery('english', :query)
                 ) as relevance
             FROM articles a
-            WHERE to_tsvector('english', a.title || ' ' || COALESCE(a.excerpt, ''))
+            WHERE a.is_synthetic = FALSE
+              AND to_tsvector('english', a.title || ' ' || COALESCE(a.excerpt, ''))
                   @@ plainto_tsquery('english', :query)
         """
         params = {"query": request.query, "limit": request.limit}
@@ -523,7 +528,8 @@ async def get_search_suggestions(
             """
             SELECT tag, COUNT(*) as count
             FROM articles, UNNEST(tags) as tag
-            WHERE tag ILIKE :pattern
+            WHERE is_synthetic = FALSE
+              AND tag ILIKE :pattern
             GROUP BY tag
             ORDER BY count DESC
             LIMIT :limit
@@ -544,7 +550,8 @@ async def get_search_suggestions(
             """
             SELECT country_code, COUNT(*) as count
             FROM articles
-            WHERE country_code ILIKE :pattern
+            WHERE is_synthetic = FALSE
+              AND country_code ILIKE :pattern
             GROUP BY country_code
             ORDER BY count DESC
             LIMIT :limit
@@ -566,7 +573,8 @@ async def get_search_suggestions(
             """
             SELECT source_name, COUNT(*) as count
             FROM articles
-            WHERE source_name ILIKE :pattern
+            WHERE is_synthetic = FALSE
+              AND source_name ILIKE :pattern
             GROUP BY source_name
             ORDER BY count DESC
             LIMIT :limit

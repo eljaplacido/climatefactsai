@@ -27,7 +27,18 @@ class SchedulerJobRequest(BaseModel):
 
 
 def _verify_scheduler_secret(secret: Optional[str]) -> None:
-    """Require SCHEDULER_SECRET if one is configured."""
+    """Require SCHEDULER_SECRET — fail closed in production.
+
+    Was previously a no-op when the env var was empty (any unset deploy
+    leaked the /api/scheduler/* endpoints publicly). Now if ENVIRONMENT
+    is production and SCHEDULER_SECRET is not set, refuse to serve.
+    """
+    env = (os.getenv("ENVIRONMENT") or os.getenv("ENV") or "").lower()
+    if env in {"prod", "production"} and not SCHEDULER_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="SCHEDULER_SECRET must be configured in production",
+        )
     if SCHEDULER_SECRET and secret != SCHEDULER_SECRET:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -70,8 +81,8 @@ async def scheduled_discover_articles(
         return {"status": "queued", "task": "discover_articles"}
 
     except ImportError as exc:
-        logger.warning(f"Celery task module not available, skipping: {exc}")
-        return {"status": "skipped", "reason": "task_module_unavailable"}
+        logger.error(f"Celery task module not available: {exc}")
+        raise HTTPException(status_code=503, detail={"status": "error", "reason": "task_module_unavailable", "error": str(exc)})
 
 
 @router.post("/ingestion/rss")
@@ -88,8 +99,12 @@ async def scheduled_rss_ingestion(
         background_tasks.add_task(poll_rss_feeds)
         return {"status": "queued", "task": "poll_rss_feeds"}
 
-    except ImportError:
-        return {"status": "skipped", "reason": "task_module_unavailable"}
+    except ImportError as exc:
+        # Surface this as a real error so Cloud Scheduler doesn't report green
+        # on a non-functional pipeline. Was previously a silent 200/"skipped"
+        # which masked deployment regressions.
+        logger.error(f"Scheduler task module unavailable: {exc}")
+        raise HTTPException(status_code=503, detail={"status": "error", "reason": "task_module_unavailable", "error": str(exc)})
 
 
 # =============================================================================
@@ -110,8 +125,12 @@ async def scheduled_verify_pending(
         background_tasks.add_task(auto_verify_pending_articles)
         return {"status": "queued", "task": "auto_verify_pending_articles"}
 
-    except ImportError:
-        return {"status": "skipped", "reason": "task_module_unavailable"}
+    except ImportError as exc:
+        # Surface this as a real error so Cloud Scheduler doesn't report green
+        # on a non-functional pipeline. Was previously a silent 200/"skipped"
+        # which masked deployment regressions.
+        logger.error(f"Scheduler task module unavailable: {exc}")
+        raise HTTPException(status_code=503, detail={"status": "error", "reason": "task_module_unavailable", "error": str(exc)})
 
 
 @router.post("/processing/retry-failed")
@@ -128,8 +147,12 @@ async def scheduled_retry_failed(
         background_tasks.add_task(retry_failed_verifications)
         return {"status": "queued", "task": "retry_failed_verifications"}
 
-    except ImportError:
-        return {"status": "skipped", "reason": "task_module_unavailable"}
+    except ImportError as exc:
+        # Surface this as a real error so Cloud Scheduler doesn't report green
+        # on a non-functional pipeline. Was previously a silent 200/"skipped"
+        # which masked deployment regressions.
+        logger.error(f"Scheduler task module unavailable: {exc}")
+        raise HTTPException(status_code=503, detail={"status": "error", "reason": "task_module_unavailable", "error": str(exc)})
 
 
 # =============================================================================
@@ -150,8 +173,12 @@ async def scheduled_feed_updates(
         background_tasks.add_task(update_user_feeds)
         return {"status": "queued", "task": "update_user_feeds"}
 
-    except ImportError:
-        return {"status": "skipped", "reason": "task_module_unavailable"}
+    except ImportError as exc:
+        # Surface this as a real error so Cloud Scheduler doesn't report green
+        # on a non-functional pipeline. Was previously a silent 200/"skipped"
+        # which masked deployment regressions.
+        logger.error(f"Scheduler task module unavailable: {exc}")
+        raise HTTPException(status_code=503, detail={"status": "error", "reason": "task_module_unavailable", "error": str(exc)})
 
 
 @router.post("/translation/batch")
@@ -168,8 +195,12 @@ async def scheduled_batch_translate(
         background_tasks.add_task(batch_translate_recent)
         return {"status": "queued", "task": "batch_translate_recent"}
 
-    except ImportError:
-        return {"status": "skipped", "reason": "task_module_unavailable"}
+    except ImportError as exc:
+        # Surface this as a real error so Cloud Scheduler doesn't report green
+        # on a non-functional pipeline. Was previously a silent 200/"skipped"
+        # which masked deployment regressions.
+        logger.error(f"Scheduler task module unavailable: {exc}")
+        raise HTTPException(status_code=503, detail={"status": "error", "reason": "task_module_unavailable", "error": str(exc)})
 
 
 # =============================================================================

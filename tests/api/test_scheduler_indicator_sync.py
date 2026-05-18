@@ -69,6 +69,23 @@ def _restore_db(prior):
 # ---------------------------------------------------------------------------
 
 class TestIndicatorSyncEndpoint:
+    @pytest.fixture(autouse=True)
+    def _disable_scheduler_secret(self, monkeypatch):
+        """The scheduler_routes module caches SCHEDULER_SECRET at import time,
+        so monkeypatch.delenv on the env var has no effect. Patch the module
+        global directly to "" for each test, restoring the prior value after.
+        Required because the dev .env now ships a real SCHEDULER_SECRET (the
+        2026-05-18 fail-closed hardening) which would otherwise make every
+        unauthenticated request 403 instead of reaching the route logic.
+        """
+        from api import scheduler_routes
+        prior = scheduler_routes.SCHEDULER_SECRET
+        scheduler_routes.SCHEDULER_SECRET = ""
+        try:
+            yield
+        finally:
+            scheduler_routes.SCHEDULER_SECRET = prior
+
     def test_unknown_source_returns_400(self, monkeypatch):
         monkeypatch.delenv("SCHEDULER_SECRET", raising=False)
         r = client.post("/api/scheduler/indicators/sync?source=made-up")

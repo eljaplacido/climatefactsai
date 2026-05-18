@@ -212,6 +212,7 @@ def _get_pipeline_status(db) -> PipelineStatus:
                 EXTRACT(EPOCH FROM (claims_processed_at - created_at)) / 3600.0
             ) FILTER (WHERE claims_processed_at IS NOT NULL) AS avg_processing_hours
         FROM articles
+        WHERE is_synthetic = FALSE
         """,
         {},
     )
@@ -310,7 +311,7 @@ def _get_top_sources(db, limit: int = 10, sort_by: str = "total_articles") -> Li
             FROM articles a
             LEFT JOIN claims c ON c.article_id = a.article_id
             LEFT JOIN fact_checks fc ON fc.claim_id = c.claim_id
-            WHERE a.source_name IS NOT NULL AND a.source_name != ''
+            WHERE a.is_synthetic = FALSE AND a.source_name IS NOT NULL AND a.source_name != ''
             GROUP BY a.source_name
             HAVING COUNT(DISTINCT a.article_id) >= 1
         )
@@ -393,7 +394,7 @@ def _get_country_stats(db, limit: int = 15) -> List[CountryArticleStats]:
         LEFT JOIN countries c ON c.country_code = a.country_code
         LEFT JOIN claims cl ON cl.article_id = a.article_id
         LEFT JOIN fact_checks fc ON fc.claim_id = cl.claim_id
-        WHERE a.country_code IS NOT NULL
+        WHERE a.is_synthetic = FALSE AND a.country_code IS NOT NULL
         GROUP BY a.country_code, c.country_name
         ORDER BY article_count DESC
         LIMIT :limit

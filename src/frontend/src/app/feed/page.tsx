@@ -6,50 +6,28 @@ import { RefreshCw, Globe, Clock, ChevronDown, Search, Loader2, AlertCircle } fr
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5400'
 
-// Available countries for selection — global coverage
-const AVAILABLE_COUNTRIES = [
-  // Europe
+// Fallback country list used only if /api/countries fails. The real list is
+// loaded dynamically below — keeping the 198-country reference catalogue
+// as the source of truth instead of a hard-coded 33-country UI fixture.
+const FALLBACK_COUNTRIES = [
   { code: 'FI', name: 'Finland', flag: '\u{1F1EB}\u{1F1EE}' },
   { code: 'SE', name: 'Sweden', flag: '\u{1F1F8}\u{1F1EA}' },
-  { code: 'NO', name: 'Norway', flag: '\u{1F1F3}\u{1F1F4}' },
-  { code: 'DK', name: 'Denmark', flag: '\u{1F1E9}\u{1F1F0}' },
   { code: 'DE', name: 'Germany', flag: '\u{1F1E9}\u{1F1EA}' },
-  { code: 'FR', name: 'France', flag: '\u{1F1EB}\u{1F1F7}' },
-  { code: 'NL', name: 'Netherlands', flag: '\u{1F1F3}\u{1F1F1}' },
-  { code: 'ES', name: 'Spain', flag: '\u{1F1EA}\u{1F1F8}' },
-  { code: 'IT', name: 'Italy', flag: '\u{1F1EE}\u{1F1F9}' },
-  { code: 'PL', name: 'Poland', flag: '\u{1F1F5}\u{1F1F1}' },
   { code: 'GB', name: 'United Kingdom', flag: '\u{1F1EC}\u{1F1E7}' },
-  // North America
   { code: 'US', name: 'United States', flag: '\u{1F1FA}\u{1F1F8}' },
-  { code: 'CA', name: 'Canada', flag: '\u{1F1E8}\u{1F1E6}' },
-  { code: 'MX', name: 'Mexico', flag: '\u{1F1F2}\u{1F1FD}' },
-  // Latin America
-  { code: 'BR', name: 'Brazil', flag: '\u{1F1E7}\u{1F1F7}' },
-  { code: 'AR', name: 'Argentina', flag: '\u{1F1E6}\u{1F1F7}' },
-  { code: 'CO', name: 'Colombia', flag: '\u{1F1E8}\u{1F1F4}' },
-  { code: 'CL', name: 'Chile', flag: '\u{1F1E8}\u{1F1F1}' },
-  // Africa
-  { code: 'KE', name: 'Kenya', flag: '\u{1F1F0}\u{1F1EA}' },
-  { code: 'NG', name: 'Nigeria', flag: '\u{1F1F3}\u{1F1EC}' },
-  { code: 'ZA', name: 'South Africa', flag: '\u{1F1FF}\u{1F1E6}' },
-  { code: 'EG', name: 'Egypt', flag: '\u{1F1EA}\u{1F1EC}' },
-  { code: 'GH', name: 'Ghana', flag: '\u{1F1EC}\u{1F1ED}' },
-  // Asia & Oceania
-  { code: 'CN', name: 'China', flag: '\u{1F1E8}\u{1F1F3}' },
-  { code: 'IN', name: 'India', flag: '\u{1F1EE}\u{1F1F3}' },
-  { code: 'JP', name: 'Japan', flag: '\u{1F1EF}\u{1F1F5}' },
-  { code: 'AU', name: 'Australia', flag: '\u{1F1E6}\u{1F1FA}' },
-  { code: 'ID', name: 'Indonesia', flag: '\u{1F1EE}\u{1F1E9}' },
-  { code: 'SG', name: 'Singapore', flag: '\u{1F1F8}\u{1F1EC}' },
-  // Middle East
-  { code: 'AE', name: 'UAE', flag: '\u{1F1E6}\u{1F1EA}' },
-  { code: 'SA', name: 'Saudi Arabia', flag: '\u{1F1F8}\u{1F1E6}' },
-  { code: 'IL', name: 'Israel', flag: '\u{1F1EE}\u{1F1F1}' },
-  { code: 'QA', name: 'Qatar', flag: '\u{1F1F6}\u{1F1E6}' },
-  // International
   { code: 'XX', name: 'International', flag: '\u{1F30D}' },
 ]
+
+// Convert an ISO alpha-2 code to a regional indicator flag emoji.
+// "FI" -> 🇫🇮. Returns the globe emoji for non-ISO codes like "XX".
+function countryCodeToFlag(code: string): string {
+  if (!code || code.length !== 2 || code === 'XX') return '\u{1F30D}'
+  const A = 0x1F1E6
+  const c0 = code.toUpperCase().charCodeAt(0)
+  const c1 = code.toUpperCase().charCodeAt(1)
+  if (c0 < 65 || c0 > 90 || c1 < 65 || c1 > 90) return '\u{1F30D}'
+  return String.fromCodePoint(A + (c0 - 65)) + String.fromCodePoint(A + (c1 - 65))
+}
 
 interface FeedStatus {
   country_code: string
@@ -90,6 +68,27 @@ export default function FeedPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [availableCountries, setAvailableCountries] =
+    useState<Array<{ code: string; name: string; flag: string }>>(FALLBACK_COUNTRIES)
+
+  // Pull the 198-country reference catalogue from /api/countries on mount.
+  // /feed used to advertise "personalised global climate news" but ship only
+  // 33 hardcoded options — this aligns the UI with the platform's actual coverage.
+  useEffect(() => {
+    fetch(`${API_URL}/api/countries`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: Array<{ country_code: string; country_name: string; flag_emoji?: string }>) => {
+        if (!Array.isArray(rows) || rows.length === 0) return
+        setAvailableCountries(
+          rows.map((r) => ({
+            code: r.country_code,
+            name: r.country_name,
+            flag: r.flag_emoji || countryCodeToFlag(r.country_code),
+          }))
+        )
+      })
+      .catch(() => {/* leave fallback list in place */})
+  }, [])
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('clilens_token') : null
 
@@ -242,7 +241,7 @@ export default function FeedPage() {
           Select which countries to track. Limit depends on your subscription tier.
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {AVAILABLE_COUNTRIES.map(c => (
+          {availableCountries.map(c => (
             <button
               key={c.code}
               onClick={() => toggleCountry(c.code)}
@@ -361,7 +360,7 @@ export default function FeedPage() {
           </h2>
           <div className="divide-y divide-gray-100">
             {feedStatus.map(s => {
-              const country = AVAILABLE_COUNTRIES.find(c => c.code === s.country_code)
+              const country = availableCountries.find(c => c.code === s.country_code)
               return (
                 <div key={s.country_code} className="flex items-center justify-between py-3">
                   <div className="flex items-center gap-2">

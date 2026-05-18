@@ -260,7 +260,7 @@ async def export_article_pdf(
             a.extracted_text, a.excerpt, a.country_code,
             a.reliability_score, a.overall_credibility
         FROM articles a
-        WHERE a.article_id = :article_id
+        WHERE a.article_id = :article_id AND a.is_synthetic = FALSE
         """,
         {"article_id": article_id}
     )
@@ -356,7 +356,7 @@ async def export_search_csv(
             article_id, title, source_name, published_at, country_code,
             overall_credibility, reliability_score, source_url
         FROM articles
-        WHERE 1=1
+        WHERE is_synthetic = FALSE
     """
     params = {}
 

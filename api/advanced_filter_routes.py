@@ -59,7 +59,7 @@ async def filter_articles(request: FilteredArticleRequest):
     """Advanced multi-criteria article filtering."""
     db = get_postgres()
 
-    conditions = ["1=1"]
+    conditions = ["1=1", "a.is_synthetic = FALSE"]
     params: Dict[str, Any] = {"limit": request.limit, "offset": request.offset}
 
     if request.countries:
@@ -169,7 +169,7 @@ async def explore_topics(country: Optional[str] = None, limit: int = Query(defau
             SELECT tag, COUNT(*) as article_count, AVG(a.reliability_score) as avg_score,
                    MAX(a.created_at) as latest
             FROM articles a, UNNEST(a.tags) as tag
-            WHERE a.tags IS NOT NULL {country_filter}
+            WHERE a.is_synthetic = FALSE AND a.tags IS NOT NULL {country_filter}
             GROUP BY tag ORDER BY article_count DESC LIMIT :limit
         """, params)
 
@@ -188,7 +188,7 @@ async def explore_topics(country: Optional[str] = None, limit: int = Query(defau
 async def explore_sources(country: Optional[str] = None, limit: int = Query(default=50, le=200)):
     """Get all sources with article counts and credibility scores."""
     db = get_postgres()
-    conditions = []
+    conditions = ["a.is_synthetic = FALSE"]
     params: Dict[str, Any] = {"limit": limit}
     if country:
         conditions.append("a.country_code = :cc")
@@ -224,7 +224,7 @@ async def get_article_trends(request: TimeSeriesRequest):
     granularity_map = {"daily": "day", "weekly": "week", "monthly": "month"}
     trunc = granularity_map.get(request.granularity, "day")
 
-    conditions = [f"a.created_at >= NOW() - interval '{request.days} days'"]
+    conditions = [f"a.created_at >= NOW() - interval '{request.days} days'", "a.is_synthetic = FALSE"]
     params: Dict[str, Any] = {}
 
     if request.country_code:
@@ -321,7 +321,7 @@ async def get_data_coverage():
                    COALESCE(ac.cnt, 0) as article_count, ac.latest
             FROM countries c LEFT JOIN (
                 SELECT country_code, COUNT(*) as cnt, MAX(created_at) as latest
-                FROM articles GROUP BY country_code
+                FROM articles WHERE is_synthetic = FALSE GROUP BY country_code
             ) ac ON ac.country_code = c.country_code
             ORDER BY COALESCE(ac.cnt, 0) DESC
         """)
@@ -330,6 +330,7 @@ async def get_data_coverage():
             SELECT COUNT(*) as total_articles, COUNT(DISTINCT country_code) as countries_covered,
                    COUNT(DISTINCT source_name) as sources_active, AVG(reliability_score) as avg_score
             FROM articles
+            WHERE is_synthetic = FALSE
         """)
 
         return {

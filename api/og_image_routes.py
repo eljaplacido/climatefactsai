@@ -130,7 +130,7 @@ async def get_og_image(article_id: str):
     db = get_postgres()
     rows = db.execute_query(
         """SELECT title, reliability_score, source_name, content_category
-           FROM articles WHERE article_id = :id""",
+           FROM articles WHERE article_id = :id AND is_synthetic = FALSE""",
         {"id": article_id},
     )
 

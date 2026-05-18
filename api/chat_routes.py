@@ -388,7 +388,8 @@ def _extract_countries_from_sources(db, sources: List[ChatSource]) -> List[str]:
         f"""SELECT DISTINCT country_code
             FROM articles
             WHERE article_id IN ({placeholders})
-              AND country_code IS NOT NULL""",
+              AND country_code IS NOT NULL
+              AND is_synthetic = FALSE""",
         params,
     )
     return [r["country_code"] for r in (rows or []) if r.get("country_code")]
@@ -419,7 +420,8 @@ def _search_relevant_articles(
                        plainto_tsquery('english', :q)
                    ) AS relevance
             FROM articles a
-            WHERE to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'') || ' ' || COALESCE(a.extracted_text,''))
+            WHERE a.is_synthetic = FALSE
+              AND to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'') || ' ' || COALESCE(a.extracted_text,''))
                   @@ plainto_tsquery('english', :q)
             {where_extra}
             ORDER BY relevance DESC
@@ -442,7 +444,7 @@ def _search_relevant_articles(
                 f"""SELECT a.article_id, a.title, a.source_name, a.overall_credibility,
                            0.15 AS relevance
                     FROM articles a
-                    WHERE ({ilike_parts})
+                    WHERE a.is_synthetic = FALSE AND ({ilike_parts})
                     ORDER BY a.published_date DESC NULLS LAST LIMIT :limit""",
                 ilike_params,
             )
@@ -453,7 +455,7 @@ def _search_relevant_articles(
             f"""SELECT a.article_id, a.title, a.source_name, a.overall_credibility,
                        0.1 AS relevance
                 FROM articles a
-                WHERE a.claims_status = 'completed'
+                WHERE a.is_synthetic = FALSE AND a.claims_status = 'completed'
                 {where_extra}
                 ORDER BY a.created_at DESC LIMIT 5""",
             params,
@@ -486,7 +488,8 @@ def _build_multi_article_context(db, sources: List[ChatSource]) -> str:
                    a.overall_credibility, a.insight_summary,
                    a.claims_status, a.claims_error_message
             FROM articles a
-            WHERE a.article_id IN ({placeholders})""",
+            WHERE a.article_id IN ({placeholders})
+              AND a.is_synthetic = FALSE""",
         params,
     )
 
@@ -553,7 +556,7 @@ def _get_platform_metrics(db) -> dict:
     try:
         country_rows = db.execute_query(
             "SELECT COUNT(DISTINCT country_code) AS c FROM articles "
-            "WHERE country_code IS NOT NULL AND country_code <> ''"
+            "WHERE country_code IS NOT NULL AND country_code <> '' AND is_synthetic = FALSE"
         )
         if country_rows:
             metrics["country_count"] = int(country_rows[0].get("c") or 0)
@@ -563,7 +566,7 @@ def _get_platform_metrics(db) -> dict:
     try:
         source_rows = db.execute_query(
             "SELECT COUNT(DISTINCT source_name) AS c FROM articles "
-            "WHERE source_name IS NOT NULL AND source_name <> ''"
+            "WHERE source_name IS NOT NULL AND source_name <> '' AND is_synthetic = FALSE"
         )
         if source_rows:
             metrics["source_count"] = int(source_rows[0].get("c") or 0)
@@ -616,7 +619,7 @@ def _hydrate_view_context(db, view_context: Optional[dict]) -> dict:
                           overall_credibility, content_category, claims_status,
                           COALESCE(insight_summary, '') AS insight_summary,
                           SUBSTRING(COALESCE(extracted_text, excerpt, '') FROM 1 FOR 1500) AS body_preview
-                   FROM articles WHERE article_id = :id LIMIT 1""",
+                   FROM articles WHERE article_id = :id AND is_synthetic = FALSE LIMIT 1""",
                 {"id": article_id},
             )
             if rows:
@@ -648,7 +651,7 @@ def _hydrate_view_context(db, view_context: Optional[dict]) -> dict:
                           COUNT(*) FILTER (WHERE overall_credibility='HIGH') AS high_cred_articles,
                           MAX(published_date) AS latest_published
                    FROM articles
-                   WHERE country_code = :cc
+                   WHERE country_code = :cc AND is_synthetic = FALSE
                    GROUP BY country_code""",
                 {"cc": cc},
             )
@@ -729,7 +732,7 @@ def _hydrate_view_context(db, view_context: Optional[dict]) -> dict:
                 """SELECT source_name, COUNT(*) AS article_count,
                           COUNT(DISTINCT country_code) AS country_count,
                           AVG(reliability_score) AS avg_reliability
-                   FROM articles WHERE source_name = :name
+                   FROM articles WHERE source_name = :name AND is_synthetic = FALSE
                    GROUP BY source_name LIMIT 1""",
                 {"name": source_id},
             )

@@ -265,7 +265,8 @@ async def get_country_green_profile(
             SELECT content_category, COUNT(*) as cnt,
                    MAX(published_date) as latest
             FROM articles
-            WHERE country_code = :cc AND content_category IS NOT NULL
+            WHERE is_synthetic = FALSE
+              AND country_code = :cc AND content_category IS NOT NULL
             GROUP BY content_category
         """, {"cc": cc})
 
@@ -283,7 +284,8 @@ async def get_country_green_profile(
             tags_rows = db.execute_query("""
                 SELECT UNNEST(tags) as tag, COUNT(*) as cnt
                 FROM articles
-                WHERE country_code = :cc AND content_category = :dim AND tags IS NOT NULL
+                WHERE is_synthetic = FALSE
+                  AND country_code = :cc AND content_category = :dim AND tags IS NOT NULL
                 GROUP BY tag ORDER BY cnt DESC LIMIT 4
             """, {"cc": cc, "dim": dim})
             top_tags = [r["tag"] for r in (tags_rows or [])]
@@ -305,7 +307,8 @@ async def get_country_green_profile(
         src_rows = db.execute_query("""
             SELECT source_name, COUNT(*) as cnt
             FROM articles
-            WHERE country_code = :cc
+            WHERE is_synthetic = FALSE
+              AND country_code = :cc
               AND content_category = ANY(:dims)
               AND source_name IS NOT NULL
             GROUP BY source_name ORDER BY cnt DESC LIMIT 5
@@ -387,7 +390,8 @@ async def get_green_leaderboard(
                    a.content_category,
                    COUNT(*) as cnt
             FROM articles a
-            WHERE a.content_category = ANY(:dims)
+            WHERE a.is_synthetic = FALSE
+              AND a.content_category = ANY(:dims)
               AND a.country_code IS NOT NULL
               {country_filter}
             GROUP BY a.country_code, a.content_category
@@ -469,7 +473,8 @@ async def compare_green_profiles(
             cat_rows = db.execute_query("""
                 SELECT content_category, COUNT(*) as cnt
                 FROM articles
-                WHERE country_code = :cc AND content_category = ANY(:dims)
+                WHERE is_synthetic = FALSE
+                  AND country_code = :cc AND content_category = ANY(:dims)
                 GROUP BY content_category
             """, {"cc": cc, "dims": DIMENSIONS})
 

@@ -135,7 +135,16 @@ def _insert_discovered_articles(
                     "url": url,
                     "source_name": article.get("source_name") or article.get("source", "Unknown"),
                     "excerpt": (article.get("summary") or article.get("excerpt") or "")[:500],
-                    "extracted_text": article.get("summary") or article.get("excerpt") or article.get("content") or title,
+                    # Prefer article.extracted_text (set by rss_adapter._fetch_and_extract_article_body
+                    # to the real article body). Fall back through content/summary/excerpt/title for
+                    # sources that don't go through RSS extraction.
+                    "extracted_text": (
+                        article.get("extracted_text")
+                        or article.get("content")
+                        or article.get("summary")
+                        or article.get("excerpt")
+                        or title
+                    ),
                     "country_code": article.get("country_code", country_code),
                     "published_date": article.get("published_date", datetime.utcnow()),
                     "content_category": article.get("content_category"),

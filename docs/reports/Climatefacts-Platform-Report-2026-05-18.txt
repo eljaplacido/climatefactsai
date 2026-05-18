@@ -1,0 +1,717 @@
+Climatefacts.ai — Platform Report (2026-05-18) 
+
+Climatefacts.ai 
+Platform Vision, Architecture, Agentic Capabilities, Data & Semantic Layer, and Forward Roadmap 
+
+Report date: 18 May 2026 
+Codebase reference: branch main — latest commit edb0a23  |  rebrand commit 1b96d3a 
+Owner: CISU Regen ( cisuregen.com ) 
+Audience: product leadership, engineering, partners, auditors 
+
+Contents 
+
+Executive Summary 
+Solution Vision 
+Feature Inventory (what the platform does today) 
+System Architecture 
+Agentic Features & AI Pipeline 
+Data & Semantic Layer 
+Truth-Machine Grading (current honest score) 
+Development Roadmap — Now / What is Left 
+Deployment & Operations Status 
+Known Gaps, Risks, and Recommendations 
+Glossary & Reference 
+
+1. Executive Summary 
+
+Climatefacts.ai (formerly CliLens.AI ; rebrand finalised 2026-05-17, commit 1b96d3a ) is a production-grade,
+domain-driven, full-stack climate intelligence platform. It is owned and stewarded by CISU Regen ,
+whose mission is to “develop regenerative and resilient economies, organisations, and communities of the future.”
+The platform’s tagline — “Trust as a Service” — reflects its core promise: every claim ships with
+evidence trails, transparent prompts, calibrated confidence, and per-LLM-call provenance. 
+
+The platform has progressed through five visible phases of work since early 2026: 
+
+Phase 1 — Resolve known issues (mock-data purge, schema fixes, Vitest baseline). Complete. 
+Phase 2 — Architecture decision (Kafka removed; Celery + Redis adopted; 7-container compose). Complete. 
+Phase 3 — EU expansion and global RSS ingestion (215 feeds, 8 regions, 198 reference countries). Complete. 
+Phase 4 — “Truth-machine” uplift: provenance, calibration, multi-LLM verification, drift, public methodology, compliance docs. Complete. 
+Phase 5 — Cloud cut-over on GCP project climatenews-495412 (region europe-west4 ). In progress. 
+
+The 2026-05-16 → 2026-05-17 push delivered 32 commits that lifted the platform’s self-reported
+“truth-machine” composite from 2.2/5 (pre-audit) to a claimed ~4.78/5 .
+A subsequent independent analytical audit (2026-05-18, see docs/audits/2026-05-18-analytical-audit.md )
+reduces the honestly-defensible composite to ~3.6/5 with concrete, actionable gaps
+(see §7 and §10). Both numbers are surfaced in this report to keep the picture truthful for auditors. 
+
+Headline state (2026-05-18). Climatefacts.ai is functionally a complete climate-news verification platform —
+ingestion, search, map, deep-search, URL analysis, agentic chat, dashboards, subscriptions, OAuth, methodology surfaces and
+admin tooling all operate end-to-end. Six external indicator adapters (Climate TRACE, OWID, Climate Action Tracker, UNFCCC NDC,
+IRENA, ND-GAIN) feed the sustainability score. Two pre-existing data-integrity gaps surfaced in the latest enrichment work
+(3,588 synthetic seed articles — now flagged via migration 025; and RSS ingestion currently persisting summaries instead of
+full article bodies) are the most material credibility risks before launch.
+
+2. Solution Vision 
+
+2.1 Mission statement 
+Climatefacts.ai is a global climate communication and truth-verification platform. Anyone, anywhere, in any language,
+can obtain fact-checked climate news from their region, accompanied by transparent credibility scoring, country-level
+sustainability context, and (in the planned final state) ready-to-share short-form video produced from the same evidence. 
+
+2.2 Strategic positioning 
+
+From localised news service → global communication platform. The original MVP framed itself as a
+Finnish climate-news site; the current architecture, feeds and data adapters span 87+ ISO countries today and 198
+country surfaces in the UI (with depth growing as ingestion runs land). 
+From article aggregator → trust infrastructure. The platform deliberately operates as a
+“truth machine”: every analytical output (claim verdict, sustainability score, chat answer, deep-search synthesis)
+records its prompt, its model, its retrieval strategy, its source IDs, and its hallucination risk score in the
+claim_provenance table, and exposes them at /api/methodology/audit-trail/… and on the public
+/methodology page. 
+From single product → partner-ready platform. The methodology surface, OAuth (Google + Microsoft),
+subscription tiers, API keys and rate-limited endpoints are all built so the same data and models can be embedded
+in partner workflows. 
+
+2.3 Audience and tiers 
+
+Audience Use case Subscription tier 
+Citizens & journalists Read fact-checked climate news; check a URL; explore country views. Freemium 
+Researchers & analysts Deep-search, methodology drawer, sustainability comparisons, audit trails. Basic / Professional 
+Newsrooms & NGOs Bulk analysis, saved queries, scheduled re-runs, API keys. Professional 
+Governments & partners Embedded API, white-label methodology surface, custom calibration labels. Enterprise 
+
+2.4 Long-horizon vision (preserved from docs/VISION_GLOBAL_CLIMATE_PLATFORM.md ) 
+The roadmap envisions an end-to-end production pipeline where users can pick any country on a world map and instantly
+receive (i) localised, translated, fact-checked articles, (ii) interactive credibility & sustainability dashboards, and
+(iii) auto-produced 15–60 s vertical videos for TikTok / Reels / YouTube Shorts. The current build delivers (i) and (ii)
+in depth; (iii) remains a planned future phase (Video Production Pipeline — see §8). 
+
+3. Feature Inventory 
+
+The platform exposes 50+ REST endpoints across 37 route modules in api/ and the corresponding
+Next.js 14 App-Router pages in src/frontend/src/app/ . The matrix below reflects the audited functional state
+(see docs/audits/2026-05-18-functional-audit.md — every endpoint listed there resolves to a real DB query
+or live service, with graceful degradation when an external dependency is unavailable). 
+
+3.1 News & content discovery 
+
+198-country reference catalogue — live coverage scales with ingestion; current local DB holds ~666 real
+articles plus 3,588 synthetic seed rows (now flagged via migration 025_articles_is_synthetic.sql ). 
+RSS ingestion across ~156 feeds in 87 distinct ISO alpha-2 countries (Europe 70, NA 20, Africa 25,
+LATAM 20, Asia/Oceania 29, ME 17, Global/International 19, Research/Industry 15). 
+Document ingestion — PDF / DOCX / TXT / MD / HTML upload via POST /api/articles/ingest/upload 
+and arbitrary URL ingestion via POST /api/articles/ingest . 
+Article detail with claims tab, fact-check tab, evidence chain, similar articles, infographic generator,
+open-graph image generator, re-analyse trigger, and grounded article-level Q&A
+( POST /api/articles/{id}/ask ). 
+Search — multilingual Postgres FTS (migration 018) with pgvector semantic fallback to OpenAI ada-002
+embeddings; FTS used as a graceful fallback when embeddings are unavailable. 
+Categories, tags and themes — populated automatically by an editorial-gate classifier; theme registry
+surfaced at GET /api/map/available-themes . 
+
+3.2 Climate intelligence map 
+
+Interactive world map with country-stat, discussed-country-stat, topic-density and source-coverage layers. 
+Agentic map query ( POST /api/map/query ) — natural-language or structured intent →
+country highlight set. 
+Country drill-down with article count, sustainability score, climate-risk overlay, temperature anomalies,
+compare mode (multiple countries side-by-side), and timeline of coverage. 
+Filterable by source, theme, reliability band, region; CTAs for “Suggest a source”
+for under-covered countries. 
+
+3.3 Deep search (Perplexity-style) 
+
+Synthesised answers grounded in the internal corpus plus optional external retrieval via Perplexity;
+see api/deep_search_routes.py ( /api/deep-search , /api/deep-search/compare ,
+/api/deep-search/weather-context , /api/deep-search/intelligence-brief ,
+/api/deep-search/weather-location ). 
+HallucinationDetector grading every synthesis (entity + statistic + LLM-grounding triplet). 
+Provenance recorded against deep_search_session_id in claim_provenance (migration 023). 
+
+3.4 URL analysis (truth-machine on a single article) 
+
+Pipeline: ingest URL → extract claims (DeepSeek primary, Anthropic secondary for cross-verification) →
+multi-LLM agreement scoring → HallucinationDetector grounding → calibrated reliability score →
+surfaced in UrlAnalysisDetail with the full methodology block. 
+SSRF + replay hardening (commit 4b371cb ), URL job-token, redirect re-validation. 
+Re-analyse path with structured failure reasons. 
+
+3.5 Green transition / sustainability 
+
+Country green profile — /api/green-transition/country/{cc} returns the sustainability score,
+its components (renewable share, inverted per-capita emissions, CAT policy rating), the legacy coverage_index, the
+score basis caveat, the indicators_used count and the confidence band. 
+Leaderboard — /api/green-transition/leaderboard . 
+Side-by-side compare across multiple countries — /api/green-transition/compare . 
+
+3.6 Methodology & trust surface 
+
+Public /methodology page surfacing live prompt registry, formula, indicator catalogue,
+calibration metrics, per-source hallucination rates, drift verdicts and compliance documents. 
+Backend — /api/methodology , /api/methodology/prompts ,
+/api/methodology/sustainability-formula , /api/methodology/indicators ,
+/api/methodology/calibration?signal=… , /api/methodology/hallucination-rates ,
+/api/methodology/audit-trail/{url-analysis|article|claim|deep-search}/{id} . 
+Drift detection — /api/drift/source-mix , /api/drift/prompt-fingerprints 
+(KL-divergence over Laplace-smoothed multinomials, thresholds 0.10 / 0.25 / 0.50 nats). 
+Calibration labels & refit — admin endpoints to feed reviewer ground truth and to refit the Platt
+scalers on demand; nightly Celery beat job nightly-calibration-refit at 03:00 UTC. 
+
+3.7 Forecasts, similarity, infographics, OG images 
+
+Forecasts — multi-source comparison ( api/forecast_routes.py ). 
+Similarity — pgvector + HNSW (migration 019) for related-article suggestions. 
+Infographics — api/infographic_routes.py generates shareable visuals per article. 
+Open-graph images — api/og_image_routes.py (the <meta property=og:image> hookup
+in page heads is still pending; see §10). 
+
+3.8 User accounts, billing & admin 
+
+JWT auth with stateful refresh tokens via the sessions table (migration 017), replay detection,
+revoke-on-password-change, /api/auth/logout . 
+OAuth Google (production-verified end-to-end on 2026-05-17) + Microsoft. 
+Subscriptions — Stripe webhooks, tier upgrades/downgrades, cancellation. 
+Bookmarks, saved queries, scheduled re-runs, user activity, API keys, exports, feed preferences. 
+Admin — trigger workflow, recent workflows, analytics dashboards (pipeline, sources, countries). 
+
+3.9 Compliance & security 
+
+Privacy Policy, Terms of Service, GDPR DPIA, Data Processing Inventory and Compliance README under
+docs/compliance/ (commit c8da977 ). 
+SSRF protection on URL fetch (incl. redirect chain re-validation), DOMPurify on user HTML, JWT secret rotation
+readiness, OAuth CSRF state, scheduler secret header, admin secret header. 
+Rate limiting (Redis-backed) and structured logging (structlog) plus distributed tracing through
+OpenTelemetry → Jaeger. 
+
+4. System Architecture 
+
+4.1 Topology 
+The default operational stack is docker-compose.simple.yml with seven services. The optional full stack
+( docker-compose.yml ) adds Kafka, Grafana, Prometheus and a microservice constellation; the Kafka path was
+formally retired during Phase 2 (ADR: docs/architecture/adr-kafka-to-redis-celery.md ) and is preserved only
+for legacy experimentation. 
+
++----------------+
+| Frontend | Next.js 14 (App Router) + TypeScript + Tailwind + Leaflet + Recharts
+| port 5300 |
++--------+-------+
+| HTTP/REST (JWT bearer; OAuth handoff via /auth/callback)
+v
++----------------+
+| API Server | FastAPI 0.109 + Python 3.11
+| port 5400 | 37 route modules under api/*.py
++--------+-------+
+|
++-----+-----+----------+
+v v v
++--------+ +-------+ +-------------+
+|Postgres| | Redis | | Celery | Worker + Beat
+| 5433 | | 5379 | | (async DAG) | ingestion / processing / nightly refit
+| +pgvec | | | +-----+-------+
++--------+ +-------+ |
+v
++-------+
+|Jaeger | OTLP traces (port 5686)
++-------+
+
+4.2 Domain-driven backend layout 
+The backend follows a domain-driven design (DDD) layout under src/backend/app/domains/ with three live
+domains and one placeholder: 
+
+content/ — article repository, RSS/document adapters, embedding service, category service,
+forecast service, weather-context service, source profiles, indicator adapters
+( indicators/{base,climate_trace,owid,climate_action_tracker,unfccc_ndc,irena,nd_gain}.py ),
+enrichment service, infographic generator. 
+intelligence/ — the “truth-machine” layer:
+llm_client.py , prompts.py (versioned registry),
+claim_classifier.py , cynefin_router.py , carf_integration.py (optional proxy),
+anthropic_claim_extractor.py , multi_llm_verifier.py , hallucination_detector.py ,
+weather_claim_validator.py , bayesian_credibility.py , weather_enriched_scoring.py ,
+sustainability_score.py , calibration.py + calibration_store.py ,
+provenance.py , drift_detection.py , hybrid_rag_service.py ,
+deep_search_service.py , conversation_engine.py , research_report_service.py ,
+cross_article_service.py , analysis_engine.py , graph_retriever.py ,
+evidence_retriever.py , semantic_query_service.py , transparency.py . 
+trust/ — trust ratings, schemas, services and repository for credibility tier management. 
+identity/ — placeholder for future user-identity work (currently empty). 
+
+4.3 Frontend layout 
+Next.js 14 App Router under src/frontend/src/app/ with 25+ routes:
+/ , /map , /search , /deep-search , /analyze ,
+/research , /sources , /suggest-source , /feed , /forecasts ,
+/methodology , /about , /articles/[id] , /articles/[id]/transparency ,
+/login , /signup , /forgot-password , /auth/callback ,
+/dashboard (with history, saved, subscription, settings sub-routes),
+/admin (with pipeline + analytics sub-routes), /submit . 
+Key components: ArticleCard , ArticleDetailTabs , ArticleQA ,
+AdvancedInsights , CredibilityGauge , ClaimCard ,
+ClaimCategoryBreakdown , CountrySelector , DecomposedConfidenceChart ,
+EvidenceChain , EvidenceTimeline , FactCheckBadge , FactCheckDetail ,
+MethodologyDrawer (consumes the new retrieval_strategy / prompts_used /
+HallucinationBlock fields), UrlAnalysisForm , WeatherContext ,
+ContextualAssistant / AgenticAssistant (the global chat panel), MapAgenticChat ,
+MapCountryPanel , SimilarArticles , SourceProfileCard . 
+
+4.4 Cross-cutting concerns 
+
+Concern Mechanism Module / File 
+Authentication JWT access + stateful refresh sessions api/auth_routes.py , api/auth_utils.py , migration 017 
+OAuth Google + Microsoft, CSRF state, email_verified gating api/oauth_routes.py 
+Rate limiting Redis-backed sliding window api/rate_limiter.py 
+Tracing OpenTelemetry → Jaeger (X-Request-ID propagation) api/observability_middleware.py 
+Logging Structlog with JSON output application-wide 
+Background work Celery worker + beat (ingestion, embedding, calibration refit, indicator sync) src/backend/app/tasks/* , celery_app.py 
+Email Transactional service for auth flows api/email_service.py 
+Scheduler HTTP-triggered /api/scheduler/… with X-Scheduler-Secret api/scheduler_routes.py 
+Compliance Privacy / ToS / DPIA / DPI docs surfaced from /methodology docs/compliance/ 
+
+5. Agentic Features & AI Pipeline 
+
+5.1 LLM stack 
+
+Role Provider / model Notes 
+Primary LLM (claim extraction, chat synthesis, deep search) DeepSeek ( deepseek-reasoner by default) Pinned in .env ; cheap-first preference per article_enrichment_service.py . 
+Secondary verifier (multi-LLM cross-check) Anthropic ( ANTHROPIC_MODEL env, default Claude) Used by anthropic_claim_extractor.py + multi_llm_verifier.py . 
+Embeddings OpenAI text-embedding-ada-002 HNSW index on article_embeddings (migration 019); FTS fallback if absent. 
+External web retrieval Perplexity Optional; deep-search degrades to internal-corpus-only without it. 
+Optional structured reasoning CARF (HTTP proxy) carf_integration.py ; falls back to CynefinRouter when unreachable. 
+
+5.2 The chat / contextual assistant 
+The global panel ( ContextualAssistant → AgenticAssistant ) is context-aware — the
+current view (route, article id, country, compare countries, analysis id, deep-search query) flows into
+view_context on every request. The panel dispatches to one of three backends depending on context: 
+
+POST /api/chat — general Q&A; HybridRAG (FTS + vector + knowledge graph) with Cynefin
+classification, view-context hydration and a HallucinationDetector grounding pass. 
+POST /api/map/query — map-mode; returns country_highlights for the map page state. 
+POST /api/articles/{id}/ask — single-article grounded Q&A on the active article only. 
+
+Honest current limit. The chat is conversational only . There is no tool-call / function-call protocol that
+lets the LLM act on the platform — it cannot trigger URL analysis, apply filters, bookmark articles, open a country
+panel, navigate to /methodology , run a deep search or write calibration labels.
+Adding any of those requires a structured actions: [{type, params, label}] payload from the backend and
+client-side dispatchers in AgenticAssistant . See §10, item 1 for the recommended action protocol.
+
+5.3 Truth-machine pipeline (per URL analysis) 
+
+Fetch — SSRF-hardened HTTP fetch with redirect re-validation; URL job-token issued for the run. 
+Cynefin classification — cynefin_router.py ports the projectcarfcynepic prompt; falls back
+to keyword classifier when CARF is offline. 
+Claim extraction — DeepSeek primary; Anthropic secondary (env-gated via
+CLILENS_MULTI_LLM_VERIFY=1 ). Both use the same versioned prompt
+( claim_extraction v1.0) from intelligence/prompts.py to isolate model divergence from
+prompt divergence. 
+Multi-LLM cross-verification — Jaccard token-set similarity ≥ 0.5 = corroborated; uncorroborated
+claims have confidence multiplied by 0.7; agreement_score recorded. 
+Hallucination check — entity overlap (0.30) + statistic accuracy (0.30) + LLM-grounding (0.40) composite
+against the article body; flagged segments persisted in claim_provenance.raw_metadata . 
+Calibration — raw reliability_score , agreement_score and (1− hallucination_score )
+are passed through Platt scalers fitted on labelled reviewer data;
+calibrated_reliability_score surfaces on the detail view when a fit exists. 
+Provenance — one row per LLM-producing step into claim_provenance with model + prompt name
++ version + SHA-256 fingerprint + retrieval strategy + source_article_ids + raw_metadata; auditable through
+/api/methodology/audit-trail/url-analysis/{id} . 
+
+5.4 Truth-machine pipeline (per deep-search session) 
+The same provenance + hallucination + Cynefin flow is applied to multi-source synthesis. Each session is keyed by
+deep_search_session_id (migration 023). Hallucination scoring runs against the union of titles/snippets
+returned by HybridRAG; methodology.hallucination_check is surfaced inline to the user. 
+
+5.5 Drift detection 
+intelligence/drift_detection.py implements two KL-divergence pipelines: 
+
+Source-mix drift — recent N days vs. baseline window; alerts when reliance on one publisher creeps up. 
+Prompt-fingerprint drift — detects silent prompt edits by comparing recent vs. baseline fingerprint
+distributions in claim_provenance . 
+
+Thresholds (0.10 / 0.25 / 0.50 nats) are hard-coded constants today. The audit (§7) flags this for per-deployment
+calibration. 
+
+5.6 Multi-agent coordination (development-time, not runtime) 
+The repository’s CLAUDE.md declares the SPARC methodology and Claude-Flow swarm orchestration patterns
+(specification → pseudocode → architecture → refinement → completion) plus 54 named agent roles. This is a
+development-workflow convention, not a runtime feature of the deployed application. The runtime system is a
+deterministic FastAPI + Celery service; the multi-agent “swarm” is used by Claude Code / Claude-Flow during
+authoring of the code, not when Climatefacts.ai serves user requests. 
+
+6. Data & Semantic Layer 
+
+6.1 Relational schema (live) 
+The Postgres 16 + pgvector schema is incrementally evolved via SQL migrations under
+infrastructure/database/migrations/versions/ . Migrations applied since 2026-05-16 (017–025): 
+
+Migration Purpose 
+017_sessions_table.sql Stateful refresh-token sessions (jti, user_id, revoked_at). 
+018_multilingual_fts.sql Language-aware tsvector via clilens_lang_cfg(language_code) ; multilingual FTS. 
+019_hnsw_article_embeddings.sql HNSW partial index on article_embeddings ; replaces IVFFlat. 
+020_country_indicators.sql indicator_definitions + country_indicators + 9 seed indicators. 
+021_claim_provenance.sql Per-extraction audit table; checked at least one of claim/url_analysis/article id present. 
+022_calibration_labels.sql calibration_labels + calibration_fits (Platt params). 
+023_claim_provenance_more_signals.sql Adds deep_search_session_id + cynefin_classification_id columns to claim_provenance. 
+024_indicator_sync_logs.sql Adapter-run audit log. 
+025_articles_is_synthetic.sql Flag column + backfill marking 3,588 demo seed articles. 
+
+6.2 Indicator catalogue & adapter framework 
+Every external country-level indicator flows through a common adapter ABC ( indicators/base.py :
+IndicatorAdapter → IndicatorRecord → SyncResult ). Concrete adapters: 
+
+Adapter Source Cadence Indicators 
+climate_trace.py Climate TRACE Daily Sector emissions (tCO2e) 
+owid.py Our World in Data Weekly Per-capita emissions; renewable share of electricity 
+climate_action_tracker.py CAT Weekly 5-band policy rating → 0–100 score 
+unfccc_ndc.py UNFCCC (via Climate Watch) Weekly NDC target year + reduction 
+irena.py IRENA (via OWID mirror) Weekly Renewable capacity MW per technology 
+nd_gain.py Notre Dame ND-GAIN Monthly Adaptation readiness index 
+
+The adapter framework is idempotent (upsert by indicator_id + country_code + year); schema drift on upstream sources
+is debug-logged and skipped rather than crashing the run. Every sync writes one row into indicator_sync_logs 
+for operator visibility. 
+
+6.3 Sustainability composite (methodology v1) 
+The formula in intelligence/sustainability_score.py is a weighted Bayesian-style composite over the
+indicators above: 
+
+sustainability_score = 0.40 * normalize_emissions_per_capita_inv(OWID)
++ 0.40 * renewable_share_electricity(OWID)
++ 0.20 * climate_action_tracker_band(CAT)
+
+Re-weighting on missing components is transparent (denominator drops). Confidence bands widen with fewer indicators:
+±25 (1), ±15 (2), ±10 (3+). Methodology version is pinned to every output
+( sustainability_v1_2026_05 ). 
+
+Known formula gap (analytical audit, 2026-05-18). UNFCCC NDC, IRENA and ND-GAIN are fetched and stored but
+not currently consumed by the composite — only Climate TRACE, OWID and CAT enter the score. ND-GAIN adaptation
+readiness in particular biases the composite against vulnerable low-emitter nations. Recommended remediation:
+add a fourth component (ND-GAIN, weight 0.15) and rebalance to 0.35/0.35/0.15/0.15, bumping
+METHODOLOGY_VERSION to sustainability_v2_2026_05 . See §10, item 2.
+
+6.4 Provenance schema 
+One row per LLM-producing step. Columns:
+provenance_id , claim_id , url_analysis_id , article_id ,
+deep_search_session_id , cynefin_classification_id , model , prompt_name ,
+prompt_version , prompt_fingerprint (SHA-256), extraction_method ,
+retrieval_strategy , source_article_ids (JSONB array of UUIDs),
+hallucination_score , raw_metadata (JSONB), created_at . 
+The CHECK constraint enforces “at least one of (claim_id, url_analysis_id, article_id, deep_search_session_id,
+cynefin_classification_id) is non-null” so sessions without persistent claim rows can still be audited. 
+
+6.5 Calibration data plane 
+
+calibration_labels(label_id, url_analysis_id, label_truth, labeled_by, label_method, …) —
+reviewer ground-truth. 
+calibration_fits(signal, a, b, n_labels, brier, ece, fitted_at, …) — per-signal Platt
+parameters; one row per refit. 
+Signals: reliability_score , agreement_score , hallucination_score (inverted to
+“1 − risk” so higher = better). 
+Floor: min_labels=5 for a fit; the analytical audit recommends raising to 50 with a
+“preview” tag and a UI banner when active fit was learned on too few labels. 
+
+6.6 Retrieval (semantic layer) 
+
+FTS (lexical): language-aware via clilens_lang_cfg(language_code) mapping to regconfig . 
+Vector (semantic): OpenAI ada-002 (1536-d) embeddings; HNSW partial index on article_embeddings . 
+Knowledge graph: entities & relationships extracted by EntityExtractionService alongside
+embedding population in src/backend/app/tasks/ingestion.py and post-summary
+src/backend/app/tasks/processing.py . Consumed by graph_retriever.py within HybridRAG. 
+HybridRAG composition: hybrid_rag_service.py blends FTS + vector + KG with a Cynefin pre-routing
+decision; deep search additionally folds in Perplexity external retrieval when keyed. 
+
+6.7 Versioned prompt registry 
+intelligence/prompts.py exposes a PromptTemplate registry with version + fingerprint + rationale.
+Every LLM caller fetches via get_prompt(name) rather than inlining strings; the methodology block records
+prompts_used.<name> for the run and the public /api/methodology/prompts endpoint surfaces the
+full registry. This makes “the prompt changed silently” impossible without bumping the version. 
+
+6.8 Country / regional reference 
+
+countries table holds the 198-country reference catalogue with continent, lat/long, news_sources_available,
+articles_count. 
+Regions: europe, north_america, africa, latin_america, asia, middle_east, global, research (exposed via
+/api/map/regions ). 
+Ingestion country list is governed by the INGESTION_COUNTRIES env var on the API service; the cloud
+default (23 EU-leaning codes) was the root cause of the “cloud version has only BG/RO/SI/ES” symptom diagnosed
+on 2026-05-17. The recommended global 80-country override is documented in .env.example . 
+
+6.9 Synthetic-data hygiene 
+Two data-integrity issues surfaced during the 2026-05-18 enrichment session and remain only partially mitigated: 
+
+3,588 synthetic seed articles (1,008 from populate_demo_articles.py with example.com URLs;
+2,580 from seed_full_global.py with clilens.ai URLs). Flagged via migration 025 and excluded from
+batch_enrich and the backfill script — but still visible to users on the map, search and
+compare surfaces . Frontend filtering on is_synthetic = FALSE is the recommended next step. 
+RSS adapter stores feed summaries, not article bodies. The Celery RSS pipeline ( rss_adapter.py :
+_parse_feed ) reads feed.summary , truncates to 500 chars, and writes to
+extracted_text . The full-page extractor exists at
+src/backend/services/ingestion_service/src/scraper.py:_fetch_article_content but is only wired into an
+unused Kafka consumer. Consequence: every downstream consumer of extracted_text (claim extraction,
+hallucination check, enrichment, embeddings, search) operates on title-plus-summary stubs. The truth-machine work
+is honest about what it does — but its inputs are smaller than expected. Estimated fix: 3–4 hours
+(add trafilatura ; fetch+extract on RSS ingest with timeout + fallback). 
+
+7. Truth-Machine Grading (current honest score) 
+
+Two grade snapshots are recorded against the same composite framework. The self-reported grade after the 32-commit
+truth-machine session is ~4.78/5 . The 2026-05-18 analytical audit re-assesses to
+~3.6/5 by reading the source and cross-checking against the claimed evidence.
+Both are published here verbatim so partners and auditors can make their own call. 
+
+Axis Self-claim (2026-05-17) Audited (2026-05-18) Top gap 
+Reliability 4.4–4.8 3.5 8-publisher venue whitelist is the entire source-tiering apparatus 
+Transparency 4.7–4.8 4.5 Audit trail returns UUIDs without joined titles/URLs 
+Traceability 4.6–4.8 4.3 source_article_ids array not denormalised in endpoint response 
+Calibration 4.6–4.7 2.8 Likely <50 labels in production; min_labels=5 too low for stable Platt 
+Hallucination 4.8 3.2 Entity check is set-intersect; statistic check rejects multi-source synthesis 
+Drift detection 4.8 4.0 Thresholds hard-coded; 30-day baseline window too short for a new platform 
+Sustainability 4.8 3.3 ND-GAIN unused; weights diverge from docs; mixed-year inputs unflagged 
+Multi-LLM 4.8 3.5 Shared prompt collapses model independence; shared-bias hallucinations score 1.0 
+Claim extraction 4.7 3.5 Overlapping type/category taxonomy; no hedge handling; paraphrase tolerated 
+Composite 4.78 3.6 ~1.18 points of optimism between claim and code 
+
+The five-step audit’s remediations to honestly hit 4.8: 
+
+Wire ND-GAIN into the sustainability composite (rebalance to 0.35/0.35/0.15/0.15; bump methodology version). 
+Set min_labels_for_inference = 50 in calibration_store.py ; tag preview fits; expose
+n_labels and is_preview at /api/methodology/calibration . 
+Replace the 8-publisher venue whitelist with a DB-backed credibility-tier table seeded with Scimago JR
+quartiles and retracted-paper flags. 
+Add a numeric_grounded cross-check in multi_llm_verifier.py against
+country_indicators ; halve confidence when corroborated but not numerically grounded. 
+Compute year_spread across contributing components in
+sustainability_score.py ; widen confidence_band by 2 * year_spread . 
+
+8. Development Roadmap — Now / What Is Left 
+
+8.1 What is “now” (the past two sessions) 
+
+32 commits from f476142 to b5addda (2026-05-16 → 2026-05-17) covering Sprint 1
+P0 security fixes (OAuth state CSRF, SSRF, DOMPurify, URL job-token), stateful sessions (S2), multilingual FTS,
+HNSW vector index, indicator framework + 3 adapters, sustainability formula, prompt registry, methodology surface,
+claim provenance, multi-LLM verification, calibration math + endpoints, KL drift, hallucination on URL+chat+deep-search,
+red-team CI gate, frontend methodology drawer, public /methodology page, nightly calibration refit. 
+3 follow-up commits (post-audit) shipped the final adapter trio (UNFCCC NDC + IRENA + ND-GAIN) plus the
+DEPLOYMENT_LAUNCH_CHECKLIST.md . 
+Backend test suite: 480 passed / 0 failed / 1 skipped at end of session; 740/12 in the prior full sweep
+(12 needed live LLM keys or were pre-existing brittle tests). 
+Cloud cut-over commit ( edb0a23 ) : Cloud Build config for frontend image, .gcloudignore ,
+PyJWT pin alignment. 
+Rebrand commit ( 1b96d3a ) : 36 files updated from “CliLens” to “Climatefacts.ai” in
+user-facing copy; internal identifiers preserved (env-var names, Postgres functions, localStorage token key, Tailwind
+classes) to avoid invalidating live sessions and data. 
+Enrichment session (2026-05-18) : 174 real articles enriched via DeepSeek; 293 ChatML training rows captured
+to data/training/enrichment_dataset.jsonl ; scripts/backfill_enrichment.py added; synthetic-article
+flag migration shipped. 
+
+8.2 Phase 1 — Sprint 1 P0 security (close-out work remaining) 
+
+S5 — httpOnly cookie migration. ~20-file frontend refactor: drop localStorage.getItem("clilens_token") 
+across the app, switch axios to withCredentials , set backend Set-Cookie on login/oauth/refresh,
+add CSRF double-submit middleware. Estimated 4–6 hours; biggest single blast radius in the open list. 
+
+8.3 Phase 2 — Data layer foundation (mostly done) 
+
+D1 — migration directory schism. Three incompatible versions/ trees
+( migrations/versions/ , infrastructure/database/migrations/versions/ ,
+database/migrations/ ). Consolidate via a one-off PR with a fresh-DB integration test. ~3–4 hours. 
+D2 — url_analyses.user_id VARCHAR(255) → UUID FK with backfill. Destructive ALTER; needs
+data migration. ~2–3 hours. 
+P2 — /api/map/compare 4-aggregate-per-country → single CTE + asyncio.gather .
+~6–8× faster. 
+
+8.4 Phase 3 — Real scoring (live + remediations) 
+
+Wave 6 done: 6 adapters live (Climate TRACE, OWID, CAT, UNFCCC NDC, IRENA, ND-GAIN). 
+Remediation: wire UNFCCC NDC + IRENA + ND-GAIN into the sustainability composite (none consumed today). 
+Wave 7 / future: additional adapters per docs/audits/2026-05-18-data-sources-audit.md : 
+
+Sprint A — Coverage (1 week). RSS packs for Pacific SIDS, francophone Africa, Caribbean, Central
+America, Central Asia. Adds ~38 countries; closes the single biggest credibility gap (climate vulnerability
+concentrates in these regions). 
+Sprint B — Disclosure layer (2 weeks). CDP + SBTi + Net Zero Tracker adapters; new
+company_climate_disclosures schema. Unlocks the Sustainability and Business dimensions. 
+Sprint C — Sentiment + research depth (1.5 weeks). Google Trends ( pytrends ) +
+arXiv/EarthArXiv OAI-PMH + CrossRef + Semantic Scholar. Unlocks Consumer Trends; deepens Research dimension. 
+Tourism layer deferred until Sprint A lands (UNWTO, Eurostat tour_* , NOAA Coral Reef Watch,
+Vanat Snow & Mountain). 
+
+8.5 Phase 4 — Provenance + methodology versioning (live + remediations) 
+
+Audit-trail endpoint should join titles/URLs onto source_article_ids so external auditors do not
+see opaque UUIDs. 
+“What fraction of analyses have a provenance row?” metric is missing — a silent collapse of writes is
+currently invisible. Add a SQL-backed counter and surface on /api/methodology . 
+
+8.6 Phase 5 — Calibration (live + remediations) 
+
+Wave 8 pending: admin UI for reviewers to enter calibration labels (currently API-only). 
+Raise min_labels=5 → 50; tag preview fits; surface n_labels + is_preview on
+/api/methodology/calibration ; refuse to apply preview fits in
+apply_latest_to_reliability . 
+Ground-truth labelling effort — not a dev task; reviewers need to populate
+calibration_labels . Nightly Celery refit picks them up automatically. 
+
+8.7 Phase 6 — Robustness & continuous monitoring (live + remediations) 
+
+Per-deployment threshold calibration for KL drift (currently hard-coded constants). 
+Hallucination detector hardening : entity check via NER (not regex on capitalised n-grams);
+statistic check on numeric synthesis across the union of sources, not single-source membership. 
+Numeric grounding in multi_llm_verifier.py against country_indicators for
+emissions/renewable claims (closes the “both LLMs agree on a hallucinated number” failure mode). 
+
+8.8 Phase 7 — Agentic chat tool-use (proposed; not started) 
+The single largest user-experience uplift identified in the UI/UX audit. Backend exposes an optional
+actions: [{type, params, label}] payload on /api/chat ; client renders clickable chips above
+the message input. Minimum viable action types: 
+
+navigate , analyze_url , apply_search_filters , apply_map_filters ,
+open_methodology_section , open_country , start_deep_search ,
+bookmark_article , start_calibration_label (admin). 
+
+8.9 Phase 8 — Production & scale 
+
+Cloud cut-over on GCP project climatenews-495412 , region europe-west4 : in progress.
+Cloud Build config for the frontend image landed in commit edb0a23 ; backend Cloud Run service
+climatenews-api is live; frontend Cloud Run service climatenews-frontend at
+https://climatenews-frontend-srzwxdzmaq-ez.a.run.app/ . 
+Override INGESTION_COUNTRIES on Cloud Run API service with the 80-country global list
+(current default is 23 EU-leaning codes; root cause of the “cloud only sees BG/RO/SI/ES” symptom). 
+Cloud Scheduler triggers for the 6 indicator adapters + 3 calibration refits (HTTP POST with
+X-Scheduler-Secret / X-Admin-Secret ). 
+HTTPS + CDN + monitoring (Grafana / Prometheus / Jaeger). 
+Mobile app (React Native or PWA) — deferred. 
+Real-time alerting for breaking climate events — deferred. 
+
+8.10 Phase 9 — Long-horizon (Video Production Pipeline) 
+Per the original vision document, an end-to-end “article → vertical video → social post” pipeline
+remains the longest-horizon target: 
+
+Script generation (Claude / DeepSeek) → TTS (ElevenLabs / Azure) → B-roll search (Pexels API) →
+fact-check graphic generation → FFmpeg / Remotion render (1080×1920, 9:16, 15–60s). 
+Social media OAuth + publish API integrations: TikTok, Instagram Reels (Graph API), YouTube Shorts (Data API v3),
+LinkedIn, X. 
+Scheduled auto-publish + analytics ingestion (views, likes, shares). 
+
+Database schema sketches for videos , social_media_posts , user_social_accounts 
+already exist in the vision doc but are not yet provisioned. 
+
+9. Deployment & Operations Status 
+
+9.1 Environments 
+
+Environment Status URL / location 
+Local development Operational docker-compose -f docker-compose.simple.yml up -d ; API localhost:5400 , Frontend localhost:5300 
+Cloud (GCP) In rollout Project climatenews-495412 , region europe-west4 
+Frontend (Cloud Run) Live https://climatenews-frontend-srzwxdzmaq-ez.a.run.app/ 
+API (Cloud Run) Live (limited INGESTION_COUNTRIES ) climatenews-api service 
+
+9.2 Required environment variables (launch) 
+
+Core: JWT_SECRET_KEY (≥32 chars), DATABASE_URL , REDIS_URL . 
+OAuth: GOOGLE_CLIENT_ID , GOOGLE_CLIENT_SECRET , OAUTH_STATE_SECRET ;
+optional MICROSOFT_CLIENT_ID , MICROSOFT_CLIENT_SECRET , MICROSOFT_TENANT_ID . 
+Scheduler/admin: SCHEDULER_SECRET , CLILENS_CALIBRATION_ADMIN_SECRET . 
+LLM providers: DEEPSEEK_API_KEY , ANTHROPIC_API_KEY , ANTHROPIC_MODEL ,
+OPENAI_API_KEY ; optional PERPLEXITY_API_KEY , CARF_API_URL + CARF_API_KEY . 
+Ingestion: INGESTION_COUNTRIES — override with the 80-country global list on Cloud Run . 
+Enrichment: CLILENS_ENRICHMENT_PROVIDER (deepseek|openai|anthropic|unset for cascade),
+CLILENS_TRAINING_DATASET_PATH . 
+Frontend: NEXT_PUBLIC_API_URL , NEXT_PUBLIC_GOOGLE_CLIENT_ID ,
+NEXT_PUBLIC_MICROSOFT_CLIENT_ID . 
+
+9.3 Cloud Scheduler triggers (operator task) 
+
+Endpoint Cadence Header 
+POST /api/scheduler/indicators/sync?source=climate_trace daily 04:00 UTC X-Scheduler-Secret 
+POST /api/scheduler/indicators/sync?source=owid weekly Mon 04:30 UTC X-Scheduler-Secret 
+POST /api/scheduler/indicators/sync?source=cat weekly Wed 05:00 UTC X-Scheduler-Secret 
+POST /api/scheduler/indicators/sync?source=unfccc_ndc weekly Tue 05:00 UTC X-Scheduler-Secret 
+POST /api/scheduler/indicators/sync?source=irena weekly Thu 05:00 UTC X-Scheduler-Secret 
+POST /api/scheduler/indicators/sync?source=nd_gain monthly 1st 05:30 UTC X-Scheduler-Secret 
+Celery beat nightly-calibration-refit 03:00 UTC n/a (in-process) 
+
+9.4 Smoke tests (public) 
+
+GET /api/methodology , /prompts , /sustainability-formula ,
+/indicators , /calibration?signal=reliability_score , /hallucination-rates . 
+GET /api/drift/source-mix , /api/drift/prompt-fingerprints . 
+GET /api/auth/oauth/state (32-hex CSRF token), /api/auth/oauth/providers . 
+Frontend: / , /methodology , /about , /login . 
+
+10. Known Gaps, Risks, and Recommendations 
+
+10.1 Functional gaps (from docs/audits/2026-05-18-functional-audit.md ) 
+
+Sev Issue Where 
+P1 /submit hard-codes http://localhost:5400 src/frontend/src/app/submit/page.tsx:20 
+P2 /api/translate silently returns 503 when both ANTHROPIC and DEEPSEEK keys are absent api/main.py:436 
+P2 /api/discovery/discover-news hard-400 when PERPLEXITY_API_KEY unset; anon-IP rate-limit bypasses tier accounting api/discovery_routes.py:168–184 
+P2 methodology/hallucination-rates joins articles.id (schema uses article_id ) → everything buckets as “unknown” api/methodology_routes.py:655 
+P2 /api/methodology/indicators silently returns empty when indicator migrations not applied api/methodology_routes.py:206–243 
+P2 legacy overall_green_score is article-count proxy; mitigated by caveat but UI must surface it api/green_transition_routes.py:117–147 
+P2 /api/scheduler/* returns status="skipped" on ImportError; Cloud Scheduler reports 200 OK on dead pipeline api/scheduler_routes.py:72–172 
+P2 /api/research/analyze returns 500 on any failure without distinguishing PDF/DOI/LLM error api/research_routes.py:31–66 
+P2 calibration refit returns insufficient_data but no UI to enter labels from /methodology api/methodology_routes.py:450–470 
+
+10.2 UI/UX gaps (from docs/audits/2026-05-18-uiux-audit.md ) 
+
+P1 — Chat is read-only / answer-only; cannot drive the platform. Action protocol required (see §8.8). 
+P1 — /feed hard-codes 33 countries vs the platform’s advertised 198-country coverage. 
+P1 — /search falls back to plain text spinner while / uses skeletons —
+inconsistent across the two most-used pages. 
+P1 — Dark-mode tokens on the home page produce light-on-light when the theme toggles. 
+P2 — Accessibility: icon-only buttons (theme toggle, remove-bookmark, view-mode) lack
+aria-label s. 
+P2 — Article detail page has no <main> landmark. 
+P3 — Nav hides on /articles/* , /dashboard/* , etc.; standalone pages have no
+navigation back. 
+
+10.3 Analytical gaps (from docs/audits/2026-05-18-analytical-audit.md ) 
+
+ND-GAIN fetched but unused in the sustainability composite. 
+Calibration min_labels=5 too low for stable Platt scaling. 
+Venue whitelist of 8 publishers is the entire source-tiering apparatus. 
+Multi-LLM shared-prompt design collapses model independence; numeric grounding against indicators not enforced. 
+Mixed-year indicator inputs blended into one score without confidence-band widening. 
+Drift thresholds hard-coded; 30-day baseline too short for a new platform. 
+Hallucination entity check is regex on capitalised n-grams (over-flags numeric synthesis, under-flags entity
+hallucination). 
+
+10.4 Data-integrity gaps 
+
+3,588 synthetic seed articles still surfaced on the map, search and compare frontends (migration 025 added the
+flag; frontend filter is the pending follow-up). 
+RSS adapter persists summaries rather than article bodies — the entire downstream chain operates on stubs. 
+
+10.5 Recommended next-sprint shape 
+
+Hardening + data integrity (1 week). Ship RSS full-body extraction (trafilatura), filter synthetic flag on
+frontends, fix the articles.id ↔ article_id bug in hallucination-rates, harden
+/api/scheduler/* failure modes. 
+Sustainability v2 + calibration honesty (3–4 days). ND-GAIN into composite; year_spread band-widening;
+min_labels=50 with preview tag; n_labels surfaced on /api/methodology/calibration . 
+Sprint A — coverage RSS packs (1 week). Pacific SIDS, francophone Africa, Caribbean, Central America,
+Central Asia. Adds ~38 countries. 
+Agentic chat actions (1 week). Backend actions payload + client dispatchers for the 8 top
+intent types from §8.8. 
+S5 httpOnly cookie migration (4–6 hours when ready to commit a focused chunk). 
+
+11. Glossary & Reference 
+
+Term Meaning 
+CARF Causal Analytical Reasoning Framework — optional external HTTP reasoning engine; fallback is the Cynefin keyword classifier. 
+Cynefin Sense-making framework used to route claims between simple / complicated / complex / chaotic reasoning paths. 
+HybridRAG Composed retrieval over FTS + pgvector + knowledge graph, pre-routed by a Cynefin classifier. 
+HNSW Hierarchical Navigable Small World — the pgvector ANN index used for embedding similarity. 
+Platt scaling Two-parameter logistic regression that maps raw model confidences to calibrated probabilities. 
+Brier / ECE Brier score and Expected Calibration Error — the two scalar metrics surfaced for each calibration fit. 
+KL divergence Information-theoretic distance between probability distributions; used for drift detection on source mix and prompt fingerprint. 
+ND-GAIN Notre Dame Global Adaptation Index — country adaptation readiness score. 
+CAT Climate Action Tracker — 5-band per-country policy rating mapped to 0–100. 
+OWID Our World in Data — CSV-distributed canonical climate datasets. 
+Claim provenance The audit table that records model + prompt + version + fingerprint + retrieval strategy + source IDs + hallucination score for every LLM-producing step. 
+Methodology version Pinned identifier (e.g. sustainability_v1_2026_05 ) attached to every analytical output so historical scores remain reproducible after formula changes. 
+
+This report consolidates the codebase, the project memory index, and the seven audits dated 2026-05-18
+(analytical, functional, UI/UX, performance, data sources, security, projectcarfcynepic comparison). For deeper drill-down
+on any section see the referenced source files and audit documents under docs/audits/ . 
+
+Document end. Compiled 2026-05-18 from branch main @ edb0a23 .

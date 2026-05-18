@@ -114,6 +114,18 @@ def normalize_cat_rating(rating: float) -> float:
     return max(0.0, min(100.0, float(rating)))
 
 
+def normalize_nd_gain_index(score_0_to_100: float) -> float:
+    """ND-GAIN composite adaptation index is already 0–100; pass-through with clamp.
+
+    Notre Dame Global Adaptation Initiative scores combine vulnerability
+    (lower is better) and readiness (higher is better), normalised to a
+    0–100 composite where higher = more climate-resilient.
+    """
+    if score_0_to_100 is None:
+        raise ValueError("normalize_nd_gain_index requires a number")
+    return max(0.0, min(100.0, float(score_0_to_100)))
+
+
 # ---------------------------------------------------------------------------
 # Component definitions — the formula's wired structure
 # ---------------------------------------------------------------------------
@@ -128,10 +140,13 @@ class ComponentDefinition:
 
 
 # Order matters for the components list output: highest-weight first.
+# 2026-05-18 — ND-GAIN added as the adaptation dimension. The adapter wrote
+# `nd_gain_index` into country_indicators but no formula consumed it, so the
+# composite score ignored climate-resilience information for every country.
 COMPONENTS: List[ComponentDefinition] = [
     ComponentDefinition(
         indicator_id="emissions_tco2e_per_capita",
-        weight=0.40,
+        weight=0.35,
         normalizer=normalize_emissions_per_capita,
         description=(
             "Per-capita greenhouse-gas emissions (CO₂-equivalent, 100-year "
@@ -142,7 +157,7 @@ COMPONENTS: List[ComponentDefinition] = [
     ),
     ComponentDefinition(
         indicator_id="renewable_share_electricity_percent",
-        weight=0.40,
+        weight=0.30,
         normalizer=normalize_renewable_share,
         description=(
             "Share of electricity generated from renewable sources "
@@ -157,6 +172,17 @@ COMPONENTS: List[ComponentDefinition] = [
         description=(
             "Climate Action Tracker composite policy-ambition rating, "
             "normalised 0–100. 100 = aligned with 1.5 °C."
+        ),
+    ),
+    ComponentDefinition(
+        indicator_id="nd_gain_index",
+        weight=0.15,
+        normalizer=normalize_nd_gain_index,
+        description=(
+            "Notre Dame Global Adaptation Initiative composite — vulnerability "
+            "and readiness combined to 0–100. Higher = more climate-resilient. "
+            "Captures the adaptation dimension that the emissions/renewable/CAT "
+            "components don't reach (mitigation policy ≠ resilience)."
         ),
     ),
 ]

@@ -140,7 +140,7 @@ class TestComputeWithSingleComponent:
         # 14 tCO2e → 30 normalised. Full weight goes to the only component.
         assert score.value == pytest.approx(30.0)
         assert score.indicators_used == 1
-        assert score.indicators_available_in_formula == 3
+        assert score.indicators_available_in_formula == 4
         # Confidence band = ±25 for 1 indicator.
         assert score.confidence_band == 25.0
         assert score.confidence_low == pytest.approx(5.0)
@@ -174,45 +174,52 @@ class TestComputeWithTwoComponents:
         })
         assert score is not None
         # emissions normalises to 60; renewable to 46.
-        # Original weights are 0.40 and 0.40 — re-normalise to 0.5 each.
-        # Composite = 0.5 * 60 + 0.5 * 46 = 53.
-        assert score.value == pytest.approx(53.0)
+        # Weights post-ND-GAIN-addition: emissions=0.35, renewable=0.30.
+        # Re-normalise across the two present components: 0.35/0.65 and 0.30/0.65.
+        # Composite = 60 * (0.35/0.65) + 46 * (0.30/0.65) = 32.31 + 21.23 = 53.54
+        assert score.value == pytest.approx(53.54, abs=0.05)
         assert score.indicators_used == 2
         assert score.confidence_band == 15.0
-        assert score.confidence_low == pytest.approx(38.0)
-        assert score.confidence_high == pytest.approx(68.0)
-        # Both weights are 0.5 after redistribution.
-        for c in score.components:
-            assert c.weight_applied == pytest.approx(0.5)
+        # confidence_low/high are derived as value ± band, so they shift with value.
+        assert score.confidence_low == pytest.approx(38.54, abs=0.05)
+        assert score.confidence_high == pytest.approx(68.54, abs=0.05)
+        # Weights re-normalised: emissions=0.35/0.65, renewable=0.30/0.65.
+        weights = {c.indicator_id: c.weight_applied for c in score.components}
+        assert weights["emissions_tco2e_per_capita"] == pytest.approx(0.35 / 0.65)
+        assert weights["renewable_share_electricity_percent"] == pytest.approx(0.30 / 0.65)
 
     def test_emissions_and_cat(self):
         # When CAT lands: 14 tCO2e (USA-ish) + CAT rating 30.
-        # Weights: emissions=0.40 → 0.40/0.60 = 0.667; CAT=0.20 → 0.333.
+        # Weights post-ND-GAIN-addition: emissions=0.35, cat=0.20.
+        # Re-normalised across present-only components: 0.35/0.55 and 0.20/0.55.
         score = compute_sustainability_score({
             "emissions_tco2e_per_capita": _ind(14.0),
             "cat_overall_rating": _ind(30.0, unit="score (0–100)"),
         })
         assert score is not None
-        # 30 * 0.667 + 30 * 0.333 = 30.
+        # Both components normalise to 30, so composite stays 30 regardless of ratio.
         assert score.value == pytest.approx(30.0, abs=0.01)
         # Check the weight ratios.
         weights = {c.indicator_id: c.weight_applied for c in score.components}
-        assert weights["emissions_tco2e_per_capita"] == pytest.approx(0.40 / 0.60)
-        assert weights["cat_overall_rating"] == pytest.approx(0.20 / 0.60)
+        assert weights["emissions_tco2e_per_capita"] == pytest.approx(0.35 / 0.55)
+        assert weights["cat_overall_rating"] == pytest.approx(0.20 / 0.55)
 
 
 class TestComputeWithAllThreeComponents:
     def test_full_formula(self):
         # Hypothetical leading country: low emissions, high renewable, strong policy.
+        # Weights post-ND-GAIN-addition: 0.35, 0.30, 0.20, 0.15 (sum 1.0).
+        # Without ND-GAIN data, re-normalised across the three present components:
+        # 0.35/0.85, 0.30/0.85, 0.20/0.85.
         score = compute_sustainability_score({
             "emissions_tco2e_per_capita": _ind(4.0),         # → 80
             "renewable_share_electricity_percent": _ind(70.0, unit="%"),
             "cat_overall_rating": _ind(75.0, unit="score (0–100)"),
         })
         assert score is not None
-        # Weights are 0.40, 0.40, 0.20 (sum 1.0).
-        # 80 * 0.40 + 70 * 0.40 + 75 * 0.20 = 32 + 28 + 15 = 75.
-        assert score.value == pytest.approx(75.0)
+        # 80 * (0.35/0.85) + 70 * (0.30/0.85) + 75 * (0.20/0.85)
+        # = 32.94 + 24.71 + 17.65 = 75.29
+        assert score.value == pytest.approx(75.29, abs=0.05)
         assert score.indicators_used == 3
         assert score.confidence_band == 10.0  # tightest band
 
@@ -244,7 +251,7 @@ class TestComputeEdgeCases:
     def test_no_matching_indicators_returns_none(self):
         # Indicator not in the formula's component list.
         assert compute_sustainability_score({
-            "nd_gain_index": _ind(60.0),  # not in COMPONENTS for v1
+            "unrelated_made_up_indicator": _ind(60.0),
         }) is None
 
     def test_indicator_with_none_value_skipped(self):
@@ -298,7 +305,7 @@ class TestOutputShape:
         assert out["methodology_version"] == METHODOLOGY_VERSION
         assert out["methodology_url"] == METHODOLOGY_URL
         assert "formula_disclosure" in out
-        assert "1 of 3 defined components" in out["formula_disclosure"]
+        assert "1 of 4 defined components" in out["formula_disclosure"]
         assert "sustainability_v1_2026_05" in out["formula_disclosure"]
 
     def test_component_contribution_includes_provenance(self):
@@ -341,5 +348,7 @@ class TestComputeWithPydanticLikeObjects:
             ),
         })
         assert score is not None
-        # 10 tCO2e → 50; 40% renewable → 40. 0.5/0.5 → 45.
-        assert score.value == pytest.approx(45.0)
+        # 10 tCO2e → 50; 40% renewable → 40.
+        # Weights post-ND-GAIN: emissions=0.35, renewable=0.30. Re-normalised
+        # across the two present: 50 * (0.35/0.65) + 40 * (0.30/0.65) = 45.38.
+        assert score.value == pytest.approx(45.38, abs=0.05)

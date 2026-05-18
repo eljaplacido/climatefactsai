@@ -136,7 +136,14 @@ from celery.schedules import crontab
 # Multi-country ingestion schedule
 # Stagger by 5 minutes per country to avoid API rate limits
 _INGESTION_COUNTRIES = os.getenv(
-    "INGESTION_COUNTRIES", "FI,SE,DE,FR,NL,ES,IT,NO,DK,PL,US,GB,AT,GR,PT,SI,HU,BG,CZ,IE,HR,RO,SK"
+    "INGESTION_COUNTRIES",
+    # UN-193 default (2026-05-18): aligned with rss_feed_registry after migration 026.
+    # Override per-deploy via INGESTION_COUNTRIES env var if needed.
+    "DZ,AO,BJ,BW,BF,BI,CV,CM,CF,TD,KM,CG,CD,CI,DJ,EG,GQ,ER,SZ,ET,GA,GM,GH,GN,GW,KE,LS,LR,LY,MG,MW,ML,MR,MU,MA,MZ,NA,NE,NG,RW,ST,SN,SC,SL,SO,ZA,SS,SD,TZ,TG,TN,UG,ZM,ZW,"
+    "AF,AM,AZ,BH,BD,BT,BN,KH,CN,CY,GE,IN,ID,IR,IQ,IL,JP,JO,KZ,KW,KG,LA,LB,MY,MV,MN,MM,NP,KP,OM,PK,PH,QA,SA,SG,KR,LK,SY,TJ,TH,TL,TR,TM,AE,UZ,VN,YE,"
+    "AL,AD,AT,BY,BE,BA,BG,HR,CZ,DK,EE,FI,FR,DE,GR,HU,IS,IE,IT,LV,LI,LT,LU,MT,MD,MC,ME,NL,MK,NO,PL,PT,RO,RU,SM,RS,SK,SI,ES,SE,CH,UA,GB,"
+    "AG,AR,BS,BB,BZ,BO,BR,CA,CL,CO,CR,CU,DM,DO,EC,SV,GD,GT,GY,HT,HN,JM,MX,NI,PA,PY,PE,KN,LC,VC,SR,TT,US,UY,VE,"
+    "AU,FJ,KI,MH,FM,NR,NZ,PW,PG,WS,SB,TO,TV,VU"
 ).split(",")
 
 app.conf.beat_schedule = {

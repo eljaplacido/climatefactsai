@@ -48,7 +48,7 @@ async def get_article_infographic(
     rows = db.execute_query(
         """SELECT title, reliability_score, source_name, content_category,
                   claims_count, verified_claims_count, overall_credibility, executive_brief
-           FROM articles WHERE article_id = :id""",
+           FROM articles WHERE article_id = :id AND is_synthetic = FALSE""",
         {"id": article_id},
     )
     if not rows:

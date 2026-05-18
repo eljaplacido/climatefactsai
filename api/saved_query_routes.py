@@ -282,7 +282,8 @@ async def run_saved_query(
                    a.claims_status, a.claims_error_message, a.insight_summary,
                    a.published_date, a.content_category
             FROM articles a
-            WHERE to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,''))
+            WHERE a.is_synthetic = FALSE
+              AND to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,''))
                   @@ plainto_tsquery('english', :q)
             {where_extra}
             ORDER BY COALESCE(a.published_date, a.created_at) DESC

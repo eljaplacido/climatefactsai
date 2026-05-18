@@ -76,7 +76,9 @@ class TestSustainabilityFormulaEndpoint:
         resp = client.get("/api/methodology/sustainability-formula")
         body = resp.json()
         components = body["components"]
-        assert len(components) == 3
+        # 2026-05-18: 4 components after ND-GAIN was wired into the composite
+        # (emissions, renewable share, CAT rating, ND-GAIN adaptation index).
+        assert len(components) == 4
         total = sum(c["weight"] for c in components)
         assert total == pytest.approx(1.0)
         # Each component must declare its normalizer name + a doc line.

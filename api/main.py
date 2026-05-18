@@ -195,8 +195,22 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        # Content Security Policy — restrict where scripts/styles/images can load
+        # from. Permissive enough for the Next.js frontend, blocks classic XSS
+        # vectors. Production-only because dev tools (HMR) need eval.
         if os.getenv("ENVIRONMENT") == "production":
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: https:; "
+                "font-src 'self' data:; "
+                "connect-src 'self' https://api.open-meteo.com https://archive-api.open-meteo.com; "
+                "frame-ancestors 'none'; "
+                "base-uri 'self'; "
+                "form-action 'self'"
+            )
         return response
 
 app.add_middleware(SecurityHeadersMiddleware)
@@ -564,7 +578,7 @@ async def list_articles(
             a.enrichment_metadata
         FROM articles a
         LEFT JOIN source_credibility sc ON LOWER(a.source_name) = LOWER(sc.source_name)
-        WHERE 1 = 1
+        WHERE a.is_synthetic = FALSE
     """
 
     # Filter by allowed reliability tiers (sources without a tier default to 'public')
@@ -631,6 +645,7 @@ async def get_article_detail(article_id: str, db=Depends(get_db)):
             a.insight_summary
         FROM articles a
         WHERE a.article_id = :article_id
+          AND a.is_synthetic = FALSE
     """
 
     rows = db.execute_query(article_query, params={"article_id": article_id})
@@ -742,6 +757,7 @@ async def list_countries(db=Depends(get_db)):
         LEFT JOIN (
             SELECT country_code, COUNT(*) AS article_count
             FROM articles
+            WHERE is_synthetic = FALSE
             GROUP BY country_code
         ) AS article_counts ON article_counts.country_code = c.country_code
         WHERE c.enabled = TRUE
@@ -822,6 +838,7 @@ async def list_tags(
             SELECT unnest(tags) AS tag, country_code
             FROM articles
             WHERE tags IS NOT NULL AND array_length(tags, 1) > 0
+              AND is_synthetic = FALSE
         ) AS expanded
         WHERE (:country IS NULL OR expanded.country_code = :country)
         GROUP BY tag
@@ -837,7 +854,10 @@ async def list_tags(
 
 
 def _ensure_article_exists(db, article_id: str) -> None:
-    exists_query = "SELECT 1 FROM articles WHERE article_id = :article_id"
+    exists_query = (
+        "SELECT 1 FROM articles "
+        "WHERE article_id = :article_id AND is_synthetic = FALSE"
+    )
     rows = db.execute_query(exists_query, params={"article_id": article_id})
     if not rows:
         raise HTTPException(status_code=404, detail="Article not found")
@@ -932,6 +952,7 @@ def _collect_stats(db) -> DashboardStats:
             COUNT(*) FILTER (WHERE DATE(created_at) = CURRENT_DATE) AS articles_today,
             MAX(updated_at) AS last_updated
         FROM articles
+        WHERE is_synthetic = FALSE
         """
     )
 
@@ -1115,6 +1136,7 @@ async def reanalyze_article(
                extracted_text, source_name
         FROM articles
         WHERE article_id = :article_id
+          AND is_synthetic = FALSE
         """,
         {"article_id": article_id},
     )

@@ -17,7 +17,8 @@ export default function SubmitArticlePage() {
     setResult(null)
 
     try {
-      const response = await fetch('http://localhost:5400/api/articles/ingest', {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5400'
+      const response = await fetch(`${apiBase}/api/articles/ingest`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

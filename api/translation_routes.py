@@ -319,7 +319,7 @@ async def get_translation_coverage():
             ORDER BY translated_count DESC
         """)
 
-        total_articles = db.execute_query("SELECT COUNT(*) as cnt FROM articles")
+        total_articles = db.execute_query("SELECT COUNT(*) as cnt FROM articles WHERE is_synthetic = FALSE")
         total = total_articles[0]["cnt"] if total_articles else 0
 
         return {

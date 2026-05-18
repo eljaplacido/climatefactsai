@@ -201,6 +201,14 @@ def _rows_to_pairs(
 # Refit + persist
 # ---------------------------------------------------------------------------
 
+# Calibration honesty: 5 labels is far below the N≈50 needed for a stable Platt
+# fit. Below STABLE_FIT_MIN the fit is marked is_preview=True so the UI can warn
+# users that this signal is calibrated on too-few labels. Above it the fit is
+# considered production-grade.
+PREVIEW_FIT_MIN = 5
+STABLE_FIT_MIN = 50
+
+
 @dataclass
 class RefitResult:
     """Outcome of a single refit run."""
@@ -213,6 +221,7 @@ class RefitResult:
     platt_b: Optional[float] = None
     fit_id: Optional[int] = None
     error: Optional[str] = None
+    is_preview: bool = False  # True when n_labels < STABLE_FIT_MIN
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -225,6 +234,7 @@ class RefitResult:
             "platt_b": round(self.platt_b, 4) if self.platt_b is not None else None,
             "fit_id": self.fit_id,
             "error": self.error,
+            "is_preview": self.is_preview,
         }
 
 
@@ -232,7 +242,7 @@ def refit_and_persist(
     db,
     signal_name: str = "reliability_score",
     *,
-    min_labels: int = 5,
+    min_labels: int = PREVIEW_FIT_MIN,
 ) -> RefitResult:
     """Refit Platt scaling on the latest labels and write to `calibration_fits`.
 
@@ -303,6 +313,7 @@ def refit_and_persist(
         platt_a=result.platt.A,
         platt_b=result.platt.B,
         fit_id=fit_id,
+        is_preview=result.n < STABLE_FIT_MIN,
     )
 
 

@@ -4,15 +4,116 @@ RSS Adapter — Global climate news RSS feed integration.
 Parses Carbon Brief, EEA, and global climate RSS feeds as discovery sources.
 Supports dynamic feed registry from the database with hardcoded fallback.
 Deduplicates against existing articles by URL.
+
+Each RSS entry's article body is fetched from the canonical URL and parsed
+via BeautifulSoup so downstream consumers (claim extraction, embeddings,
+hallucination check, enrichment) operate on real article text rather than
+RSS <summary> stubs. Fetches are bounded by RSS_FETCH_TIMEOUT seconds and
+fail-soft to the RSS summary when extraction errors out.
 """
 
+import os
+import re
 from typing import Any, Dict, List, Optional
 
 import feedparser
+import httpx
+from bs4 import BeautifulSoup
 
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Full-text fetch settings (env-overridable for ops tuning)
+RSS_FETCH_TIMEOUT_S = float(os.getenv("RSS_FETCH_TIMEOUT_S", "10"))
+RSS_FETCH_MAX_BYTES = int(os.getenv("RSS_FETCH_MAX_BYTES", str(2 * 1024 * 1024)))  # 2 MB
+RSS_USER_AGENT = os.getenv(
+    "RSS_USER_AGENT",
+    "Mozilla/5.0 (compatible; ClimatefactsBot/1.0; +https://climatefacts.ai/about)",
+)
+RSS_FETCH_FULL_TEXT = os.getenv("RSS_FETCH_FULL_TEXT", "1").strip() != "0"
+
+
+def _extract_article_body_html(html: str, url: str) -> Optional[str]:
+    """Pull readable body text from an article HTML page.
+
+    Strategy: prefer semantic containers (`<article>`, `<main>`,
+    `[role=main]`), fall back to the largest `<div>` by paragraph count.
+    Strip nav/aside/footer/script/style. Returns plain text joined by
+    double-newlines, or None when no candidate has substantive paragraphs.
+    """
+    try:
+        soup = BeautifulSoup(html, "lxml")
+    except Exception:
+        # lxml not available or malformed — fall through to html.parser
+        soup = BeautifulSoup(html, "html.parser")
+
+    # Drop noise
+    for tag in soup(["script", "style", "noscript", "iframe", "form",
+                     "nav", "aside", "footer", "header"]):
+        tag.decompose()
+
+    candidates: List = []
+    for sel in ["article", "main", "[role=main]", "div.article-body",
+                "div.entry-content", "div.post-content", "div.story-body"]:
+        candidates.extend(soup.select(sel))
+
+    # Pick the candidate with the most <p> tags, fall back to the body
+    best = None
+    best_p_count = 0
+    for c in candidates:
+        n = len(c.find_all("p"))
+        if n > best_p_count:
+            best = c
+            best_p_count = n
+    if best is None:
+        best = soup.body or soup
+
+    paragraphs = [
+        p.get_text(strip=True, separator=" ")
+        for p in best.find_all("p")
+    ]
+    paragraphs = [p for p in paragraphs if p and len(p) >= 40]
+
+    if not paragraphs:
+        return None
+
+    text = "\n\n".join(paragraphs)
+    # Collapse excessive whitespace
+    text = re.sub(r"\s{3,}", "  ", text)
+    return text.strip() or None
+
+
+def _fetch_and_extract_article_body(url: str) -> Optional[str]:
+    """Fetch the article URL and return extracted body text.
+
+    Returns None on any failure (timeout, non-HTML, parse failure, no
+    candidate body). Caller falls back to the RSS summary.
+    """
+    if not url or not url.startswith(("http://", "https://")):
+        return None
+    try:
+        with httpx.Client(
+            timeout=RSS_FETCH_TIMEOUT_S,
+            follow_redirects=True,
+            headers={"User-Agent": RSS_USER_AGENT, "Accept": "text/html,*/*;q=0.8"},
+        ) as client:
+            resp = client.get(url)
+        if resp.status_code != 200:
+            return None
+        ctype = (resp.headers.get("content-type") or "").lower()
+        if "html" not in ctype and "xml" not in ctype:
+            return None
+        # Truncate oversized responses (some publisher pages embed huge JSON-LD)
+        html = resp.text
+        if len(html) > RSS_FETCH_MAX_BYTES:
+            html = html[:RSS_FETCH_MAX_BYTES]
+        return _extract_article_body_html(html, url)
+    except httpx.TimeoutException:
+        logger.debug(f"RSS body fetch timeout: {url}")
+    except Exception as exc:
+        logger.debug(f"RSS body fetch failed for {url}: {exc}")
+    return None
 
 # Default RSS feed URLs
 CARBON_BRIEF_RSS = "https://www.carbonbrief.org/feed/"
@@ -103,7 +204,15 @@ GLOBAL_CLIMATE_FEEDS = {
 
 
 def _parse_feed(url: str, max_items: int = 20) -> List[Dict[str, Any]]:
-    """Parse an RSS feed and return normalized article entries."""
+    """Parse an RSS feed and return normalized article entries.
+
+    For each entry, fetches the canonical article URL and extracts the body
+    text via BeautifulSoup. The extracted body is preferred over the RSS
+    summary so downstream consumers (claim extraction, embeddings,
+    hallucination check, article enrichment) work on real article text.
+    Falls back to the RSS summary when extraction fails. Disable globally
+    by setting RSS_FETCH_FULL_TEXT=0.
+    """
     try:
         feed = feedparser.parse(url)
         if feed.bozo and not feed.entries:
@@ -111,12 +220,33 @@ def _parse_feed(url: str, max_items: int = 20) -> List[Dict[str, Any]]:
             return []
 
         articles = []
+        bodies_fetched = 0
+        bodies_failed = 0
         for entry in feed.entries[:max_items]:
+            entry_url = entry.get("link", "").strip()
+            rss_summary = entry.get("summary", "")[:500].strip()
+
+            # Fetch the article body from the canonical URL. Fail-soft to
+            # the RSS summary so a publisher that blocks scrapers still
+            # surfaces something to the user.
+            body_text = None
+            if RSS_FETCH_FULL_TEXT and entry_url:
+                body_text = _fetch_and_extract_article_body(entry_url)
+                if body_text:
+                    bodies_fetched += 1
+                else:
+                    bodies_failed += 1
+
             article = {
                 "title": entry.get("title", "").strip(),
-                "url": entry.get("link", "").strip(),
+                "url": entry_url,
                 "published_date": entry.get("published", entry.get("updated", "")),
-                "summary": entry.get("summary", "")[:500].strip(),
+                "summary": rss_summary,
+                # `extracted_text` is what ingestion writes to articles.extracted_text.
+                # Prefer the fetched body; fall back to the RSS summary so we
+                # never write an empty extraction for non-extractable pages.
+                "extracted_text": body_text or rss_summary,
+                "extraction_method": "html_body" if body_text else "rss_summary",
                 "author": entry.get("author", ""),
                 "tags": [
                     tag.get("term", "").strip()
@@ -128,7 +258,10 @@ def _parse_feed(url: str, max_items: int = 20) -> List[Dict[str, Any]]:
             if article["title"] and article["url"]:
                 articles.append(article)
 
-        logger.info(f"RSS parsed {len(articles)} articles from {url}")
+        logger.info(
+            f"RSS parsed {len(articles)} articles from {url} "
+            f"(bodies_fetched={bodies_fetched}, fallback_to_summary={bodies_failed})"
+        )
         return articles
 
     except Exception as e:

@@ -16,6 +16,7 @@ Fallback LLM: OpenAI GPT / DeepSeek
 import json
 import os
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -33,6 +34,12 @@ class ArticleEnrichmentService:
 
     def __init__(self, db: Database):
         self.db = db
+        # Per-article state populated by enrich_article() so the LLM helpers
+        # can attribute training rows + metadata without changing every
+        # signature. Safe because enrich_article runs serially per instance.
+        self._current_article_id: Optional[str] = None
+        self._llm_providers_used: List[str] = []
+        self._llm_models_used: List[str] = []
 
     # ------------------------------------------------------------------
     # Public API
@@ -62,6 +69,11 @@ class ArticleEnrichmentService:
         """
         cc = (country_code or "FI").upper()
         started_at = datetime.utcnow()
+
+        # Reset per-article LLM tracking
+        self._current_article_id = article_id
+        self._llm_providers_used = []
+        self._llm_models_used = []
 
         # Gather data concurrently where possible
         credibility = self._fetch_source_credibility(source_name)
@@ -106,7 +118,17 @@ class ArticleEnrichmentService:
         metadata["duration_seconds"] = round(
             (finished_at - started_at).total_seconds(), 2
         )
-        metadata["llm_provider"] = metadata.get("llm_provider", "unknown")
+        # Record which providers/models actually produced this row's output.
+        # Distinct list so a single provider used twice (excerpt + summary)
+        # shows once. If no LLM was called (all fallbacks), keep "fallback".
+        if self._llm_providers_used:
+            distinct_providers = list(dict.fromkeys(self._llm_providers_used))
+            distinct_models = list(dict.fromkeys(self._llm_models_used))
+            metadata["llm_provider"] = ",".join(distinct_providers)
+            metadata["llm_model"] = ",".join(distinct_models)
+        else:
+            metadata["llm_provider"] = "fallback"
+            metadata["llm_model"] = "none"
 
         # Persist to database
         self._store_enrichment(
@@ -147,6 +169,7 @@ class ArticleEnrichmentService:
                       content_category
                FROM articles
                WHERE enriched_at IS NULL
+                 AND is_synthetic = FALSE
                ORDER BY created_at DESC
                LIMIT :lim""",
             {"lim": limit},
@@ -486,7 +509,19 @@ Write the enriched excerpt now. Use flowing prose paragraphs, not bullet points 
                 title, extracted_text, source_name, credibility, weather_context, temperature_trend
             )
 
-        return result
+        text, provider, model = result
+        self._record_llm_call(provider, model)
+        self._append_training_row(
+            task="enriched_excerpt",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            assistant_output=text,
+            provider=provider,
+            model=model,
+            country_code=country_code,
+            source_name=source_name,
+        )
+        return text
 
     async def _generate_climate_context_summary(
         self,
@@ -552,86 +587,161 @@ Write 2-3 sentences only. Be specific and data-driven."""
             )
             return " ".join(parts)
 
-        return result
+        text, provider, model = result
+        self._record_llm_call(provider, model)
+        self._append_training_row(
+            task="climate_context_summary",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            assistant_output=text,
+            provider=provider,
+            model=model,
+            country_code=country_code,
+            source_name=None,
+        )
+        return text
+
+    def _record_llm_call(self, provider: str, model: str) -> None:
+        """Track which LLM produced output for the current article so
+        metadata + JSONL can attribute it correctly."""
+        self._llm_providers_used.append(provider)
+        self._llm_models_used.append(model)
+
+    def _append_training_row(
+        self,
+        task: str,
+        system_prompt: str,
+        user_prompt: str,
+        assistant_output: str,
+        provider: str,
+        model: str,
+        country_code: str,
+        source_name: Optional[str],
+    ) -> None:
+        """Append one ChatML-formatted training row to the JSONL dataset
+        when CLILENS_TRAINING_DATASET_PATH is set. Used to build SFT data
+        for distilling enrichment quality into a smaller model later."""
+        path = os.getenv("CLILENS_TRAINING_DATASET_PATH")
+        if not path:
+            return
+
+        row = {
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+                {"role": "assistant", "content": assistant_output},
+            ],
+            "meta": {
+                "article_id": self._current_article_id,
+                "country_code": country_code,
+                "source_name": source_name,
+                "provider": provider,
+                "model": model,
+                "task": task,
+                "ts": datetime.utcnow().isoformat() + "Z",
+            },
+        }
+        try:
+            target = Path(path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with target.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except Exception as exc:
+            logger.warning(
+                "Failed to append training row",
+                path=path,
+                article_id=self._current_article_id,
+                error=str(exc),
+            )
 
     async def _call_llm(
         self,
         system_prompt: str,
         user_prompt: str,
         max_tokens: int = 1200,
-    ) -> Optional[str]:
-        """Call an LLM provider. Tries Anthropic first, then OpenAI, then DeepSeek."""
+    ) -> Optional[Tuple[str, str, str]]:
+        """Call an LLM provider and return (text, provider, model).
 
-        # --- Anthropic Claude (primary) ---
-        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-        if anthropic_key:
-            try:
-                import anthropic
+        Default order is DeepSeek → OpenAI → Anthropic (cheap first, premium
+        last). Set CLILENS_ENRICHMENT_PROVIDER=deepseek|openai|anthropic to
+        pin a single provider and disable fallback (used by the backfill
+        runner to keep cost predictable).
+        """
 
-                client = anthropic.Anthropic(api_key=anthropic_key)
-                message = client.messages.create(
-                    model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
-                    max_tokens=max_tokens,
-                    temperature=0.3,
-                    system=system_prompt,
-                    messages=[{"role": "user", "content": user_prompt}],
-                )
-                if message.content:
-                    text = message.content[0].text.strip()
+        pin = os.getenv("CLILENS_ENRICHMENT_PROVIDER", "").strip().lower()
+        order = [pin] if pin in {"deepseek", "openai", "anthropic"} else ["deepseek", "openai", "anthropic"]
+
+        for provider in order:
+            if provider == "deepseek":
+                key = os.getenv("DEEPSEEK_API_KEY")
+                if not key:
+                    continue
+                try:
+                    from openai import OpenAI as OpenAIClient
+                    model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+                    client = OpenAIClient(
+                        api_key=key,
+                        base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+                    )
+                    response = client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        max_tokens=max_tokens,
+                        temperature=0.3,
+                    )
+                    text = response.choices[0].message.content.strip()
                     if text:
-                        logger.debug("LLM response from Anthropic")
-                        return text
-            except Exception as exc:
-                logger.warning("Anthropic LLM call failed", error=str(exc))
+                        return text, "deepseek", model
+                except Exception as exc:
+                    logger.warning("DeepSeek LLM call failed", error=str(exc))
 
-        # --- OpenAI GPT (first fallback) ---
-        openai_key = os.getenv("OPENAI_API_KEY")
-        if openai_key:
-            try:
-                from openai import OpenAI as OpenAIClient
+            elif provider == "openai":
+                key = os.getenv("OPENAI_API_KEY")
+                if not key:
+                    continue
+                try:
+                    from openai import OpenAI as OpenAIClient
+                    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+                    client = OpenAIClient(api_key=key)
+                    response = client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        max_tokens=max_tokens,
+                        temperature=0.3,
+                    )
+                    text = response.choices[0].message.content.strip()
+                    if text:
+                        return text, "openai", model
+                except Exception as exc:
+                    logger.warning("OpenAI LLM call failed", error=str(exc))
 
-                client = OpenAIClient(api_key=openai_key)
-                response = client.chat.completions.create(
-                    model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    max_tokens=max_tokens,
-                    temperature=0.3,
-                )
-                text = response.choices[0].message.content.strip()
-                if text:
-                    logger.debug("LLM response from OpenAI")
-                    return text
-            except Exception as exc:
-                logger.warning("OpenAI LLM call failed", error=str(exc))
-
-        # --- DeepSeek (second fallback) ---
-        deepseek_key = os.getenv("DEEPSEEK_API_KEY")
-        if deepseek_key:
-            try:
-                from openai import OpenAI as OpenAIClient
-
-                client = OpenAIClient(
-                    api_key=deepseek_key,
-                    base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
-                )
-                response = client.chat.completions.create(
-                    model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    max_tokens=max_tokens,
-                    temperature=0.3,
-                )
-                text = response.choices[0].message.content.strip()
-                if text:
-                    logger.debug("LLM response from DeepSeek")
-                    return text
-            except Exception as exc:
-                logger.warning("DeepSeek LLM call failed", error=str(exc))
+            elif provider == "anthropic":
+                key = os.getenv("ANTHROPIC_API_KEY")
+                if not key:
+                    continue
+                try:
+                    import anthropic
+                    model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+                    client = anthropic.Anthropic(api_key=key)
+                    message = client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        temperature=0.3,
+                        system=system_prompt,
+                        messages=[{"role": "user", "content": user_prompt}],
+                    )
+                    if message.content:
+                        text = message.content[0].text.strip()
+                        if text:
+                            return text, "anthropic", model
+                except Exception as exc:
+                    logger.warning("Anthropic LLM call failed", error=str(exc))
 
         logger.error("All LLM providers failed — no API keys set or all calls errored")
         return None

@@ -255,7 +255,8 @@ async def get_feed_status(
                  COUNT(*) as article_count,
                  MAX(created_at) as last_article_at
                FROM articles
-               WHERE country_code = :cc""",
+               WHERE is_synthetic = FALSE
+                 AND country_code = :cc""",
             {"cc": cc.upper()},
         )
         row = stats_rows[0] if stats_rows else {}

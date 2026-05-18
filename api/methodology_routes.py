@@ -652,7 +652,7 @@ async def get_hallucination_rates(
                     AVG(CASE WHEN per_link.hallucination_score > 0.5
                              THEN 1.0 ELSE 0.0 END)     AS high_risk_rate
                 FROM per_link
-                LEFT JOIN articles a ON a.id = per_link.art_id
+                LEFT JOIN articles a ON a.article_id = per_link.art_id
                 GROUP BY a.source_name
                 ORDER BY COUNT(*) DESC
                 LIMIT :limit
