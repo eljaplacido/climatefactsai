@@ -100,7 +100,7 @@ export default async function ArticlePage({ params }: { params: { id: string } }
     : null;
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <main className="max-w-4xl mx-auto" aria-labelledby="article-title">
       <div className="mb-6">
         <Link href="/search" className="text-sm text-clilens-primary hover:underline">
           &larr; Back to search
@@ -122,7 +122,7 @@ export default async function ArticlePage({ params }: { params: { id: string } }
                   </span>
                 )}
               </div>
-              <h1 className="mt-1 text-2xl font-bold text-gray-900">{article.title}</h1>
+              <h1 id="article-title" className="mt-1 text-2xl font-bold text-gray-900">{article.title}</h1>
               <div className="mt-2 flex items-center gap-3 text-sm text-gray-500">
                 {article.published_date && (
                   <span>
@@ -490,6 +490,6 @@ export default async function ArticlePage({ params }: { params: { id: string } }
           </div>
         </div>
       </article>
-    </div>
+    </main>
   );
 }

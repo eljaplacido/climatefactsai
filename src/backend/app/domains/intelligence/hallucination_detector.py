@@ -125,18 +125,53 @@ class HallucinationDetector:
 
         return {"overlap_score": round(overlap, 3), "flagged": flagged}
 
-    @staticmethod
-    def _extract_simple_entities(text: str) -> set:
-        """
-        Extract capitalized multi-word names as candidate entities.
+    # spaCy NER pipeline — loaded once, cached at class level. None if spaCy
+    # or the model isn't installed; the regex fallback below handles that case.
+    # Audit (2026-05-18) flagged the regex heuristic as the entity check's
+    # weakest link (over-flags paraphrases, under-flags hallucinated proper
+    # nouns that look uncapitalised). When spaCy is available we extract
+    # PERSON/ORG/GPE/LOC/PRODUCT/EVENT entities at semantic level.
+    _spacy_nlp = None
+    _spacy_load_attempted = False
 
-        Simple heuristic: sequences of 2+ capitalized words, or quoted phrases.
+    @classmethod
+    def _get_spacy(cls):
+        if cls._spacy_load_attempted:
+            return cls._spacy_nlp
+        cls._spacy_load_attempted = True
+        try:
+            import spacy
+            try:
+                cls._spacy_nlp = spacy.load("en_core_web_sm", disable=["parser", "tagger", "lemmatizer"])
+            except OSError:
+                # Model not downloaded — bail to the regex fallback. Operator
+                # can `python -m spacy download en_core_web_sm` to enable.
+                cls._spacy_nlp = None
+        except ImportError:
+            cls._spacy_nlp = None
+        return cls._spacy_nlp
+
+    @classmethod
+    def _extract_simple_entities(cls, text: str) -> set:
+        """Extract candidate entities.
+
+        Primary path: spaCy NER (PERSON/ORG/GPE/LOC/PRODUCT/EVENT/NORP/FAC).
+        Fallback: capitalised-n-gram regex when spaCy or the model is absent.
         """
+        nlp = cls._get_spacy()
+        if nlp is not None:
+            try:
+                doc = nlp(text[:100_000])  # spaCy default max is 1e6 chars; cap defensively
+                wanted = {"PERSON", "ORG", "GPE", "LOC", "PRODUCT", "EVENT", "NORP", "FAC"}
+                return {ent.text for ent in doc.ents if ent.label_ in wanted and ent.text.strip()}
+            except Exception:
+                # Any spaCy runtime issue → fall through to regex
+                pass
+
+        # Regex fallback: capitalised multi-word sequences + ALL-CAPS acronyms.
         entities = set()
-        # Capitalized sequences (proper nouns)
         for match in re.finditer(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b", text):
             entities.add(match.group(1))
-        # Single capitalized words that look like names/acronyms (>= 2 chars)
         for match in re.finditer(r"\b([A-Z]{2,})\b", text):
             entities.add(match.group(1))
         return entities

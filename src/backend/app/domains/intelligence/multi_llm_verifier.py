@@ -71,7 +71,7 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, List, Optional
+from typing import Any, Awaitable, Callable, List, Optional, Tuple
 
 _logger = logging.getLogger("multi_llm_verifier")
 
@@ -103,6 +103,8 @@ class CorroboratedClaim:
     similarity_to_best_match: Optional[float]  # 0–1, or None if no secondary
     matched_secondary_text: Optional[str]      # the secondary claim if corroborated
     raw: Optional[Any] = None    # passthrough of the original raw claim object
+    numbers_in_claim: Tuple[float, ...] = ()   # numeric values extracted from claim text
+    numeric_grounded: Optional[bool] = None    # None = no check ran or claim has no numbers
 
 
 @dataclass
@@ -148,6 +150,8 @@ class CrossVerificationResult:
                         if c.similarity_to_best_match is not None else None
                     ),
                     "matched_secondary_text": c.matched_secondary_text,
+                    "numbers_in_claim": list(c.numbers_in_claim),
+                    "numeric_grounded": c.numeric_grounded,
                 }
                 for c in self.primary_claims
             ],
@@ -239,6 +243,32 @@ def _to_extracted_claim(obj: Any) -> ExtractedClaim:
 
 ExtractorFn = Callable[[str, int], Awaitable[List[Any]]]
 
+# A numeric grounding check: given a claim text + the numbers extracted from it,
+# return True if the numbers are corroborated by trusted indicator data, False
+# if not, or None if no check could be performed (e.g. no relevant indicators
+# exist for the country). Used to catch the "both LLMs agree on a hallucinated
+# number" failure mode — corroboration on shared bias collapses to truth if
+# the numbers don't match country_indicators.
+NumericGroundingFn = Callable[[str, List[float]], Optional[bool]]
+
+# Match floats like "30%", "1.5 °C", "20 tCO2e", "2030", "1,500", etc.
+# Captures the leading numeric — caller decides what it means.
+_NUMBER_RE = re.compile(r"(?<![A-Za-z])(-?\d{1,3}(?:[,\.]\d{3})*(?:[\.,]\d+)?|\-?\d+(?:[\.,]\d+)?)")
+
+
+def _extract_numbers_from_text(text: str) -> Tuple[float, ...]:
+    """Return the numeric values mentioned in a claim. Empty tuple if none."""
+    if not text:
+        return ()
+    out: List[float] = []
+    for m in _NUMBER_RE.finditer(text):
+        raw = m.group(1).replace(",", "")
+        try:
+            out.append(float(raw))
+        except ValueError:
+            continue
+    return tuple(out)
+
 
 async def verify_claims(
     *,
@@ -251,6 +281,8 @@ async def verify_claims(
     similarity_threshold: float = 0.5,
     secondary_timeout: float = 30.0,
     confidence_penalty_uncorroborated: float = 0.7,
+    numeric_grounding_check: Optional[NumericGroundingFn] = None,
+    numeric_ungrounded_penalty: float = 0.5,
 ) -> CrossVerificationResult:
     """Run claim extraction with up to two LLMs and report agreement.
 
@@ -363,6 +395,22 @@ async def verify_claims(
         else:
             confidence = p.importance * confidence_penalty_uncorroborated
 
+        # Numeric grounding: even when both LLMs corroborate a claim, if it
+        # contains numbers that don't match `country_indicators`, the
+        # corroboration is shared bias (or shared hallucination) — halve
+        # confidence further. No penalty when numeric_grounding_check is
+        # absent or the claim has no numeric content.
+        numbers = _extract_numbers_from_text(p.text)
+        grounded: Optional[bool] = None
+        if numeric_grounding_check is not None and numbers:
+            try:
+                grounded = numeric_grounding_check(p.text, list(numbers))
+            except Exception as exc:
+                _logger.debug(f"numeric_grounding_check raised: {exc}")
+                grounded = None
+            if grounded is False:
+                confidence = confidence * numeric_ungrounded_penalty
+
         out_claims.append(CorroboratedClaim(
             text=p.text,
             importance=p.importance,
@@ -373,6 +421,8 @@ async def verify_claims(
                 best_match.text if (is_corroborated and best_match is not None) else None
             ),
             raw=p.raw,
+            numbers_in_claim=numbers,
+            numeric_grounded=grounded,
         ))
 
     agreement_score = (

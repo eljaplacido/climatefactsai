@@ -69,16 +69,16 @@ class TestSustainabilityFormulaEndpoint:
         resp = client.get("/api/methodology/sustainability-formula")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["methodology_version"] == "sustainability_v1_2026_05"
+        assert body["methodology_version"] == "sustainability_v2_2026_05"
         assert body["methodology_url"].startswith("http")
 
     def test_components_weights_sum_to_one(self):
         resp = client.get("/api/methodology/sustainability-formula")
         body = resp.json()
         components = body["components"]
-        # 2026-05-18: 4 components after ND-GAIN was wired into the composite
-        # (emissions, renewable share, CAT rating, ND-GAIN adaptation index).
-        assert len(components) == 4
+        # 2026-05-19: 5 components after ND-GAIN + UNFCCC NDC were wired in.
+        # (emissions, renewable share, CAT rating, ND-GAIN, NDC reduction).
+        assert len(components) == 5
         total = sum(c["weight"] for c in components)
         assert total == pytest.approx(1.0)
         # Each component must declare its normalizer name + a doc line.

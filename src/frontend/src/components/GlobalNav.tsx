@@ -151,6 +151,7 @@ export default function GlobalNav() {
               onClick={cycleTheme}
               className="flex items-center px-2 py-1.5 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-md transition-colors"
               title={`Theme: ${theme}`}
+              aria-label={`Toggle theme (current: ${theme})`}
             >
               {theme === "light" ? <Sun className="h-4 w-4" /> : theme === "dark" ? <Moon className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
             </button>
@@ -196,6 +197,7 @@ export default function GlobalNav() {
                 href="/admin/analytics"
                 className="hidden md:flex items-center px-2 py-1.5 text-gray-500 hover:bg-gray-50 rounded-md transition-colors"
                 title={t("nav.analytics")}
+                aria-label={t("nav.analytics")}
               >
                 <BarChart3 className="h-4 w-4" />
               </Link>
@@ -206,6 +208,7 @@ export default function GlobalNav() {
               href="/about"
               className="hidden md:flex items-center px-2 py-1.5 text-gray-500 hover:bg-gray-50 rounded-md transition-colors"
               title={t("nav.about")}
+              aria-label={t("nav.about")}
             >
               <Info className="h-4 w-4" />
             </Link>

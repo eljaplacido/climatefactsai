@@ -62,7 +62,7 @@ _logger = logging.getLogger("sustainability_score")
 
 # Pinned to every output. Bump on formula changes; old persisted scores can
 # then be displayed with their original methodology label.
-METHODOLOGY_VERSION = "sustainability_v1_2026_05"
+METHODOLOGY_VERSION = "sustainability_v2_2026_05"
 
 # Methodology disclosure URL. Should point to a user-readable doc when one
 # exists; today routes to the project's CHANGELOG / repository.
@@ -126,6 +126,20 @@ def normalize_nd_gain_index(score_0_to_100: float) -> float:
     return max(0.0, min(100.0, float(score_0_to_100)))
 
 
+def normalize_ndc_target_reduction(percent: float) -> float:
+    """UNFCCC NDC target reduction percentage → 0–100 score.
+
+    The percentage is the country's pledged GHG cut by the target year vs
+    a base year. Linear scale: 0% pledged → 0 score; 100%+ pledged → 100.
+    A 50% reduction NDC (current global average for advanced economies)
+    maps to score 50. Caps at 100 — over-100% pledges (carbon-negative
+    targets like Bhutan) saturate the scale.
+    """
+    if percent is None:
+        raise ValueError("normalize_ndc_target_reduction requires a number")
+    return max(0.0, min(100.0, float(percent)))
+
+
 # ---------------------------------------------------------------------------
 # Component definitions — the formula's wired structure
 # ---------------------------------------------------------------------------
@@ -146,7 +160,7 @@ class ComponentDefinition:
 COMPONENTS: List[ComponentDefinition] = [
     ComponentDefinition(
         indicator_id="emissions_tco2e_per_capita",
-        weight=0.35,
+        weight=0.30,
         normalizer=normalize_emissions_per_capita,
         description=(
             "Per-capita greenhouse-gas emissions (CO₂-equivalent, 100-year "
@@ -157,7 +171,7 @@ COMPONENTS: List[ComponentDefinition] = [
     ),
     ComponentDefinition(
         indicator_id="renewable_share_electricity_percent",
-        weight=0.30,
+        weight=0.25,
         normalizer=normalize_renewable_share,
         description=(
             "Share of electricity generated from renewable sources "
@@ -183,6 +197,18 @@ COMPONENTS: List[ComponentDefinition] = [
             "and readiness combined to 0–100. Higher = more climate-resilient. "
             "Captures the adaptation dimension that the emissions/renewable/CAT "
             "components don't reach (mitigation policy ≠ resilience)."
+        ),
+    ),
+    ComponentDefinition(
+        indicator_id="ndc_target_reduction_percent",
+        weight=0.10,
+        normalizer=normalize_ndc_target_reduction,
+        description=(
+            "Country's pledged GHG reduction (percentage) under its Nationally "
+            "Determined Contribution to the Paris Agreement. Linear 0–100% → "
+            "0–100 score. Picks up the policy-ambition dimension at the legally "
+            "binding international level (CAT is a third-party assessment; NDC "
+            "is the country's own pledge)."
         ),
     ),
 ]
@@ -225,6 +251,7 @@ class SustainabilityScore:
     confidence_low: float                       # value - band, clamped to [0, 100]
     confidence_high: float                      # value + band, clamped to [0, 100]
     confidence_band: float                      # half-width of the band
+    year_spread: int                            # max(year) - min(year) across contributing indicators
     methodology_version: str
     methodology_url: str
     indicators_used: int
@@ -238,6 +265,7 @@ class SustainabilityScore:
             "confidence_low": round(self.confidence_low, 2),
             "confidence_high": round(self.confidence_high, 2),
             "confidence_band": round(self.confidence_band, 2),
+            "year_spread": self.year_spread,
             "methodology_version": self.methodology_version,
             "methodology_url": self.methodology_url,
             "indicators_used": self.indicators_used,
@@ -322,7 +350,18 @@ def compute_sustainability_score(
             )
         )
 
-    band = confidence_band_for(len(contributing))
+    # Mixed-year inputs should widen the confidence band — averaging 2018
+    # OWID emissions with 2024 ND-GAIN treats them as if they were aligned.
+    # year_spread = max(year) - min(year). Each year of spread adds 2 to the
+    # band half-width. (Audit recommendation 2026-05-18.)
+    contributing_years = [
+        int(_attr_or_item(indicator, "year") or 0)
+        for _, indicator, _ in contributing
+    ]
+    contributing_years = [y for y in contributing_years if y > 0]
+    year_spread = (max(contributing_years) - min(contributing_years)) if contributing_years else 0
+
+    band = confidence_band_for(len(contributing)) + 2.0 * year_spread
     confidence_low = max(0.0, weighted_total - band)
     confidence_high = min(100.0, weighted_total + band)
 
@@ -331,6 +370,7 @@ def compute_sustainability_score(
         confidence_low=confidence_low,
         confidence_high=confidence_high,
         confidence_band=band,
+        year_spread=year_spread,
         methodology_version=METHODOLOGY_VERSION,
         methodology_url=METHODOLOGY_URL,
         indicators_used=len(contributing),

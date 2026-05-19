@@ -6,6 +6,8 @@ import CountrySelector from "@/components/CountrySelector";
 import { api } from "@/lib/api";
 import type { Article, TagStat, SearchSuggestion } from "@/types";
 import { Globe, Tag as TagIcon, Newspaper, Search as SearchIcon, Calendar, X } from "lucide-react";
+import LoginPrompt from "@/components/LoginPrompt";
+import { useAuth } from "@/lib/auth";
 
 type Credibility = "ALL" | "HIGH" | "MEDIUM" | "LOW";
 
@@ -19,6 +21,7 @@ const CONTENT_CATEGORIES = [
 ] as const;
 
 export default function SearchPage() {
+  const { isLoggedIn } = useAuth();
   const [q, setQ] = useState("");
   const [country, setCountry] = useState<string | null>(null);
   const [credibility, setCredibility] = useState<Credibility>("ALL");
@@ -397,6 +400,12 @@ export default function SearchPage() {
               </div>
             </div>
           </div>
+
+          {!isLoggedIn && (
+            <div className="mt-4 max-w-3xl">
+              <LoginPrompt />
+            </div>
+          )}
         </div>
       </section>
 
@@ -412,7 +421,23 @@ export default function SearchPage() {
           )}
 
           {loading && (
-            <div className="text-gray-600">Loading results...</div>
+            // Skeleton grid matching ArticleCard footprint so the page doesn't
+            // collapse to a one-line "Loading…" while results stream. Mirrors
+            // the home-page skeleton pattern.
+            <div className="grid gap-6 md:grid-cols-2" aria-busy="true" aria-label="Loading search results">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="rounded-lg border border-gray-200 bg-white p-5 animate-pulse">
+                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-3"></div>
+                  <div className="h-3 bg-gray-200 rounded w-full mb-2"></div>
+                  <div className="h-3 bg-gray-200 rounded w-5/6 mb-2"></div>
+                  <div className="h-3 bg-gray-200 rounded w-2/3 mb-4"></div>
+                  <div className="flex gap-2">
+                    <div className="h-5 bg-gray-200 rounded w-16"></div>
+                    <div className="h-5 bg-gray-200 rounded w-20"></div>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
           {error && (
             <div className="text-red-600 mb-4">{error}</div>
