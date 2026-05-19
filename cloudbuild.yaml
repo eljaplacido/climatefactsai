@@ -1,0 +1,209 @@
+# =============================================================================
+# ClimateNews Cloud Build CI/CD — LEAN / Tiny Launch Edition
+# =============================================================================
+# No Redis, no VPC, no Cloud Run Jobs. Cloud Scheduler POSTs to API endpoints.
+# Triggers on push to the main branch.
+#
+# Setup:
+#   1. Connect your GitHub repo in Cloud Build > Triggers
+#   2. Create a trigger for the main branch pointing to this file
+#   3. Grant Cloud Build service account:
+#      - roles/run.admin
+#      - roles/iam.serviceAccountUser
+#      - roles/secretmanager.secretAccessor
+# =============================================================================
+
+substitutions:
+  _PROJECT_ID: climatenews-495412
+  _REGION: europe-west4
+  _REPO: climatenews
+  _API_SERVICE: climatenews-api
+  _FRONTEND_SERVICE: climatenews-frontend
+  _TAG: $SHORT_SHA
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  # -------------------------------------------------------------------------
+  # Step 1: Build API image
+  # -------------------------------------------------------------------------
+  - name: "gcr.io/cloud-builders/docker"
+    id: "build-api"
+    args:
+      - "build"
+      - "--platform=linux/amd64"
+      - "-f"
+      - "infrastructure/gcp/api-prod.Dockerfile"
+      - "-t"
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/api:${_TAG}"
+      - "."
+
+  - name: "gcr.io/cloud-builders/docker"
+    id: "push-api"
+    args:
+      - "push"
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/api:${_TAG}"
+    waitFor:
+      - "build-api"
+
+  # -------------------------------------------------------------------------
+  # Step 2: Deploy API (lean config: 512Mi, 1 CPU, scale-to-zero)
+  # -------------------------------------------------------------------------
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: "deploy-api"
+    entrypoint: "gcloud"
+    args:
+      - "run"
+      - "deploy"
+      - "${_API_SERVICE}"
+      - "--image=${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/api:${_TAG}"
+      - "--region=${_REGION}"
+      - "--project=${_PROJECT_ID}"
+      - "--platform=managed"
+      - "--allow-unauthenticated"
+      - "--port=8000"
+      - "--set-secrets=DATABASE_URL=database-url:latest"
+      - "--set-secrets=SCHEDULER_SECRET=scheduler-secret:latest"
+      - "--set-secrets=JWT_SECRET_KEY=jwt-secret-key:latest"
+      - "--set-secrets=ANTHROPIC_API_KEY=anthropic-api-key:latest"
+      - "--set-secrets=OPENAI_API_KEY=openai-api-key:latest"
+      - "--set-secrets=PERPLEXITY_API_KEY=perplexity-api-key:latest"
+      - "--set-secrets=STRIPE_SECRET_KEY=stripe-secret-key:latest"
+      - "--set-secrets=STRIPE_WEBHOOK_SECRET=stripe-webhook-secret:latest"
+      - "--set-secrets=SENDGRID_API_KEY=sendgrid-api-key:latest"
+      - "--set-secrets=GOOGLE_CLIENT_ID=google-client-id:latest"
+      - "--set-secrets=GOOGLE_CLIENT_SECRET=google-client-secret:latest"
+      - "--set-secrets=DEEPSEEK_API_KEY=deepseek-api-key:latest"
+      - "--set-secrets=NOAA_API_TOKEN=noaa-api-token:latest"
+      - "--set-secrets=NASA_API_KEY=nasa-api-key:latest"
+      - "--set-env-vars=ENVIRONMENT=production"
+      - "--set-env-vars=LOG_LEVEL=INFO"
+      - "--set-env-vars=API_HOST=0.0.0.0"
+      - "--set-env-vars=API_PORT=8000"
+      - "--memory=512Mi"
+      - "--cpu=1"
+      - "--concurrency=80"
+      - "--max-instances=5"
+      - "--min-instances=0"
+      - "--timeout=300"
+      - "--quiet"
+    waitFor:
+      - "push-api"
+
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: "get-api-url"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        API_URL=$(gcloud run services describe ${_API_SERVICE} \
+          --region=${_REGION} \
+          --project=${_PROJECT_ID} \
+          --format='value(status.url)')
+        echo "API_URL=${API_URL}" >> /workspace/vars.env
+        echo "API URL: ${API_URL}"
+    waitFor:
+      - "deploy-api"
+
+  # -------------------------------------------------------------------------
+  # Step 3: Build Frontend (with real API URL baked at build time)
+  # -------------------------------------------------------------------------
+  - name: "gcr.io/cloud-builders/docker"
+    id: "build-frontend"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        source /workspace/vars.env
+        docker build \
+          --platform=linux/amd64 \
+          --build-arg=NEXT_PUBLIC_API_URL=$${API_URL} \
+          -f infrastructure/gcp/frontend-prod.Dockerfile \
+          -t ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:${_TAG} \
+          src/frontend
+    waitFor:
+      - "get-api-url"
+
+  - name: "gcr.io/cloud-builders/docker"
+    id: "push-frontend"
+    args:
+      - "push"
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:${_TAG}"
+    waitFor:
+      - "build-frontend"
+
+  # -------------------------------------------------------------------------
+  # Step 4: Deploy Frontend (lean config: 256Mi, 1 CPU, scale-to-zero)
+  # -------------------------------------------------------------------------
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: "deploy-frontend"
+    entrypoint: "gcloud"
+    args:
+      - "run"
+      - "deploy"
+      - "${_FRONTEND_SERVICE}"
+      - "--image=${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:${_TAG}"
+      - "--region=${_REGION}"
+      - "--project=${_PROJECT_ID}"
+      - "--platform=managed"
+      - "--allow-unauthenticated"
+      - "--port=3000"
+      - "--set-env-vars=NODE_ENV=production"
+      - "--set-env-vars=NEXT_TELEMETRY_DISABLED=1"
+      - "--set-env-vars=PORT=3000"
+      - "--set-env-vars=HOSTNAME=0.0.0.0"
+      - "--memory=256Mi"
+      - "--cpu=1"
+      - "--concurrency=100"
+      - "--max-instances=3"
+      - "--min-instances=0"
+      - "--timeout=60"
+      - "--quiet"
+    waitFor:
+      - "push-frontend"
+
+  # -------------------------------------------------------------------------
+  # Step 5: Update Cloud Scheduler URLs and CORS
+  # -------------------------------------------------------------------------
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: "update-schedulers"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        source /workspace/vars.env
+        SCHEDULER_SECRET=$(gcloud secrets versions access latest --secret=scheduler-secret --project=${_PROJECT_ID})
+        gcloud run services update ${_API_SERVICE} \
+          --region=${_REGION} \
+          --project=${_PROJECT_ID} \
+          --set-env-vars=CORS_ORIGINS=$${API_URL} \
+          --quiet || true
+        
+        JOBS=(
+          "cn-discover:/api/scheduler/ingestion/discover"
+          "cn-rss-poll:/api/scheduler/ingestion/rss"
+          "cn-verify:/api/scheduler/processing/verify-pending"
+          "cn-retry:/api/scheduler/processing/retry-failed"
+          "cn-feeds:/api/scheduler/feeds/update"
+          "cn-translate:/api/scheduler/translation/batch"
+        )
+        for entry in "${JOBS[@]}"; do
+          name="${entry%%:*}"
+          path="${entry##*:}"
+          if gcloud scheduler jobs describe "$${name}" --location=${_REGION} --project=${_PROJECT_ID} >/dev/null 2>&1; then
+            gcloud scheduler jobs update http "$${name}" \
+              --location=${_REGION} \
+              --project=${_PROJECT_ID} \
+              --uri="$${API_URL}$${path}" \
+              --headers="X-Scheduler-Secret=$${SCHEDULER_SECRET}" \
+              --quiet || true
+            echo "Updated scheduler: $${name}"
+          fi
+        done
+    waitFor:
+      - "deploy-frontend"
+
+images:
+  - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/api:${_TAG}"
+  - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:${_TAG}"
