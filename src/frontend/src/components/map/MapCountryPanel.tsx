@@ -25,6 +25,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import type { Article } from "@/types";
+import CountrySelector from "@/components/CountrySelector";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
 
@@ -589,16 +590,20 @@ export default function MapCountryPanel({
                     <label className="text-xs font-medium text-slate-400 mb-1.5 block">
                       Compare with country
                     </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="Country code (e.g. US)"
-                        value={compareCountry}
-                        onChange={(e) =>
-                          setCompareCountry(e.target.value.toUpperCase().slice(0, 2))
-                        }
-                        className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
-                      />
+                    <div className="flex gap-2 items-end">
+                      <div className="flex-1">
+                        <CountrySelector
+                          value={compareCountry || null}
+                          onChange={(v) => setCompareCountry(v || "")}
+                          label=""
+                          allOptionLabel="Select country"
+                          showAllOption={false}
+                          searchable={true}
+                          showSelectedChip={false}
+                          theme="dark"
+                          className="[&>label]:hidden"
+                        />
+                      </div>
                       <button
                         type="button"
                         onClick={fetchComparison}
@@ -790,7 +795,7 @@ export default function MapCountryPanel({
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         @keyframes slide-in-right {
           from {
             transform: translateX(100%);

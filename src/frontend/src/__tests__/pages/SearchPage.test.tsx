@@ -25,6 +25,16 @@ vi.mock('@/components/BookmarkButton', () => ({
   default: () => <button>Bookmark</button>,
 }))
 
+vi.mock('@/components/LoginPrompt', () => ({
+  default: () => <div data-testid="login-prompt">LoginPrompt</div>,
+}))
+
+vi.mock('@/lib/auth', () => ({
+  useAuth: () => ({
+    isLoggedIn: true,
+  }),
+}))
+
 const mockArticles: Article[] = [
   {
     article_id: 's1',
@@ -68,19 +78,25 @@ describe('SearchPage', () => {
     mockGetSearchSuggestions.mockResolvedValue([])
   })
 
-  it('renders search heading', () => {
+  it('renders search heading', async () => {
     render(<SearchPage />)
-    expect(screen.getByText('Search')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText('Search')).toBeInTheDocument()
+    })
   })
 
-  it('renders search input', () => {
+  it('renders search input', async () => {
     render(<SearchPage />)
-    expect(screen.getByPlaceholderText(/Search topics/)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/Search topics/)).toBeInTheDocument()
+    })
   })
 
-  it('renders credibility filter', () => {
+  it('renders credibility filter', async () => {
     render(<SearchPage />)
-    expect(screen.getByDisplayValue('All')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('All')).toBeInTheDocument()
+    })
   })
 
   it('displays articles from API', async () => {
@@ -99,11 +115,13 @@ describe('SearchPage', () => {
   })
 
   it('shows error when API fails', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     mockGetArticles.mockRejectedValueOnce(new Error('Network error'))
     render(<SearchPage />)
     await waitFor(() => {
       expect(screen.getByText(/Search unavailable/)).toBeInTheDocument()
     })
+    consoleErrorSpy.mockRestore()
   })
 
   it('shows empty state when no results', async () => {

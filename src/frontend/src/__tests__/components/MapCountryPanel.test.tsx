@@ -16,6 +16,20 @@ vi.mock('recharts', async () => {
   }
 })
 
+// Keep compare interactions deterministic and independent from countries API.
+vi.mock('@/components/CountrySelector', () => ({
+  default: ({ value, onChange }: any) => (
+    <select
+      data-testid="compare-country-selector"
+      value={value || ''}
+      onChange={(e) => onChange(e.target.value || null)}
+    >
+      <option value="">Select country</option>
+      <option value="SE">Sweden</option>
+    </select>
+  ),
+}))
+
 const detailPayload = {
   country_code: 'FI',
   country_name: 'Finland',
@@ -109,9 +123,9 @@ async function openCompareTab() {
   // The compare tab button has the visible text "Compare"
   const compareTab = await screen.findByRole('button', { name: /Compare/i })
   fireEvent.click(compareTab)
-  // Type a comparison country code and click the Compare submit button
-  const codeInput = await screen.findByPlaceholderText(/Country code/i)
-  fireEvent.change(codeInput, { target: { value: 'SE' } })
+  // Select a comparison country and click the Compare submit button
+  const countrySelect = await screen.findByTestId('compare-country-selector')
+  fireEvent.change(countrySelect, { target: { value: 'SE' } })
   // The submit button's accessible name is "Compare" — find within the form area
   // by looking for the button next to the input (last enabled "Compare" button).
   const buttons = screen.getAllByRole('button', { name: /Compare/i })

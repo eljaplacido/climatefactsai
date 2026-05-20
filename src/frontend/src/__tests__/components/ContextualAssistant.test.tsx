@@ -4,7 +4,7 @@ import { render } from '@testing-library/react'
 import { ViewContextProvider, useViewContext } from '@/lib/view-context'
 
 // Mock next/navigation: usePathname is the only hook used by ContextualAssistant.
-const pathnameMock = vi.fn<[], string>(() => '/')
+const pathnameMock = vi.fn(() => '/')
 vi.mock('next/navigation', () => ({
   usePathname: () => pathnameMock(),
 }))

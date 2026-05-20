@@ -80,7 +80,7 @@ describe('AgenticAssistant', () => {
     ).toBeInTheDocument()
   })
 
-  it('POSTs to /api/chat with view_context including article_id / country / analysis_id (general mode)', async () => {
+  it('POSTs to /api/chat with view_context including article_id / country / analysis_id (research mode)', async () => {
     const fetchMock = mockFetchOnce({
       answer: 'Hello world',
       session_id: 's-1',
@@ -102,7 +102,7 @@ describe('AgenticAssistant', () => {
     expect(String(url)).toMatch(/\/api\/chat$/)
     const body = JSON.parse((init as RequestInit).body as string)
     expect(body.question).toBe('Tell me more')
-    expect(body.mode).toBe('general')
+    expect(body.mode).toBe('research_analysis')
     expect(body.view_context).toBeDefined()
     expect(body.view_context.analysis_id).toBe('analysis-99')
     expect(body.view_context.deep_search_query).toBe('arctic ice')

@@ -83,7 +83,8 @@ function getLayerColor(
   cc: string,
   layer: ActiveLayer,
   statsMap: Record<string, CountryStatEntry>,
-  maxArticle: number
+  maxArticle: number,
+  maxSourceCount: number
 ): string {
   const stat = statsMap[cc];
   if (!stat) return "#334155"; // slate-700 (no data)
@@ -108,20 +109,28 @@ function getLayerColor(
       return "#3b82f6"; // blue-500
     }
     case "climate_risk": {
-      const risk = stat.climate_risk_score ?? 0;
-      if (risk > 75) return "#dc2626";
-      if (risk > 50) return "#f97316";
-      if (risk > 25) return "#facc15";
-      if (risk > 0) return "#86efac"; // green-300
-      return "#334155";
+      // Backend may provide 0-10 or legacy 0-100 risk values.
+      const rawRisk = stat.climate_risk_score ?? 0;
+      const risk = rawRisk > 10 ? rawRisk / 10 : rawRisk;
+      if (risk >= 7) return "#dc2626";   // red-600 — extreme
+      if (risk >= 5) return "#f97316";   // orange-500 — high
+      if (risk >= 3) return "#facc15";   // yellow-400 — moderate
+      if (risk > 0) return "#86efac";    // green-300 — low
+      return "#334155";                   // slate-700 — no data
     }
     case "source_diversity": {
       const sources = stat.source_count ?? 0;
-      if (sources > 10) return "#7c3aed"; // violet-600
-      if (sources > 5) return "#a78bfa"; // violet-400
-      if (sources > 2) return "#c4b5fd"; // violet-300
-      if (sources > 0) return "#ede9fe"; // violet-100
-      return "#334155";
+      if (sources <= 0) return "#334155";
+
+      const dynamicMax = Math.max(1, maxSourceCount);
+      const ratio = Math.min(sources / dynamicMax, 1);
+
+      // Keep low values visible on dark basemap (avoid near-white shades).
+      if (ratio >= 0.75) return "#6d28d9"; // violet-700 — top coverage
+      if (ratio >= 0.5) return "#7c3aed";  // violet-600
+      if (ratio >= 0.25) return "#8b5cf6"; // violet-500
+      if (ratio > 0) return "#a78bfa";     // violet-400 — minimal but visible
+      return "#334155";                    // slate-700 — no sources
     }
     default:
       return "#334155";
@@ -179,6 +188,11 @@ export default function InteractiveClimateMap({
 
   const maxArticle = useMemo(
     () => Math.max(1, ...countryStats.map((s) => s.article_count)),
+    [countryStats]
+  );
+
+  const maxSourceCount = useMemo(
+    () => Math.max(1, ...countryStats.map((s) => s.source_count ?? 0)),
     [countryStats]
   );
 
@@ -243,7 +257,13 @@ export default function InteractiveClimateMap({
       const cc = feature.properties.cc as string;
       const isSelected = cc === selectedCountry;
       const isHighlighted = highlightedSet.has(cc);
-      const fillColor = getLayerColor(cc, activeLayer, statsMap, maxArticle);
+      const fillColor = getLayerColor(
+        cc,
+        activeLayer,
+        statsMap,
+        maxArticle,
+        maxSourceCount
+      );
 
       return {
         fillColor,
@@ -258,7 +278,14 @@ export default function InteractiveClimateMap({
         // dashArray for highlighted pulsing effect handled via className
       };
     },
-    [selectedCountry, highlightedSet, activeLayer, statsMap, maxArticle]
+    [
+      selectedCountry,
+      highlightedSet,
+      activeLayer,
+      statsMap,
+      maxArticle,
+      maxSourceCount,
+    ]
   );
 
   const onEachFeature = useCallback(

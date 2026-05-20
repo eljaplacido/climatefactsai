@@ -413,6 +413,12 @@ export interface DeepSearchMethodology {
   // this answer.
   retrieval_strategy?: string;
   prompts_used?: { synthesis?: PromptFingerprint } & Record<string, PromptFingerprint | undefined>;
+  guidance?: {
+    status: "limited" | "partial" | "empty" | "weak" | string;
+    reason?: string;
+    message?: string;
+    suggested_actions?: string[];
+  };
   // Phase 6 wave 2 (2026-05-16): HallucinationDetector runs against the
   // synthesised text + source articles. Null when no sources / detector
   // erored — clients should render "not run" rather than treating absence

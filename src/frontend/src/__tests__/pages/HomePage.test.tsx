@@ -92,27 +92,29 @@ describe('HomePage', () => {
     mockGetTagStats.mockResolvedValue([])
   })
 
-  it('renders the CliLens.AI brand', async () => {
+  it('renders the Climatefacts.ai brand', async () => {
     render(<Home />)
     await waitFor(() => {
-      expect(screen.getAllByText('CliLens.AI').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('Climatefacts.ai').length).toBeGreaterThan(0)
     })
   })
 
   it('renders hero section', async () => {
     render(<Home />)
-    expect(screen.getByText(/Climate Truth/)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText(/Climate Truth/)).toBeInTheDocument()
+    })
   })
 
   it('renders navigation links', async () => {
     render(<Home />)
-    // Current GlobalNav.tsx ships these primary items; "About"/"Methodology"
-    // were removed in favour of the in-product Methodology drawer.
-    expect(screen.getAllByText('News').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Map').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Search').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Deep Search').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Sources').length).toBeGreaterThan(0)
+    // Home hero + footer links currently exposed on this page.
+    await waitFor(() => {
+      expect(screen.getAllByText('Explore Climate Intelligence Map').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('Search').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('Methodology').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('Data sources').length).toBeGreaterThan(0)
+    })
   })
 
   it('renders articles after loading', async () => {
@@ -123,14 +125,18 @@ describe('HomePage', () => {
     })
   })
 
-  it('renders credibility filter', () => {
+  it('renders credibility filter', async () => {
     render(<Home />)
-    const select = screen.getByDisplayValue('All Levels')
-    expect(select).toBeInTheDocument()
+    await waitFor(() => {
+      const select = screen.getByDisplayValue('All Levels')
+      expect(select).toBeInTheDocument()
+    })
   })
 
-  it('renders footer', () => {
+  it('renders footer', async () => {
     render(<Home />)
-    expect(screen.getByText(/Powered by Multi-Agent AI System/)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText(/Powered by Multi-Agent AI System/)).toBeInTheDocument()
+    })
   })
 })

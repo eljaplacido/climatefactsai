@@ -52,6 +52,7 @@ export default function ContextualAssistant() {
       currentCountry={view.countryCode}
       currentAnalysisId={view.analysisId}
       currentDeepSearchQuery={view.deepSearchQuery}
+      currentDeepSearchCompare={view.deepSearchCompare}
       currentCompareCountries={view.compareCountries}
       currentSourceId={view.sourceId}
       currentRoute={pathname}

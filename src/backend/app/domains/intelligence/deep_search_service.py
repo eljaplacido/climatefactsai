@@ -72,9 +72,16 @@ class DeepSearchService:
 
         internal_results = results[0] if not isinstance(results[0], Exception) else []
         perplexity_results = results[1] if not isinstance(results[1], Exception) else {}
+        internal_error = results[0] if isinstance(results[0], Exception) else None
+        external_error = results[1] if isinstance(results[1], Exception) else None
         weather_context = None
         if len(results) > 2 and not isinstance(results[2], Exception):
             weather_context = results[2]
+
+        if internal_error:
+            logger.warning(f"Internal deep-search retrieval failed: {internal_error}")
+        if external_error:
+            logger.warning(f"External deep-search retrieval failed: {external_error}")
 
         # Build citations from internal articles
         citations = []
@@ -176,6 +183,76 @@ class DeepSearchService:
             "prompts_used": prompts_used,
         }
 
+        llm_unavailable = not self.anthropic_key and not os.getenv("DEEPSEEK_API_KEY")
+        has_any_results = internal_count > 0 or external_count > 0
+        retrieval_issue = bool(internal_error) or bool(external_error)
+        suspiciously_weak_coverage = (
+            internal_count > 0
+            and external_count == 0
+            and all((c.get("relevance_score") or 0) <= 0.15 for c in citations[:8])
+        )
+
+        guidance: Optional[Dict[str, Any]] = None
+        if llm_unavailable:
+            guidance = {
+                "status": "limited",
+                "reason": "llm_unavailable",
+                "message": (
+                    "AI synthesis is currently unavailable. Results are retrieval-only; "
+                    "connect a configured LLM provider for full analysis rigor."
+                ),
+                "suggested_actions": [
+                    "Ask the assistant for query refinement",
+                    "Narrow by country or timeframe",
+                    "Retry once provider connectivity is restored",
+                ],
+            }
+        elif retrieval_issue:
+            guidance = {
+                "status": "partial",
+                "reason": "retrieval_error",
+                "message": (
+                    "Part of the retrieval pipeline failed. The response may miss "
+                    "important evidence from one source layer."
+                ),
+                "suggested_actions": [
+                    "Retry the same query",
+                    "Run a comparison query for triangulation",
+                    "Use chat help to reformulate with explicit constraints",
+                ],
+            }
+        elif not has_any_results:
+            guidance = {
+                "status": "empty",
+                "reason": "no_matching_evidence",
+                "message": (
+                    "No matching evidence was found in the internal corpus or "
+                    "external retrieval layer for this query."
+                ),
+                "suggested_actions": [
+                    "Pick one of the suggested clarifications",
+                    "Specify geography + timeframe",
+                    "Open chat help for query design guidance",
+                ],
+            }
+        elif suspiciously_weak_coverage:
+            guidance = {
+                "status": "weak",
+                "reason": "low_relevance_retrieval",
+                "message": (
+                    "Retrieved evidence has weak query match. Treat conclusions as "
+                    "low-confidence and refine scope before decision-making."
+                ),
+                "suggested_actions": [
+                    "Constrain by country and years",
+                    "Use domain-specific terms (e.g., SPI, SPEI, sea-ice extent)",
+                    "Ask chat to suggest scientifically robust query variants",
+                ],
+            }
+
+        if guidance:
+            methodology["guidance"] = guidance
+
         # Clarification: when the corpus + external search both miss, suggest
         # scope refinements the user can pick. Cheap to compute (one LLM call)
         # and only fires when both sides return zero — so it doesn't add cost
@@ -183,6 +260,16 @@ class DeepSearchService:
         clarification_needed: Optional[List[str]] = None
         if internal_count == 0 and external_count == 0:
             clarification_needed = await self._suggest_scope_refinements(query, country)
+
+        if guidance and guidance.get("status") in {"partial", "weak"}:
+            fallback_refinements = await self._suggest_scope_refinements(query, country)
+            if fallback_refinements:
+                clarification_needed = (clarification_needed or []) + fallback_refinements
+                seen: set[str] = set()
+                clarification_needed = [
+                    s for s in clarification_needed
+                    if isinstance(s, str) and s and (s not in seen and not seen.add(s))
+                ][:5]
 
         # Phase 4 wave 4: record one provenance row for this deep-search
         # response. Best-effort; never fails the request.
@@ -447,7 +534,67 @@ class DeepSearchService:
                 except Exception as e:
                     logger.warning(f"ILIKE fallback search failed: {e}")
 
+        # Relevance guardrail: if none of the key query terms appear in the
+        # retrieved texts and semantic relevance is weak, drop the result set.
+        if results:
+            filtered = self._filter_results_by_query_relevance(query, results)
+            if filtered:
+                results = filtered[:limit]
+            else:
+                logger.info(
+                    "Deep search relevance guardrail removed internal results: "
+                    f"query={query[:120]!r}, candidate_count={len(results)}"
+                )
+                results = []
+
         return results
+
+    @staticmethod
+    def _normalized_query_terms(query: str) -> List[str]:
+        import re
+
+        stopwords = {
+            "the", "and", "for", "with", "that", "this", "from", "into",
+            "about", "what", "how", "when", "where", "which", "is", "are",
+            "was", "were", "can", "could", "should", "would", "does", "did",
+            "last", "year", "years", "before", "after", "compare", "comparison",
+            "trend", "trends", "data", "news", "climate",
+        }
+
+        raw = re.findall(r"[\w]{3,}", (query or "").lower())
+        return [t for t in raw if t not in stopwords][:14]
+
+    @classmethod
+    def _filter_results_by_query_relevance(
+        cls,
+        query: str,
+        results: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        terms = cls._normalized_query_terms(query)
+        if not terms:
+            return results
+
+        kept: List[Dict[str, Any]] = []
+        for art in results:
+            haystack = (
+                f"{art.get('title', '')} "
+                f"{art.get('excerpt', '')} "
+                f"{art.get('content_category', '')}"
+            ).lower()
+
+            hit_count = sum(1 for t in terms if t in haystack)
+            overlap = hit_count / max(1, len(terms))
+
+            rel = art.get("relevance_score")
+            try:
+                rel_score = float(rel) if rel is not None else 0.0
+            except (TypeError, ValueError):
+                rel_score = 0.0
+
+            if overlap >= 0.2 or rel_score >= 0.35:
+                kept.append(art)
+
+        return kept
 
     async def _search_perplexity(
         self, query: str, country: Optional[str] = None
@@ -541,7 +688,15 @@ class DeepSearchService:
             for i, art in enumerate(internal_articles[:5], 1):
                 cred = art.get("overall_credibility", "UNKNOWN")
                 rel = art.get("reliability_score")
-                rel_str = f", reliability: {rel:.0%}" if rel else ""
+                rel_str = ""
+                if rel is not None:
+                    try:
+                        rel_float = float(rel)
+                        rel_pct = rel_float * 100.0 if rel_float <= 1.0 else rel_float
+                        rel_pct = max(0.0, min(100.0, rel_pct))
+                        rel_str = f", reliability: {rel_pct:.0f}%"
+                    except (TypeError, ValueError):
+                        rel_str = ""
                 articles_context += (
                     f"\n{i}. [{cred}{rel_str}] \"{art.get('title', '')}\""
                     f"\n   Source: {art.get('source_name', 'Unknown')}"

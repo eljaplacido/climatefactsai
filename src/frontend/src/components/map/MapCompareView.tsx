@@ -16,6 +16,7 @@ import {
   Legend,
 } from "recharts";
 import Link from "next/link";
+import CountrySelector from "@/components/CountrySelector";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
 
@@ -225,51 +226,32 @@ export default function MapCompareView({
 
         <div className="p-6">
           {/* Country selectors */}
-          <div className="flex items-center gap-4 mb-6">
+          <div className="flex items-end gap-4 mb-6">
             <div className="flex-1">
-              <label className="text-xs text-slate-400 mb-1 block">
-                Country A
-              </label>
-              <div className="flex items-center gap-2">
-                <span className="text-xl">
-                  {countryA ? getFlagEmoji(countryA) : ""}
-                </span>
-                <input
-                  type="text"
-                  value={countryA}
-                  onChange={(e) =>
-                    setCountryA(e.target.value.toUpperCase().slice(0, 2))
-                  }
-                  placeholder="e.g. FI"
-                  maxLength={2}
-                  className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-500 uppercase"
-                />
-              </div>
+              <CountrySelector
+                value={countryA || null}
+                onChange={(v) => setCountryA(v || "")}
+                label="Country A"
+                allOptionLabel="Select country"
+                showAllOption={false}
+                searchable={true}
+                showSelectedChip={false}
+                theme="dark"
+              />
             </div>
-
-            <div className="text-slate-500 mt-5 font-bold">vs</div>
-
+            <div className="text-slate-400 mb-2 font-bold text-sm">vs</div>
             <div className="flex-1">
-              <label className="text-xs text-slate-400 mb-1 block">
-                Country B
-              </label>
-              <div className="flex items-center gap-2">
-                <span className="text-xl">
-                  {countryB ? getFlagEmoji(countryB) : ""}
-                </span>
-                <input
-                  type="text"
-                  value={countryB}
-                  onChange={(e) =>
-                    setCountryB(e.target.value.toUpperCase().slice(0, 2))
-                  }
-                  placeholder="e.g. SE"
-                  maxLength={2}
-                  className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-violet-500 uppercase"
-                />
-              </div>
+              <CountrySelector
+                value={countryB || null}
+                onChange={(v) => setCountryB(v || "")}
+                label="Country B"
+                allOptionLabel="Select country"
+                showAllOption={false}
+                searchable={true}
+                showSelectedChip={false}
+                theme="dark"
+              />
             </div>
-
             <button
               type="button"
               onClick={handleCompare}

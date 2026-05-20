@@ -758,6 +758,64 @@ async def fetch_url_content(url: str) -> dict:
         )
 
 
+async def _resolve_academic_repository_url(url: str) -> Optional[str]:
+    """Resolve repository landing pages (URN/Theseus/DSpace) to a direct PDF URL.
+
+    This improves success rate for pages that are metadata wrappers instead of
+    article-like HTML bodies.
+    """
+    from bs4 import BeautifulSoup
+    from urllib.parse import urljoin
+
+    try:
+        async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
+            resp = await _safe_fetch(
+                client,
+                url,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/120.0.0.0 Safari/537.36"
+                    ),
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                },
+            )
+            if not resp.is_success:
+                return None
+
+            content_type = (resp.headers.get("content-type") or "").lower()
+            if "pdf" in content_type:
+                return url
+
+            html = resp.text or ""
+            soup = BeautifulSoup(html, "lxml")
+
+            # Most reliable in repositories
+            meta_pdf = soup.find("meta", attrs={"name": "citation_pdf_url"})
+            if meta_pdf and meta_pdf.get("content"):
+                return urljoin(str(resp.url), str(meta_pdf["content"]).strip())
+
+            # Common repository file links
+            candidates: list[str] = []
+            for a in soup.find_all("a", href=True):
+                href = str(a.get("href") or "")
+                if not href:
+                    continue
+                lowered = href.lower()
+                if ".pdf" in lowered or "/bitstream/" in lowered or "/retrieve/" in lowered:
+                    candidates.append(urljoin(str(resp.url), href))
+
+            if candidates:
+                # Prefer explicit PDFs first.
+                candidates.sort(key=lambda x: (".pdf" not in x.lower(), len(x)))
+                return candidates[0]
+    except Exception as exc:
+        logger.warning(f"Academic URL resolution failed for {url}: {exc}")
+
+    return None
+
+
 # =============================================================================
 # URL → CORPUS MIRROR (migration 016)
 # =============================================================================
@@ -940,7 +998,41 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
         logger.info(f"Processing URL analysis {analysis_id}: {url}")
 
         # Step 2: Fetch content from URL
-        content = await fetch_url_content(url)
+        try:
+            content = await fetch_url_content(url)
+        except HTTPException as fetch_err:
+            # Repository landing pages (Theseus/URN/DSpace) often hold only
+            # metadata and link out to the actual PDF. Auto-resolve and retry.
+            parsed = urlparse(url)
+            host = (parsed.netloc or "").lower()
+            is_academic_repo = any(
+                marker in host or marker in url.lower()
+                for marker in [
+                    "theseus.fi",
+                    "urn.fi",
+                    "handle/",
+                    "dspace",
+                    "helda.",
+                    "aaltodoc.",
+                    "jultika.",
+                    "trepo.",
+                    "lutpub.",
+                ]
+            )
+
+            if not is_academic_repo:
+                raise
+
+            resolved_pdf = await _resolve_academic_repository_url(url)
+            if not resolved_pdf:
+                raise
+
+            logger.info(
+                "Resolved academic repository page to direct PDF",
+                original_url=url,
+                resolved_pdf=resolved_pdf,
+            )
+            content = await fetch_url_content(resolved_pdf)
 
         # Step 3: Extract metadata
         title = content['title']

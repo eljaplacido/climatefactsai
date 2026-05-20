@@ -17,22 +17,24 @@
     "d3-geo": "^3.1.1",
     "date-fns": "^3.6.0",
     "isomorphic-dompurify": "^2.20.0",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.441.0",
     "next": "14.2.30",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-leaflet": "^4.2.1",
     "react-markdown": "^10.1.0",
     "recharts": "^3.8.0",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
-    "topojson-client": "^3.1.0",
-    "react-leaflet": "^4.2.1",
-    "leaflet": "^1.9.4"
+    "topojson-client": "^3.1.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.0",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^16.0.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/leaflet": "^1.9.12",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
@@ -44,7 +46,6 @@
     "postcss": "^8.4.39",
     "tailwindcss": "^3.4.4",
     "typescript": "^5",
-    "vitest": "^2.0.0",
-    "@types/leaflet": "^1.9.12"
+    "vitest": "^2.0.0"
   }
 }

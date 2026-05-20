@@ -719,6 +719,25 @@ def _hydrate_view_context(db, view_context: Optional[dict]) -> dict:
     # forward them so the LLM can reference them without re-asking the user.
     if isinstance(view_context.get("deep_search_query"), str):
         hydrated["deep_search_query"] = view_context["deep_search_query"][:300]
+        try:
+            ds_rows = db.execute_query(
+                """SELECT COUNT(*) AS total,
+                          COUNT(*) FILTER (WHERE overall_credibility = 'HIGH') AS high_cred,
+                          COUNT(DISTINCT source_name) AS source_count
+                   FROM articles
+                   WHERE search_tsv @@ websearch_to_tsquery('simple', :q)
+                     AND is_synthetic = FALSE""",
+                {"q": hydrated["deep_search_query"]},
+            )
+            if ds_rows:
+                ds = ds_rows[0]
+                hydrated["deep_search_context_stats"] = {
+                    "internal_hits": int(ds.get("total") or 0),
+                    "high_credibility_hits": int(ds.get("high_cred") or 0),
+                    "distinct_sources": int(ds.get("source_count") or 0),
+                }
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"view_context deep_search_query stats lookup failed: {exc}")
     if isinstance(view_context.get("deep_search_compare"), dict):
         cmp = view_context["deep_search_compare"]
         if isinstance(cmp.get("query_a"), str) and isinstance(cmp.get("query_b"), str):
@@ -810,7 +829,15 @@ def _format_view_context_block(view: dict) -> str:
                     parts.append(f"  Claim: {str(c.get('claim_text') or c)[:200]}")
 
     if view.get("deep_search_query"):
-        parts.append(f"- Deep-search query open: \"{view['deep_search_query']}\"")
+        stats = view.get("deep_search_context_stats") or {}
+        stats_suffix = ""
+        if stats:
+            stats_suffix = (
+                f" (internal hits: {stats.get('internal_hits', 0)}, "
+                f"high-credibility: {stats.get('high_credibility_hits', 0)}, "
+                f"sources: {stats.get('distinct_sources', 0)})"
+            )
+        parts.append(f"- Deep-search query open: \"{view['deep_search_query']}\"{stats_suffix}")
     if view.get("deep_search_compare"):
         cmp = view["deep_search_compare"]
         parts.append(

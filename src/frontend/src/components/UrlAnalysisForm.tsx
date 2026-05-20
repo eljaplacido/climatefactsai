@@ -165,6 +165,19 @@ export default function UrlAnalysisForm() {
     setInsightSummary(null)
   }
 
+  const openAssistant = (prompt?: string) => {
+    if (typeof window !== 'undefined' && prompt) {
+      window.dispatchEvent(
+        new CustomEvent('climatenews:assistant-prefill', {
+          detail: { prompt },
+        })
+      )
+    }
+
+    const assistantToggle = document.querySelector<HTMLElement>('[data-chat-toggle]')
+    assistantToggle?.click()
+  }
+
   return (
     <div className="p-6 bg-gradient-to-br from-teal-50 to-cyan-50 rounded-lg border border-teal-200">
       <h2 className="text-lg font-semibold text-gray-900 mb-4">
@@ -275,6 +288,17 @@ export default function UrlAnalysisForm() {
                 >
                   Try again
                 </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    openAssistant(
+                      `My URL analysis failed for ${url || 'a submitted URL'}. Help me troubleshoot input format and source accessibility.`
+                    )
+                  }
+                  className="mt-2 ml-3 text-sm text-red-700 hover:text-red-800 underline"
+                >
+                  Get help in chat
+                </button>
               </div>
             </div>
           </div>
@@ -358,6 +382,17 @@ export default function UrlAnalysisForm() {
                     >
                       View Full Analysis →
                     </a>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openAssistant(
+                          `Explain this URL analysis result for \"${article.title || url}\" and what the credibility score implies.`
+                        )
+                      }
+                      className="text-sm text-teal-700 hover:text-teal-800 underline font-medium"
+                    >
+                      Ask chat to explain
+                    </button>
                     <button
                       type="button"
                       onClick={handleReset}

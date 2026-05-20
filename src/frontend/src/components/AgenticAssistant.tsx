@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Send,
   Sparkles,
@@ -32,6 +32,7 @@ interface AgenticAssistantProps {
   currentCountry?: string;
   currentAnalysisId?: string;
   currentDeepSearchQuery?: string;
+  currentDeepSearchCompare?: { query_a: string; query_b: string };
   currentCompareCountries?: string[];
   currentSourceId?: string;
   currentRoute?: string;
@@ -109,6 +110,7 @@ export default function AgenticAssistant({
   currentCountry,
   currentAnalysisId,
   currentDeepSearchQuery,
+  currentDeepSearchCompare,
   currentCompareCountries,
   currentSourceId,
   currentRoute,
@@ -140,6 +142,23 @@ export default function AgenticAssistant({
     }
   }, [isExpanded]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const onPrefill = (event: Event) => {
+      const customEvent = event as CustomEvent<{ prompt?: string }>;
+      const prompt = customEvent?.detail?.prompt;
+      if (!prompt || typeof prompt !== "string") return;
+
+      setIsExpanded(true);
+      setInput(prompt);
+      setTimeout(() => inputRef.current?.focus(), 100);
+    };
+
+    window.addEventListener("climatenews:assistant-prefill", onPrefill);
+    return () => window.removeEventListener("climatenews:assistant-prefill", onPrefill);
+  }, []);
+
   // Close on click outside when expanded
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -161,13 +180,40 @@ export default function AgenticAssistant({
   const determineMode = (): string => {
     if (currentPage === "map") return "map_intelligence";
     if (currentArticleId) return "article_qa";
-    if (currentPage === "research") return "research_analysis";
+    if (currentPage === "research" || currentPage === "deep-search") return "research_analysis";
     return "general";
   };
 
   const mode = determineMode();
   const modeInfo = MODE_LABELS[mode] || MODE_LABELS.general;
   const ModeIcon = modeInfo.icon;
+
+  const contextSummary = useMemo(() => {
+    if (contextLabel) return contextLabel;
+
+    const parts: string[] = [];
+    if (currentPage && currentPage !== "default") parts.push(`/${currentPage}`);
+    if (currentCountry) parts.push(`country ${currentCountry}`);
+    if (currentArticleId) parts.push("article view");
+    if (currentAnalysisId) parts.push("URL analysis");
+    if (currentDeepSearchCompare?.query_a && currentDeepSearchCompare?.query_b) {
+      parts.push("deep-search compare");
+    } else if (currentDeepSearchQuery) {
+      parts.push("deep-search result");
+    }
+    if (currentSourceId) parts.push(`source ${currentSourceId}`);
+
+    return parts.length > 0 ? parts.join(" • ") : "Global platform context";
+  }, [
+    contextLabel,
+    currentPage,
+    currentCountry,
+    currentArticleId,
+    currentAnalysisId,
+    currentDeepSearchCompare,
+    currentDeepSearchQuery,
+    currentSourceId,
+  ]);
 
   const handleSend = async (overrideText?: string) => {
     const text = (overrideText ?? input).trim();
@@ -198,6 +244,7 @@ export default function AgenticAssistant({
       }
       if (currentAnalysisId) viewContext.analysis_id = currentAnalysisId;
       if (currentDeepSearchQuery) viewContext.deep_search_query = currentDeepSearchQuery;
+      if (currentDeepSearchCompare) viewContext.deep_search_compare = currentDeepSearchCompare;
       if (currentSourceId) viewContext.source_id = currentSourceId;
       if (contextLabel) viewContext.label = contextLabel;
       const hasViewContext = Object.keys(viewContext).length > 0;
@@ -362,18 +409,25 @@ export default function AgenticAssistant({
             </div>
           </div>
 
+          <div className="px-4 py-2 border-b border-slate-700/40 bg-slate-900/70">
+            <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Current context</p>
+            <p className="text-[11px] text-slate-300 truncate" title={contextSummary}>
+              {contextSummary}
+            </p>
+          </div>
+
           {/* Messages area */}
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 min-h-[120px] max-h-[340px] scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
             {messages.length === 0 && (
               <div className="py-3">
                 {/* Page context help */}
                 <div className="mb-3 px-3 py-2.5 bg-slate-800/80 border border-teal-500/20 rounded-lg">
-                  <p className="text-xs text-slate-300 leading-relaxed">
+                  <div className="text-xs text-slate-300 leading-relaxed">
                     <Markdown
                       content={PAGE_HELP[currentPage] || PAGE_HELP.default}
                       className="text-slate-300 [&_p]:text-slate-300 [&_strong]:text-teal-400 [&_p]:text-xs [&_p]:leading-relaxed"
                     />
-                  </p>
+                  </div>
                 </div>
                 <p className="text-[10px] text-slate-500 mb-2 text-center uppercase tracking-wide">
                   Try asking
@@ -388,6 +442,18 @@ export default function AgenticAssistant({
                       {q}
                     </button>
                   ))}
+                  <button
+                    onClick={() => handleExampleClick("What context are you currently using for my question?")}
+                    className="text-[11px] px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-full border border-slate-700/50 hover:border-teal-500/40 transition-all"
+                  >
+                    Show current context
+                  </button>
+                  <button
+                    onClick={() => handleExampleClick("How should I phrase my question on this page for the strongest analysis?")}
+                    className="text-[11px] px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-full border border-slate-700/50 hover:border-teal-500/40 transition-all"
+                  >
+                    Help me ask better
+                  </button>
                 </div>
               </div>
             )}
@@ -529,6 +595,7 @@ export default function AgenticAssistant({
 
       {/* Collapsed bar - always visible at bottom */}
       <div
+        data-chat-toggle
         onClick={() => !isExpanded && setIsExpanded(true)}
         className={`transition-all duration-300 ${
           isExpanded ? "hidden" : "block"
