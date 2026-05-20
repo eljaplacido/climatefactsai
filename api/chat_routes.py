@@ -58,6 +58,12 @@ class ChatSource(BaseModel):
     relevance: float = 0.0
 
 
+class ChatActionSpec(BaseModel):
+    type: str = Field(..., min_length=1, max_length=64)
+    params: dict = Field(default_factory=dict)
+    label: str = Field(..., min_length=1, max_length=128)
+
+
 class ChatResponse(BaseModel):
     session_id: str
     question: str
@@ -72,13 +78,9 @@ class ChatResponse(BaseModel):
     highlighted_countries: Optional[List[str]] = None
     relevant_articles: Optional[List[dict]] = None
     cynefin_classification: Optional[dict] = None
-    # Phase 6 wave 4 (2026-05-17): HallucinationDetector runs on every
-    # chat synthesis against the retrieved article excerpts. Surfaces
-    # hallucination_risk + is_grounded + flagged_segments so the UI can
-    # warn when the answer is poorly grounded. Local checks (entity
-    # overlap + statistic verification) always run; the LLM-grounding
-    # sub-check degrades to risk=0.5 gracefully when no LLM key is set.
     hallucination_check: Optional[dict] = None
+    # Phase 8 agentic actions
+    actions: Optional[List[ChatActionSpec]] = None
 
 
 class ChatSessionInfo(BaseModel):
@@ -246,7 +248,7 @@ async def ask_general_question(
     except Exception:
         pass
 
-    return ChatResponse(
+        return ChatResponse(
         session_id=session_id,
         question=request.question,
         answer=answer_data["answer"],
@@ -260,6 +262,7 @@ async def ask_general_question(
         relevant_articles=relevant_articles_extra,
         cynefin_classification=cynefin_classification,
         hallucination_check=answer_data.get("hallucination_check"),
+        actions=answer_data.get("actions") or [],
     )
 
 
@@ -1018,6 +1021,7 @@ Instructions:
             "confidence": round(confidence, 2),
             "model": f"deepseek:{model}",
             "hallucination_check": hallucination_check,
+            "actions": _parse_actions(answer),
         }
 
     except ImportError:
@@ -1057,3 +1061,72 @@ def _store_chat_message(
         )
     except Exception as e:
         logger.warning(f"Failed to store chat message: {e}")
+
+
+VALID_ACTION_TYPES = frozenset({
+    "navigate", "analyze_url", "apply_search_filters",
+    "apply_map_filters", "open_methodology_section",
+    "open_country", "start_deep_search",
+    "bookmark_article", "start_calibration_label",
+})
+
+
+def _parse_actions(answer: str) -> list[dict]:
+    """Extract action suggestions from the LLM answer.
+
+    Looks for a JSON actions block after the last '---' separator.
+    Validates each action's type against the whitelist and caps at 3.
+    Returns empty list on parse failure.
+    """
+    if "---" not in answer:
+        return []
+    parts = answer.split("---")
+    if len(parts) < 2:
+        return []
+    json_candidate = parts[-1].strip()
+    try:
+        parsed = json.loads(json_candidate)
+    except json.JSONDecodeError:
+        return []
+    actions = parsed.get("actions", []) if isinstance(parsed, dict) else []
+    if not isinstance(actions, list):
+        return []
+    validated = []
+    for a in actions[:3]:
+        if not isinstance(a, dict):
+            continue
+        atype = str(a.get("type", ""))
+        if atype not in VALID_ACTION_TYPES:
+            continue
+        params = a.get("params", {})
+        if not isinstance(params, dict):
+            params = {}
+        validated.append({
+            "type": atype,
+            "params": params,
+            "label": str(a.get("label", atype))[:128],
+        })
+    return validated
+
+
+@router.post("/actions/click")
+async def record_action_click(action: ChatActionSpec):
+    """Record that a user clicked a suggested chat action (telemetry)."""
+    db = get_postgres()
+    try:
+        db.execute_update(
+            """UPDATE chat_actions_log
+               SET was_clicked = TRUE, clicked_at = NOW()
+               WHERE action_type = :atype
+                 AND params = CAST(:params AS jsonb)
+                 AND was_clicked = FALSE
+                 AND suggested_at > NOW() - INTERVAL '1 hour'
+               ORDER BY suggested_at DESC LIMIT 1""",
+            {
+                "atype": action.type,
+                "params": json.dumps(action.params),
+            },
+        )
+    except Exception as e:
+        logger.debug(f"record_action_click failed (non-fatal): {e}")
+    return {"status": "recorded"}

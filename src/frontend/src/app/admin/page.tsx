@@ -312,7 +312,7 @@ export default function AdminPage() {
             <p className="text-sm text-yellow-800">
               <strong>Note:</strong> To get article UUIDs, visit{' '}
               <a 
-                href="http://localhost:5400/api/articles" 
+                href={`${process.env.NEXT_PUBLIC_API_URL || ""}/api/articles`} 
                 target="_blank"
                 className="underline hover:text-yellow-900"
               >

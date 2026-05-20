@@ -219,6 +219,79 @@ export default function MethodologyPage() {
           )}
         </header>
 
+        {/* Section: Self-audit — the audit gap ---------------------------------- */}
+        <section className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-xl shadow-sm border border-teal-200 p-6 space-y-5">
+          <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2.5">
+            <Activity className="w-5 h-5 text-teal-600" />
+            Self-audit: where we are vs. where we claim
+          </h2>
+          <p className="text-sm text-gray-700">
+            In May 2026 we commissioned an external analytical audit of
+            every component, route, and scoring pipeline. The audit
+            re-graded the platform against the same rubric our own
+            engineering team uses. The gap between self-claimed and
+            audited scores is published here because trust infrastructure
+            must model the honesty it asks of others.
+          </p>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="bg-white/80 rounded-lg border border-teal-100 p-4">
+              <div className="text-xs uppercase tracking-wider text-teal-700 font-semibold mb-2">Self-claimed (May 2026 engineering review)</div>
+              <div className="text-3xl font-bold text-teal-600">4.78<span className="text-lg text-teal-400">/5</span></div>
+              <div className="text-xs text-teal-700 mt-1">Internal rubric: reliability + calibration + hallucination + sustainability composite</div>
+            </div>
+            <div className="bg-white/80 rounded-lg border border-amber-100 p-4">
+              <div className="text-xs uppercase tracking-wider text-amber-700 font-semibold mb-2">Audited (external independent audit, 2026-05-18)</div>
+              <div className="text-3xl font-bold text-amber-600">3.6<span className="text-lg text-amber-400">/5</span></div>
+              <div className="text-xs text-amber-700 mt-1">Same rubric, applied by independent auditor against live code + data</div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="font-semibold text-gray-900 text-sm mb-2">What the audit found</h3>
+            <div className="grid sm:grid-cols-2 gap-2 text-xs">
+              {[
+                { axis: "Reliability Tiering", before: "4.4-4.8", after: "3.5", fix: "Replace 8-publisher whitelist with DB-backed source credibility tiers" },
+                { axis: "Calibration Math", before: "4.6-4.7", after: "2.8", fix: "Raise min_labels to 50; preview-tag fits below threshold" },
+                { axis: "Hallucination Detection", before: "4.8", after: "3.2", fix: "NER-based entity check + statistic grounding against union of retrieved sources" },
+                { axis: "Sustainability Composite", before: "4.8", after: "3.3", fix: "Integrate ND-GAIN; widen confidence band on mixed-year inputs" },
+              ].map((row) => (
+                <div key={row.axis} className="bg-white/80 rounded border border-gray-200 p-3">
+                  <div className="font-medium text-gray-900">{row.axis}</div>
+                  <div className="mt-1 flex gap-2 items-baseline">
+                    <span className="text-teal-700">Claimed: {row.before}</span>
+                    <span className="text-gray-300">→</span>
+                    <span className="text-amber-700 font-medium">Audited: {row.after}</span>
+                  </div>
+                  <div className="text-gray-500 mt-1">{row.fix}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="text-sm text-gray-600 bg-white/80 rounded border border-gray-200 p-3">
+            <strong className="text-gray-900">Current composite:</strong> The
+            audit was honest, the fixes are itemised, and the remediation
+            roadmap is public. Our 12-week plan targets a composite of ~4.6/5
+            — see{" "}
+            <a
+              href="https://github.com/eljaplacido/climatefactsai/blob/main/docs/reports/Implementation-Plan-2026-05-20.md"
+              target="_blank" rel="noreferrer"
+              className="text-teal-700 hover:underline"
+            >
+              Implementation Plan <ExternalLink className="inline w-3 h-3" />
+            </a>{" "}
+            for the full sequenced roadmap.
+          </div>
+
+          <p className="text-xs text-gray-500 italic border-t border-teal-200 pt-3">
+            Publishing this gap is our strongest trust signal. It inverts
+            every greenwashing pattern: we show the gap, we name the fixes, and
+            we give a date by which we commit to closing it. This page will be
+            updated as each axis improves.
+          </p>
+        </section>
+
         {/* Section: How verification works (narrative) ------------------- */}
         <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-5">
           <h2 className="text-2xl font-bold text-gray-900">How verification works</h2>

@@ -25,6 +25,7 @@ secrets.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from typing import Any, Dict, List, Optional  # noqa: F401
@@ -269,12 +270,99 @@ async def methodology_snapshot() -> Dict[str, Any]:
 
 
 # =============================================================================
+# Source credibility tiers (Phase 8 — migration 027)
+# =============================================================================
+
+@router.get("/source-tiers")
+async def list_source_tiers() -> Dict[str, Any]:
+    """All source credibility tiers with evidence URLs.
+
+    Replaces the legacy 8-publisher hardcoded whitelist with a DB-backed
+    tier system seeded from Scimago JR, RetractionWatch, IFCN, and
+    correction-policy assessment.
+    """
+    from app.domains.trust.source_tier_service import list_all_source_tiers
+
+    db = get_postgres()
+    try:
+        tiers = list_all_source_tiers(db)
+    except Exception:
+        tiers = []
+
+    return {
+        "source_tiers": tiers,
+        "total": len(tiers),
+        "tier_schema": {
+            "T1": "Scimago Q1 journal or IFCN-verified fact-checker (+30 prior bonus)",
+            "T2": "Mainstream press with published corrections policy or Q2 journal (+15)",
+            "T3": "Research NGO or intergovernmental body with sourcing (+5)",
+            "unknown": "No tier data available (0 bonus)",
+            "retracted": "Known retractions — credibility penalty applied (-30)",
+        },
+        "methodology_url": "https://climatefacts.ai/methodology#source-tiers",
+    }
+
+
+@router.get("/source-tiers/by-domain")
+async def get_source_tier_by_domain(domain: str) -> Dict[str, Any]:
+    """Profile for a specific domain."""
+    from app.domains.trust.source_tier_service import get_source_tier_profile
+
+    db = get_postgres()
+    profile = get_source_tier_profile(db, domain)
+    if profile is None:
+        return {"domain": domain, "available": False}
+    return {"domain": domain, "available": True, "profile": profile}
+
+
+# =============================================================================
 # Audit-trail endpoints (Phase 4 wave 3)
 # =============================================================================
 # Surface per-extraction provenance to users and external auditors.
 # Each row records which model + prompt fingerprint + retrieval strategy
 # produced a given analytical output — pairs with the methodology snapshot
 # above to answer "this score was produced under this exact pipeline".
+
+def _hydrate_source_articles(db, source_article_ids) -> list:
+    """Join UUID array to article titles, URLs, and source names.
+
+    Returns a list of {article_id, title, url, source_name, published_at}
+    for every valid UUID in `source_article_ids`. Invalid UUIDs or missing
+    articles silently contribute nothing — the provenance row itself is not
+    invalidated by stale article references.
+    """
+    if not source_article_ids:
+        return []
+    ids = source_article_ids
+    if isinstance(ids, str):
+        try:
+            ids = json.loads(ids)
+        except Exception:
+            return []
+    if not isinstance(ids, list) or len(ids) == 0:
+        return []
+    try:
+        rows = db.execute_query(
+            """
+            SELECT article_id, title, url, source_name, published_date
+            FROM articles
+            WHERE article_id = ANY(:ids::uuid[])
+              AND is_synthetic = FALSE
+            """,
+            {"ids": [str(i) for i in ids if i]},
+        )
+    except Exception:
+        return []
+    return [
+        {
+            "article_id": str(r["article_id"]),
+            "title": r.get("title"),
+            "url": r.get("url"),
+            "source_name": r.get("source_name"),
+            "published_at": str(r.get("published_date")) if r.get("published_date") else None,
+        }
+        for r in (rows or [])
+    ]
 
 @router.get("/audit-trail/url-analysis/{analysis_id}")
 async def audit_trail_for_url_analysis(analysis_id: str) -> Dict[str, Any]:
@@ -283,6 +371,8 @@ async def audit_trail_for_url_analysis(analysis_id: str) -> Dict[str, Any]:
 
     db = get_postgres()
     records = get_provenance_for_url_analysis(db, analysis_id)
+    for r in records:
+        r["source_articles"] = _hydrate_source_articles(db, r.get("source_article_ids"))
     return {
         "url_analysis_id": analysis_id,
         "records": records,
@@ -301,6 +391,8 @@ async def audit_trail_for_article(article_id: str) -> Dict[str, Any]:
 
     db = get_postgres()
     records = get_provenance_for_article(db, article_id)
+    for r in records:
+        r["source_articles"] = _hydrate_source_articles(db, r.get("source_article_ids"))
     return {
         "article_id": article_id,
         "records": records,
@@ -315,6 +407,8 @@ async def audit_trail_for_claim(claim_id: str) -> Dict[str, Any]:
 
     db = get_postgres()
     records = get_provenance_for_claim(db, claim_id)
+    for r in records:
+        r["source_articles"] = _hydrate_source_articles(db, r.get("source_article_ids"))
     return {
         "claim_id": claim_id,
         "records": records,
@@ -672,4 +766,53 @@ async def get_hallucination_rates(
         "by_model": by_model,
         "by_source": by_source,
         "notes": notes or None,
+    }
+
+
+@router.get("/reproduce/{provenance_id}")
+async def reproduce_analysis(provenance_id: int) -> Dict[str, Any]:
+    """Replay an analysis with the pinned prompt version + retrieval strategy.
+
+    Returns the original score, the replayed score, and a diff. This is the
+    strongest possible demonstration that the platform is reproducible.
+    """
+    from app.domains.intelligence.reproducer import reproduce_url_analysis
+
+    db = get_postgres()
+    result = reproduce_url_analysis(db, provenance_id)
+    return result.__dict__ if hasattr(result, "__dict__") else {"status": "error"}
+
+
+@router.get("/drift-thresholds")
+async def get_drift_thresholds() -> Dict[str, Any]:
+    """Current learned drift thresholds, or hardcoded defaults."""
+    db = get_postgres()
+    try:
+        rows = db.execute_query(
+            """SELECT * FROM drift_threshold_fits
+               WHERE metric = 'source_mix'
+               ORDER BY fitted_at DESC LIMIT 1""",
+            {},
+        )
+        if rows:
+            r = rows[0]
+            return {
+                "available": True,
+                "mu": r.get("mu"),
+                "sigma": r.get("sigma"),
+                "thresholds": {
+                    "2σ": r.get("threshold_2sigma"),
+                    "3σ": r.get("threshold_3sigma"),
+                    "4σ": r.get("threshold_4sigma"),
+                },
+                "n_samples": r.get("n_samples"),
+                "fitted_at": str(r.get("fitted_at")),
+            }
+    except Exception:
+        pass
+    return {
+        "available": False,
+        "hardcoded_fallback": True,
+        "thresholds": {"stable": 0.10, "minor": 0.25, "notable": 0.50},
+        "note": "Learned thresholds will be available after 60 days of production data.",
     }

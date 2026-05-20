@@ -142,6 +142,94 @@ def verdict_for(kl: float) -> str:
     return "significant"
 
 
+def fit_thresholds(db, metric: str = "source_mix", window_days: int = 60) -> dict:
+    """Learn drift thresholds from historical KL values.
+
+    Collects KL values over `window_days`, fits a Gaussian to their null
+    distribution, and sets thresholds at 2σ / 3σ / 4σ instead of the
+    hardcoded 0.10 / 0.25 / 0.50. Stores the fit in `drift_threshold_fits`.
+    """
+    try:
+        db.execute_update(
+            """CREATE TABLE IF NOT EXISTS drift_threshold_fits (
+                id BIGSERIAL PRIMARY KEY,
+                metric VARCHAR(64) NOT NULL,
+                mu DOUBLE PRECISION NOT NULL,
+                sigma DOUBLE PRECISION NOT NULL,
+                threshold_2sigma DOUBLE PRECISION NOT NULL,
+                threshold_3sigma DOUBLE PRECISION NOT NULL,
+                threshold_4sigma DOUBLE PRECISION NOT NULL,
+                n_samples INTEGER NOT NULL,
+                fitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )""",
+            {},
+        )
+    except Exception as exc:
+        _logger.warning(f"drift_threshold_fits table creation failed: {exc}")
+        return {"status": "error", "error": str(exc)}
+
+    from datetime import datetime, timedelta
+
+    end = datetime.utcnow()
+    start = end - timedelta(days=window_days)
+
+    data_points = []
+    cursor = start
+    while cursor < end:
+        next_cursor = cursor + timedelta(days=7)
+        if next_cursor > end:
+            next_cursor = end
+        recent = fetch_source_counts(
+            db,
+            days_back_start=int((end - cursor).total_seconds() / 86400 + 7),
+            days_back_end=int((end - next_cursor).total_seconds() / 86400),
+        )
+        baseline = fetch_source_counts(
+            db,
+            days_back_start=int((end - cursor).total_seconds() / 86400 + 44),
+            days_back_end=int((end - cursor).total_seconds() / 86400 + 7),
+        )
+        support = sorted(set(recent.keys()) | set(baseline.keys()))
+        if not support:
+            cursor = next_cursor
+            continue
+        p = normalise_distribution(recent, keys=support)
+        q = normalise_distribution(baseline, keys=support)
+        kl = kl_divergence(p, q)
+        if kl >= 0:
+            data_points.append(kl)
+        cursor = next_cursor
+
+    if len(data_points) < 5:
+        return {"status": "insufficient_data", "n_samples": len(data_points)}
+
+    n = len(data_points)
+    mu = sum(data_points) / n
+    variance = sum((x - mu) ** 2 for x in data_points) / (n - 1) if n > 1 else 0.001
+    sigma = max(variance ** 0.5, 0.001)
+
+    t2 = round(mu + 2 * sigma, 4)
+    t3 = round(mu + 3 * sigma, 4)
+    t4 = round(mu + 4 * sigma, 4)
+
+    try:
+        db.execute_update(
+            """INSERT INTO drift_threshold_fits (metric, mu, sigma,
+               threshold_2sigma, threshold_3sigma, threshold_4sigma, n_samples)
+               VALUES (:metric, :mu, :sigma, :t2, :t3, :t4, :n)""",
+            {"metric": metric, "mu": round(mu, 6), "sigma": round(sigma, 6),
+             "t2": t2, "t3": t3, "t4": t4, "n": n},
+        )
+    except Exception as exc:
+        _logger.warning(f"drift threshold persist failed: {exc}")
+
+    return {
+        "status": "ok", "mu": round(mu, 4), "sigma": round(sigma, 4),
+        "thresholds": {"2σ": t2, "3σ": t3, "4σ": t4},
+        "n_samples": n, "window_days": window_days,
+    }
+
+
 def top_shifts_between(
     recent: Dict[str, float],
     baseline: Dict[str, float],

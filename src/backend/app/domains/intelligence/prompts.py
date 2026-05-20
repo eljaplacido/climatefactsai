@@ -179,6 +179,35 @@ Return ONLY a valid JSON array, no other text. Extract up to {max_claims} most i
 """
 
 
+_AUDITOR_PERSONA_TEMPLATE = """\
+You are a skeptical climate auditor. Analyze the following text for greenwashing
+and unsubstantiated environmental claims. For each claim you identify, note:
+
+(i) Vague modifiers — words like "eco-friendly", "green", "sustainable", "climate neutral",
+    "carbon neutral", "nature positive" that are not backed by a specific methodology
+(ii) Uncommitted future tense — pledges phrased as "aims to", "plans to", "expects to",
+    "commits to" without a binding target year or verification body
+(iii) Baseline decoupling — comparing against a convenient baseline rather than the
+    sector-standard or science-based reference
+(iv) Selective scope — claims that only cover Scope 1 or 2 while omitting Scope 3,
+    or that cherry-pick favorable geographies/segments
+(v) Absence of validation body — claims with no named third-party verifier,
+    certification scheme, or audit reference
+
+TEXT TO AUDIT:
+{text}
+
+Return ONLY a valid JSON object with this shape:
+{{
+  "claims": [{{"claim_text": "...", "claim_type": "...", "claim_category": "...", "importance_score": 0.0, "claim_context": "..."}}],
+  "greenwashing_flags": [
+    {{"flag_type": "vague_modifier|uncommitted_future|baseline_decoupling|selective_scope|no_validation", "text": "the flagged text", "reasoning": "one sentence why"}}
+  ]
+}}
+
+Extract up to {max_claims} claims. greenwashing_flags can be empty if none found.
+"""
+
 PROMPTS: Dict[str, PromptTemplate] = {
     "deep_search_synthesis": PromptTemplate(
         name="deep_search_synthesis",
@@ -245,7 +274,7 @@ PROMPTS: Dict[str, PromptTemplate] = {
         name="claim_extraction",
         version="v1.0",
         template=_CLAIM_EXTRACTION_TEMPLATE,
-        system=None,  # the template carries the full instructions
+        system=None,
         max_tokens=2000,
         temperature=0.1,
         description=(
@@ -260,6 +289,78 @@ PROMPTS: Dict[str, PromptTemplate] = {
             "during Phase 5 wave 2. The same template feeds both LLMs so when "
             "the multi-LLM verifier compares outputs, any divergence is "
             "attributable to model behaviour, not prompt phrasing differences."
+        ),
+    ),
+    "claim_extraction_auditor_persona": PromptTemplate(
+        name="claim_extraction_auditor_persona",
+        version="v1.0",
+        template=_AUDITOR_PERSONA_TEMPLATE,
+        system=None,
+        max_tokens=2500,
+        temperature=0.2,
+        description=(
+            "Adversarial claim extraction from a greenwashing auditor perspective. "
+            "Extracts claims AND flags greenwashing patterns (vague modifiers, "
+            "uncommitted futures, baseline decoupling, selective scope, absent "
+            "validation body). Used as the secondary extractor in multi-LLM "
+            "verification so cross-model agreement measures cross-frame robustness, "
+            "not shared-prompt bias."
+        ),
+        rationale=(
+            "v1.0 added 2026-05-20 (Phase 8 wave 3). The audit flagged that two "
+            "LLMs running the same prompt collapse independence — shared priors + "
+            "shared phrasing produce artificially high agreement. Using an "
+            "adversarial auditor-persona prompt for the secondary model means "
+            "agreement now signals robustness, not sycophancy."
+        ),
+    ),
+    "chat_synthesis_with_actions": PromptTemplate(
+        name="chat_synthesis_with_actions",
+        version="v1.0",
+        template=(
+            "RELEVANT ARTICLES FROM DATABASE:\n"
+            "{context}\n"
+            "{history}\n"
+            "USER QUESTION: {question}\n\n"
+            "Instructions:\n"
+            "- Answer the question using the article data above.\n"
+            "- After your answer, append a JSON actions block with helpful navigation suggestions.\n"
+            "- The actions block must be a valid JSON object with an 'actions' array.\n\n"
+            "AVAILABLE ACTIONS (use ONLY these types):\n"
+            "- navigate: {{path}} — go to a platform route (/map, /search, /deep-search, /methodology, /feed, /sources)\n"
+            "- analyze_url: {{url}} — submit a URL for fact-checking\n"
+            "- apply_search_filters: {{q, credibility, country, tags, category}} — filter search results\n"
+            "- apply_map_filters: {{country, layer}} — zoom/change map view\n"
+            "- open_methodology_section: {{section}} — jump to a methodology section (prompts, calibration, sustainability-formula, source-tiers)\n"
+            "- open_country: {{code}} — open country panel on map (2-char ISO code)\n"
+            "- start_deep_search: {{q}} — launch deep research on a topic\n"
+            "- bookmark_article: {{article_id}} — save an article for later\n"
+            "- start_calibration_label: {{url_analysis_id}} — submit a calibration rating for an analysis\n\n"
+            "Rules:\n"
+            "- Only suggest actions that are genuinely useful given the question and answer.\n"
+            "- Each action must have type, params (object), and label (short user-facing button text).\n"
+            "- Suggest 0-3 actions. Never more than 3.\n"
+            "- The JSON block goes AFTER your text answer, separated by '---'. Example:\n"
+            "  Your text answer here...\n"
+            "  ---\n"
+            '  {{"actions":[{{"type":"open_country","params":{{"code":"DE"}},"label":"Open Germany on map"}}]}}\n'
+        ),
+        system=(
+            "You are Climatefacts.ai's climate intelligence assistant. Answer concisely "
+            "using markdown. After your answer, suggest 0-3 platform actions the user "
+            "might want to take next. Use ONLY the 9 action types documented below. "
+            "Output format: markdown answer then a JSON actions block separated by '---'."
+        ),
+        max_tokens=1200,
+        temperature=0.3,
+        description=(
+            "Chat synthesis that emits structured navigation actions alongside "
+            "the text answer. Powers the agentic chat panel's action chips."
+        ),
+        rationale=(
+            "v1.0 added 2026-05-20 as Phase 8 agentic chat. The LLM suggests actions; "
+            "the client validates against a Zod schema before showing any chip. "
+            "Actions are user-confirmed — the LLM never acts directly."
         ),
     ),
 }

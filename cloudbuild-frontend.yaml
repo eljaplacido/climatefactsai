@@ -1,4 +1,5 @@
-# One-shot Cloud Build for the rebranded Climatefacts.ai frontend.
+# One-shot Cloud Build for the Climatefacts.ai frontend.
+# Uses dynamic API URL lookup — no hardcoded revision URLs.
 # Submit from repo root: gcloud builds submit --config=cloudbuild-frontend.yaml
 
 substitutions:
@@ -6,23 +7,37 @@ substitutions:
   _REGION: europe-west4
   _REPO: climatenews
   _TAG: v1.0-climatefacts
-  _API_URL: https://climatenews-api-srzwxdzmaq-ez.a.run.app
 
 options:
   logging: CLOUD_LOGGING_ONLY
   machineType: E2_HIGHCPU_8
 
 steps:
-  - name: gcr.io/cloud-builders/docker
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
     args:
-      - build
-      - --platform=linux/amd64
-      - --build-arg=NEXT_PUBLIC_API_URL=${_API_URL}
-      - -f
-      - infrastructure/gcp/frontend-prod.Dockerfile
-      - -t
-      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:${_TAG}
-      - src/frontend
+      - -c
+      - |
+        API_URL=$(gcloud run services describe climatenews-api \
+          --region=${_REGION} --project=${_PROJECT_ID} \
+          --format='value(status.url)')
+        echo "API_URL=$${API_URL}" >> /workspace/vars.env
+        echo "API URL: $${API_URL}"
+    id: get-api-url
+  - name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        source /workspace/vars.env
+        docker build \
+          --platform=linux/amd64 \
+          --build-arg=NEXT_PUBLIC_API_URL=$${API_URL} \
+          -f infrastructure/gcp/frontend-prod.Dockerfile \
+          -t ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:${_TAG} \
+          src/frontend
+    waitFor:
+      - get-api-url
 
 images:
   - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:${_TAG}

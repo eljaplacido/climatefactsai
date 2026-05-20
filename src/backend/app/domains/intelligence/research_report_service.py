@@ -21,7 +21,7 @@ from app.core.logging import get_logger
 from app.domains.content.data_sources.document_adapter import (
     process_document_url, detect_content_type, extract_doi,
 )
-from app.domains.intelligence.bayesian_credibility import BayesianCredibilityService
+from app.domains.intelligence.bayesian_credibility import WeightedCredibilityService
 from app.domains.intelligence.llm_client import llm_chat
 
 logger = get_logger(__name__)
@@ -41,7 +41,7 @@ class ResearchReportService:
 
     def __init__(self, db: Optional[Database] = None):
         self.db = db or get_db()
-        self.bayesian = BayesianCredibilityService(self.db)
+        self.credibility = WeightedCredibilityService(self.db)
 
     async def analyze_report(
         self, url: Optional[str] = None, doi: Optional[str] = None,
@@ -103,7 +103,7 @@ class ResearchReportService:
         if analysis.get("data_transparency_score"):
             evidence_scores.append(analysis["data_transparency_score"] / 100.0)
 
-        posterior = self.bayesian.compute_posterior(prior, evidence_scores, prior_weight=0.2)
+        posterior = self.credibility.compute_weighted_score(prior, evidence_scores, prior_weight=0.2)
 
         processing_time = round(time.time() - start_time, 1)
 

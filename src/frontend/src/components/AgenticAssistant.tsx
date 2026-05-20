@@ -13,6 +13,8 @@ import {
   Mic,
 } from "lucide-react";
 import Markdown from "./Markdown";
+import AIProvenanceBadge from "./AIProvenanceBadge";
+import { dispatchChatAction, type ChatActionSpec } from "@/lib/chatActionDispatcher";
 
 interface Message {
   role: "user" | "assistant";
@@ -21,6 +23,7 @@ interface Message {
   cited_articles?: { article_id: string; title: string }[];
   clarification_needed?: string[];
   mode?: string;
+  actions?: ChatActionSpec[];
 }
 
 interface AgenticAssistantProps {
@@ -273,6 +276,12 @@ export default function AgenticAssistant({
           .slice(0, 5);
       }
 
+      if (Array.isArray(data.actions) && data.actions.length > 0) {
+        assistantMessage.actions = data.actions
+          .filter((a: any) => a && a.type && a.label)
+          .slice(0, 3) as ChatActionSpec[];
+      }
+
       const rawSources = Array.isArray(data.sources)
         ? data.sources
         : Array.isArray(data.citations)
@@ -398,7 +407,35 @@ export default function AgenticAssistant({
                   }`}
                 >
                   {msg.role === "assistant" ? (
-                    <Markdown content={msg.content} className="text-slate-200 [&_p]:text-slate-200 [&_strong]:text-white [&_a]:text-teal-400" />
+                    <>
+                      <Markdown content={msg.content} className="text-slate-200 [&_p]:text-slate-200 [&_strong]:text-white [&_a]:text-teal-400" />
+                      <div className="mt-2">
+                        <AIProvenanceBadge
+                          provenance={{
+                            model: "deepseek-chat",
+                            prompt_name: "chat_synthesis_with_actions",
+                            prompt_version: "v1.0",
+                            retrieval_strategy: "hybrid_rag",
+                            timestamp: new Date().toISOString(),
+                          }}
+                        />
+                      </div>
+                      {msg.actions && msg.actions.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {msg.actions.map((a, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => dispatchChatAction(a)}
+                              className="px-2.5 py-1 bg-teal-600/20 hover:bg-teal-600/40 text-teal-300 text-xs rounded-full border border-teal-500/30 transition-colors cursor-pointer"
+                              aria-label={a.label}
+                            >
+                              {a.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   ) : (
                     msg.content
                   )}

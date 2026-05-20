@@ -362,6 +362,29 @@ def compute_sustainability_score(
     year_spread = (max(contributing_years) - min(contributing_years)) if contributing_years else 0
 
     band = confidence_band_for(len(contributing)) + 2.0 * year_spread
+
+    # Propagate per-indicator uncertainty into the composite band.
+    # σ_composite² = Σ(w_i_eff)² * σ_i²  where σ_i = (uncertainty_high - uncertainty_low)/2
+    # from country_indicators. When upstream uncertainty is published it
+    # replaces the heuristic band; when absent the heuristic band stands.
+    propagated_variance: list[float] = []
+    for _, indicator, _ in contributing:
+        ul = _attr_or_item(indicator, "uncertainty_low")
+        uh = _attr_or_item(indicator, "uncertainty_high")
+        if ul is not None and uh is not None:
+            try:
+                sigma_i = abs(float(uh) - float(ul)) / 2.0
+            except (TypeError, ValueError):
+                sigma_i = None
+        else:
+            sigma_i = None
+        if sigma_i is not None:
+            propagated_variance.append(sigma_i ** 2)
+
+    if propagated_variance:
+        composite_sigma = sum(propagated_variance) ** 0.5
+        band = max(band, 2.0 * composite_sigma)
+
     confidence_low = max(0.0, weighted_total - band)
     confidence_high = min(100.0, weighted_total + band)
 

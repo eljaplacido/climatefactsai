@@ -361,22 +361,58 @@ def get_latest_platt(
         return None
 
 
+def get_latest_fit_meta(
+    db,
+    signal_name: str = "reliability_score",
+) -> Optional[dict]:
+    """Return {platt_a, platt_b, n_labels, is_preview} for the latest fit, or None."""
+    try:
+        rows = db.execute_query(
+            """
+            SELECT platt_a, platt_b, n_labels,
+                   CASE WHEN n_labels < :stable_min THEN true ELSE false END AS is_preview
+            FROM calibration_fits
+            WHERE signal_name = :signal
+            ORDER BY fitted_at DESC
+            LIMIT 1
+            """,
+            {"signal": signal_name, "stable_min": STABLE_FIT_MIN},
+        )
+    except Exception as exc:
+        _logger.debug(f"get_latest_fit_meta failed: {exc}")
+        return None
+    if not rows:
+        return None
+    try:
+        return {
+            "platt_a": float(rows[0]["platt_a"]),
+            "platt_b": float(rows[0]["platt_b"]),
+            "n_labels": int(rows[0].get("n_labels") or 0),
+            "is_preview": bool(rows[0].get("is_preview", True)),
+        }
+    except (TypeError, ValueError, KeyError) as exc:
+        _logger.debug(f"get_latest_fit_meta could not coerce row: {exc}")
+        return None
+
+
 def apply_latest_to_reliability(
     db,
     raw_reliability_score: Optional[float],
 ) -> Optional[float]:
     """Convenience: take a 0–100 reliability_score, apply the latest Platt,
-    return the calibrated 0–100 score. Returns None when raw is None or
-    no fit exists.
+    return the calibrated 0–100 score. Returns None when raw is None,
+    no fit exists, or the fit is still a preview (n_labels < STABLE_FIT_MIN).
     """
     if raw_reliability_score is None:
         return None
-    params = get_latest_platt(db, signal_name="reliability_score")
-    if params is None:
+    meta = get_latest_fit_meta(db, signal_name="reliability_score")
+    if meta is None or meta.get("is_preview", True):
         return None
     try:
+        a = float(meta["platt_a"])
+        b = float(meta["platt_b"])
         raw_unit = max(0.0, min(1.0, float(raw_reliability_score) / 100.0))
-        calibrated_unit = apply_platt(raw_unit, params)
+        calibrated_unit = apply_platt(PlattParams(A=a, B=b), raw_unit)
         return round(calibrated_unit * 100.0, 1)
     except Exception as exc:
         _logger.debug(f"apply_latest_to_reliability failed: {exc}")

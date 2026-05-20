@@ -12,7 +12,8 @@ export default function TraceDebug() {
 
   if (!trace.requestId && !trace.traceId) return null;
 
-  const jaegerUrl = trace.traceId ? `http://localhost:5686/trace/${trace.traceId}` : null;
+  const jaegerBase = process.env.NEXT_PUBLIC_JAEGER_URL || "http://localhost:5686";
+  const jaegerUrl = trace.traceId ? `${jaegerBase}/trace/${trace.traceId}` : null;
 
   return (
     <div className="fixed bottom-3 right-3 z-50 text-xs bg-white/90 backdrop-blur border border-gray-200 rounded-lg px-3 py-2 shadow-sm">

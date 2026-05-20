@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from app.core.database import Database, get_db
 from app.core.logging import get_logger
 from app.domains.content.weather_context_service import WeatherContextService
-from app.domains.intelligence.bayesian_credibility import BayesianCredibilityService
+from app.domains.intelligence.bayesian_credibility import WeightedCredibilityService
 
 logger = get_logger(__name__)
 
@@ -42,7 +42,7 @@ class WeatherEnrichedScorer:
     def __init__(self, db: Optional[Database] = None):
         self.db = db or get_db()
         self.weather_service = WeatherContextService(self.db)
-        self.bayesian_service = BayesianCredibilityService(self.db)
+        self.credibility = WeightedCredibilityService(self.db)
 
     async def compute_weather_enriched_score(self, article_id: str) -> Optional[Dict[str, Any]]:
         """Compute weather-enriched reliability score for an article."""
@@ -87,7 +87,7 @@ class WeatherEnrichedScorer:
         if weather_factor is not None:
             evidence_scores.append(weather_factor)
 
-        posterior = self.bayesian_service.compute_posterior(float(source_score), evidence_scores, prior_weight=0.25)
+        posterior = self.credibility.compute_weighted_score(float(source_score), evidence_scores, prior_weight=0.25)
 
         new_score = int(posterior["posterior_score"])
         self.db.execute_update(

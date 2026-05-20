@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import clsx from "clsx";
 import type { DecomposedConfidence } from "../types";
+import DecomposedConfidenceChart from "./DecomposedConfidenceChart";
 
 interface CredibilityGaugeProps {
   score: number;
@@ -120,35 +121,16 @@ function CredibilityGauge({ score, level, decomposedConfidence, size = "md" }: C
 
       {/* Decomposed confidence breakdown popover */}
       {showBreakdown && decomposedConfidence && size !== "sm" && (
-        <div className="absolute top-full mt-2 z-50 bg-white rounded-xl shadow-xl border border-gray-200 p-4 w-72">
-          <h4 className="text-sm font-semibold text-gray-900 mb-3">Confidence Breakdown</h4>
-          <div className="space-y-2.5">
-            {Object.entries(FACTOR_LABELS).map(([key, label]) => {
-              const value = decomposedConfidence[key as keyof DecomposedConfidence] as number;
-              const pct = Math.round(value * 100);
-              return (
-                <div key={key}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-gray-600">{label}</span>
-                    <span className="text-xs font-semibold text-gray-900">{pct}%</span>
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-1.5">
-                    <div
-                      className={clsx("h-1.5 rounded-full transition-all duration-500", FACTOR_COLORS[key])}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-3 pt-2 border-t border-gray-100">
-            <p className="text-[10px] text-gray-400">
-              Hover over each factor to learn more. Scores are computed from evidence quality, source diversity, and model agreement.
+        <div className="absolute top-full mt-2 z-50 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-gray-200 dark:border-slate-700 p-4 w-72">
+          <h4 className="text-sm font-semibold text-gray-900 dark:text-slate-200 mb-3">Confidence Breakdown</h4>
+          <DecomposedConfidenceChart confidence={decomposedConfidence} size={224} />
+          <div className="mt-3 pt-2 border-t border-gray-100 dark:border-slate-700">
+            <p className="text-[10px] text-gray-400 dark:text-slate-500">
+              Radar: Model + Source + Evidence + Cross-ref + Temporal. Scores computed from evidence quality, source diversity, and multi-LLM agreement.
             </p>
           </div>
           {/* Arrow pointing up */}
-          <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white border-l border-t border-gray-200 rotate-45" />
+          <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white dark:bg-slate-800 border-l border-t border-gray-200 dark:border-slate-700 rotate-45" />
         </div>
       )}
     </div>

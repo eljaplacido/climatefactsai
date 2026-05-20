@@ -112,11 +112,14 @@ class CrossVerificationResult:
     """Full output of one verify_claims call."""
     primary_model: str
     secondary_model: Optional[str]
-    primary_claims: List[CorroboratedClaim]
-    secondary_total_claims: Optional[int]
-    agreement_score: Optional[float]       # corroborated / primary_total; None if no secondary
-    similarity_threshold: float
-    secondary_error: Optional[str] = None  # 'no_secondary_configured' | 'secondary_timeout_NNs' | 'secondary_error:Foo'
+    primary_prompt_name: Optional[str] = None
+    secondary_prompt_name: Optional[str] = None
+    primary_claims: List[CorroboratedClaim] = field(default_factory=list)
+    secondary_total_claims: Optional[int] = None
+    agreement_score: Optional[float] = None
+    similarity_threshold: float = 0.5
+    secondary_error: Optional[str] = None
+    greenwashing_flags: Optional[List[dict]] = None
 
     @property
     def primary_count(self) -> int:
@@ -130,6 +133,8 @@ class CrossVerificationResult:
         return {
             "primary_model": self.primary_model,
             "secondary_model": self.secondary_model,
+            "primary_prompt_name": self.primary_prompt_name,
+            "secondary_prompt_name": self.secondary_prompt_name,
             "primary_count": self.primary_count,
             "corroborated_count": self.corroborated_count,
             "agreement_score": (
@@ -139,6 +144,7 @@ class CrossVerificationResult:
             "secondary_total_claims": self.secondary_total_claims,
             "secondary_error": self.secondary_error,
             "similarity_threshold": self.similarity_threshold,
+            "greenwashing_flags": self.greenwashing_flags,
             "claims": [
                 {
                     "text": c.text,
@@ -276,8 +282,10 @@ async def verify_claims(
     max_claims: int,
     primary_extractor: ExtractorFn,
     primary_model: str,
+    primary_prompt_name: Optional[str] = None,
     secondary_extractor: Optional[ExtractorFn] = None,
     secondary_model: Optional[str] = None,
+    secondary_prompt_name: Optional[str] = None,
     similarity_threshold: float = 0.5,
     secondary_timeout: float = 30.0,
     confidence_penalty_uncorroborated: float = 0.7,
@@ -321,6 +329,8 @@ async def verify_claims(
         return CrossVerificationResult(
             primary_model=primary_model,
             secondary_model=None,
+            primary_prompt_name=primary_prompt_name,
+            secondary_prompt_name=None,
             primary_claims=out_claims,
             secondary_total_claims=None,
             agreement_score=None,
@@ -368,6 +378,8 @@ async def verify_claims(
         return CrossVerificationResult(
             primary_model=primary_model,
             secondary_model=secondary_model,
+            primary_prompt_name=primary_prompt_name,
+            secondary_prompt_name=secondary_prompt_name,
             primary_claims=out_claims,
             secondary_total_claims=None,
             agreement_score=None,
@@ -433,6 +445,8 @@ async def verify_claims(
     return CrossVerificationResult(
         primary_model=primary_model,
         secondary_model=secondary_model,
+        primary_prompt_name=primary_prompt_name,
+        secondary_prompt_name=secondary_prompt_name,
         primary_claims=out_claims,
         secondary_total_claims=len(secondary_norm),
         agreement_score=agreement_score,

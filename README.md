@@ -75,11 +75,12 @@ docker-compose -f docker-compose.simple.yml up -d
 - **Stack:** Python + FastAPI + Next.js + PostgreSQL (pgvector) + Redis
 
 ```
-Orchestrator (Claude 3.5 Sonnet)
-    ├── Ingestion (news discovery)
-    ├── Verification (fact-checking)
-    ├── Content Creation (article synthesis)
-    └── Video Production (short-form video)
+Climatefacts.ai Platform
+    ├── Ingestion (194-country RSS + Perplexity discovery)
+    ├── Verification (multi-LLM fact-checking + hallucination detection)
+    ├── Intelligence (claim extraction + calibration + drift detection)
+    ├── Corporate Claims (CDP + SBTi + NZT verification)
+    └── Trust Infrastructure (audit trails + provenance + AI Act labelling)
 ```
 
 **See:** [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) · [docs/architecture/](docs/architecture/)

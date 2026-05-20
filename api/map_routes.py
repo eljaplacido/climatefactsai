@@ -1766,3 +1766,44 @@ async def get_climate_risk_layer():
 
     _cache_set(cache_key, results)
     return results
+
+
+@router.get("/country/{cc}/claim-ledger")
+async def get_country_claim_ledger(
+    cc: str,
+    since_days: int = Query(365, ge=1, le=730),
+    limit: int = Query(50, ge=1, le=200),
+):
+    db = get_postgres()
+    cc = cc.upper()[:2]
+    interval = f"{int(since_days)} days"
+    try:
+        rows = db.execute_query(
+            """SELECT c.claim_id, c.claim_text, c.claim_type, c.claim_category,
+                      a.title AS article_title, a.source_name, a.published_date,
+                      a.overall_credibility, cp.confidence
+               FROM claims c
+               JOIN articles a ON a.article_id = c.article_id
+               LEFT JOIN claim_provenance cp ON cp.claim_id = c.claim_id
+               WHERE a.country_code = :cc AND a.is_synthetic = FALSE
+                 AND c.created_at > NOW() - :interval::interval
+               ORDER BY c.created_at DESC LIMIT :limit""",
+            {"cc": cc, "interval": interval, "limit": limit},
+        )
+    except Exception as exc:
+        logger.warning(f"claim_ledger query failed: {exc}")
+        rows = []
+    claims = []
+    for r in rows or []:
+        claims.append({
+            "claim_id": str(r["claim_id"]),
+            "claim_text": r["claim_text"],
+            "claim_type": r.get("claim_type"),
+            "claim_category": r.get("claim_category"),
+            "article_title": r.get("article_title"),
+            "source_name": r.get("source_name"),
+            "published_date": str(r.get("published_date")) if r.get("published_date") else None,
+            "overall_credibility": r.get("overall_credibility"),
+            "confidence": r.get("confidence"),
+        })
+    return {"country_code": cc, "since_days": since_days, "claims": claims, "total": len(claims)}

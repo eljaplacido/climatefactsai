@@ -1,7 +1,8 @@
-# CliLens.AI - Current State (Authoritative)
+# Climatefacts.ai — Current State (Authoritative)
 
-**Last Updated:** 2026-03-20
-**Status:** Global Platform Operational — 215 feeds, 8 regions, full auth, agentic chat, file upload
+**Last Updated:** 2026-05-20
+**Previous:** 2026-03-20
+**Status:** Global Platform Operational — 194 countries, full trust infrastructure, corporate claims, agentic chat
 **This is the single source of truth for the current state of the project.**
 
 ---

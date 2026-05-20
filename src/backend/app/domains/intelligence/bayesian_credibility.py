@@ -1,8 +1,13 @@
 """
-Bayesian Credibility Enhancement — CARF-inspired scoring.
+Weighted Credibility Scoring — CARF-inspired source evaluation.
 
-Uses Bayesian updating to refine article reliability scores based on
-source credibility priors and verification evidence.
+Combines source credibility priors with verification evidence via a
+weighted-average model (not a conjugate Bayesian update). The prior
+weight defaults to 0.3; the remaining weight goes to evidence.
+
+Source tier data comes from `source_credibility_tiers` (migration 027),
+seeded from Scimago JR, RetractionWatch, and IFCN. Falls back to a
+legacy 8-publisher whitelist when the tier table hasn't been seeded yet.
 """
 
 import math
@@ -14,27 +19,42 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
-class BayesianCredibilityService:
-    """Enhanced credibility scoring using Bayesian updating."""
+class WeightedCredibilityService:
+    """Source credibility scoring with weighted evidence combination."""
 
     def __init__(self, db: Optional[Database] = None):
         self.db = db or get_db()
 
-    @staticmethod
+    def _get_source_tier_bonus(self, venue: Optional[str]) -> int:
+        """Look up source tier bonus from DB (migration 027), with legacy fallback."""
+        if not venue:
+            return 0
+        try:
+            from app.domains.trust.source_tier_service import get_source_tier_prior
+            bonus, _tier = get_source_tier_prior(self.db, venue)
+            return bonus
+        except Exception:
+            pass
+        LEGACY = {
+            "Nature", "Science", "Elsevier", "Springer",
+            "Wiley", "PLOS", "Frontiers", "Copernicus",
+        }
+        return 30 if venue in LEGACY else 0
+
     def compute_research_prior(
+        self,
         has_doi: bool = False,
         venue: Optional[str] = None,
         content_type: str = "news_article",
     ) -> float:
         """
-        Compute a Bayesian prior for research content.
+        Compute a prior credibility score for research content.
 
         DOI presence: +20 points
-        Known venue (Nature, Science, etc.): +30 points
-        Preprint: base 40 points
-        News article: base 50 points
-        Research report: base 60 points
-        Policy document: base 55 points
+        Source tier bonus from source_credibility_tiers (DB-backed, migration 027):
+          T1 (Scimago Q1 / IFCN): +30,  T2: +15,  T3: +5,  unknown: 0,  retracted: -30.
+        Preprint: base 40, Research report: base 60, Policy document: base 55,
+        News article: base 50.
 
         Args:
             has_doi: Whether the article/document has a DOI identifier.
@@ -45,11 +65,6 @@ class BayesianCredibilityService:
         Returns:
             Prior credibility score in range [0, 100].
         """
-        KNOWN_VENUES = {
-            "Nature", "Science", "Elsevier", "Springer",
-            "Wiley", "PLOS", "Frontiers", "Copernicus",
-        }
-
         if content_type == "preprint":
             base = 40.0
         elif content_type == "research_report":
@@ -61,27 +76,27 @@ class BayesianCredibilityService:
 
         if has_doi:
             base += 20.0
-        if venue and venue in KNOWN_VENUES:
-            base += 30.0
+        if venue:
+            base += self._get_source_tier_bonus(venue)
 
         return min(base, 100.0)
 
-    def compute_posterior(
+    def compute_weighted_score(
         self,
         prior_score: float,
         evidence_scores: List[float],
         prior_weight: float = 0.3,
     ) -> Dict[str, Any]:
         """
-        Compute Bayesian posterior credibility score.
+        Combine source prior with evidence via weighted average.
 
         Args:
-            prior_score: Source credibility score (0-100), used as prior.
-            evidence_scores: List of verification evidence scores (0-1 each).
-            prior_weight: Weight given to the prior vs evidence.
+            prior_score: Source credibility score (0-100).
+            evidence_scores: Verification evidence scores (0-1 each).
+            prior_weight: Weight given to the prior vs evidence (default 0.3).
 
         Returns:
-            Dict with posterior score, confidence interval, and breakdown.
+            Dict with combined score, confidence interval, and breakdown.
         """
         if not evidence_scores:
             return {
@@ -122,7 +137,7 @@ class BayesianCredibilityService:
             "evidence_count": n,
             "prior_score": prior_score,
             "evidence_mean": round(evidence_mean * 100, 1),
-            "methodology": "bayesian_update",
+            "methodology": "weighted_average",
         }
 
     async def update_article_credibility(
@@ -164,7 +179,7 @@ class BayesianCredibilityService:
                 if r.get("confidence_score") is not None
             ]
 
-            result = self.compute_posterior(float(source_score), evidence)
+            result = self.compute_weighted_score(float(source_score), evidence)
 
             # Update article with new score
             self.db.execute_update(

@@ -63,10 +63,12 @@ This project uses SPARC (Specification, Pseudocode, Architecture, Refinement, Co
 - `npx claude-flow sparc concurrent <mode> "<tasks-file>"` - Multi-task processing
 
 ### Build Commands
-- `npm run build` - Build project
-- `npm run test` - Run tests
-- `npm run lint` - Linting
-- `npm run typecheck` - Type checking
+- `cd src/frontend && npm run build` - Build frontend
+- `cd src/frontend && npm run test` - Run frontend tests
+- `cd src/frontend && npm run lint` - Linting
+- `cd src/frontend && npm run typecheck` - Type checking
+- `pytest tests/` - Run backend tests
+- `docker compose -f docker-compose.simple.yml up` - Start platform locally
 
 ## SPARC Workflow Phases
 

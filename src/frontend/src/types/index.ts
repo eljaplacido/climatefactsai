@@ -74,6 +74,15 @@ export interface Article {
   claims_by_category?: Record<string, number>;
   content_category?: string;
   executive_brief?: string;
+  is_synthetic?: boolean;
+  provenance?: Record<string, any>;
+  source_articles?: Array<{
+    article_id: string;
+    title: string;
+    url: string;
+    source_name: string;
+    published_at: string;
+  }>;
 }
 
 export interface FactCheck {

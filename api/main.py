@@ -377,6 +377,12 @@ app.include_router(drift_router)
 
 logger.info("Loaded Chat, Saved Query, Green Transition, Methodology, and Drift routers")
 
+# Phase 8 (2026-05-20): Corporate climate disclosure verification
+from api.company_routes import router as company_router
+app.include_router(company_router)
+
+logger.info("Loaded Company router")
+
 
 # ---------------------------------------------------------------------------
 # Generic text translation endpoint (used by frontend i18n-context)

@@ -35,6 +35,12 @@ EXTRACTION_CYNEFIN = "cynefin_classification"
 EXTRACTION_HALLUCINATION = "hallucination_check"
 EXTRACTION_INGESTION = "article_ingestion_enrichment"
 
+EXTRACTION_NEGATIVE_CLAIM_REJECTED = "claim_rejected"
+EXTRACTION_NEGATIVE_HALLUCINATION = "hallucination_flagged"
+EXTRACTION_NEGATIVE_INDICATOR_MISSING = "indicator_missing"
+EXTRACTION_NEGATIVE_NO_CONTRADICTION = "no_contradiction_found"
+EXTRACTION_NEGATIVE_NUMERIC_GROUNDING = "numeric_grounding_failed"
+
 
 # ---------------------------------------------------------------------------
 # Record dataclass
@@ -84,7 +90,34 @@ class ProvenanceRecord:
 # Write path
 # ---------------------------------------------------------------------------
 
-def record_provenance(db, record: ProvenanceRecord) -> Optional[int]:
+def record_negative_finding(
+    db,
+    *,
+    extraction_method: str,
+    article_id: Optional[str] = None,
+    url_analysis_id: Optional[str] = None,
+    claim_id: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None,
+    model_name: Optional[str] = None,
+) -> Optional[int]:
+    """Record a negative finding — what was looked for and not found.
+
+    Unlike `record_provenance` (which records what was produced), this
+    records absences: rejected claims, hallucination flags, missing
+    indicators, failed numeric grounding, absent contradictions.
+    """
+    return record_provenance(
+        db,
+        ProvenanceRecord(
+            extraction_method=extraction_method,
+            article_id=article_id,
+            url_analysis_id=url_analysis_id,
+            claim_id=claim_id,
+            model_name=model_name,
+            raw_metadata=details or {},
+            confidence=0.0,
+        ),
+    )
     """Insert one provenance row. Returns the new id, or None on failure.
 
     Best-effort: any DB error (table missing, network blip, FK violation)
