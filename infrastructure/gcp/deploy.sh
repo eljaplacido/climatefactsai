@@ -205,7 +205,6 @@ main() {
         --port=3000
         --set-env-vars="NODE_ENV=production"
         --set-env-vars="NEXT_TELEMETRY_DISABLED=1"
-        --set-env-vars="PORT=3000"
         --set-env-vars="HOSTNAME=0.0.0.0"
         --memory="256Mi"
         --cpu="1"
