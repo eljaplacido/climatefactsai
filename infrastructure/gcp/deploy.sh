@@ -234,7 +234,7 @@ main() {
     gcloud run services update "${API_SERVICE}" \
         --region="${REGION}" \
         --project="${PROJECT_ID}" \
-        --set-env-vars="CORS_ORIGINS=${FRONTEND_URL}" \
+        --update-env-vars="CORS_ORIGINS=${FRONTEND_URL}" \
         --quiet || true
 
     # -----------------------------------------------------------------------
