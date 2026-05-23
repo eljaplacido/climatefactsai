@@ -109,6 +109,9 @@ api_test_report.json
 deepseek.txt
 
 
+# Allow frontend lib/ directory (overrides Python lib/ ignore above)
+!src/frontend/src/lib/
+
 # Node/Next.js
 node_modules/
 .next/
