@@ -48,7 +48,7 @@ async def get_article_infographic(
     rows = db.execute_query(
         """SELECT title, reliability_score, source_name, content_category,
                   claims_count, verified_claims_count, overall_credibility, executive_brief,
-                  reliability_breakdown, decomposed_confidence, source_credibility_score
+                  source_credibility_score
            FROM articles WHERE article_id = :id AND is_synthetic = FALSE""",
         {"id": article_id},
     )
@@ -57,16 +57,30 @@ async def get_article_infographic(
 
     row = rows[0]
 
-    # Parse JSONB fields
+    # Fetch extended fields that may not exist in all schemas
+    reliability_breakdown = None
+    decomposed_confidence = None
+    try:
+        ext = db.execute_query(
+            """SELECT reliability_breakdown, decomposed_confidence
+               FROM articles WHERE article_id = :id""",
+            {"id": article_id},
+        )
+        if ext and ext[0]:
+            if ext[0].get("reliability_breakdown"):
+                reliability_breakdown = ext[0]["reliability_breakdown"]
+            if ext[0].get("decomposed_confidence"):
+                decomposed_confidence = ext[0]["decomposed_confidence"]
+    except Exception:
+        pass  # Columns may not exist yet; degrade gracefully
+
     import json
-    reliability_breakdown = row.get("reliability_breakdown")
     if isinstance(reliability_breakdown, str):
         try:
             reliability_breakdown = json.loads(reliability_breakdown)
         except (json.JSONDecodeError, TypeError):
             reliability_breakdown = None
 
-    decomposed_confidence = row.get("decomposed_confidence")
     if isinstance(decomposed_confidence, str):
         try:
             decomposed_confidence = json.loads(decomposed_confidence)
