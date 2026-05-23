@@ -42,6 +42,7 @@ class ConversationEngine:
         question: str,
         user_id: Optional[UUID] = None,
         conversation_context: Optional[list[dict]] = None,
+        scope: str = "article",
     ) -> dict:
         """
         Answer a question about an article using grounded context.
@@ -50,6 +51,7 @@ class ConversationEngine:
             article_id: The article to ask about
             question: User's question
             user_id: Optional user ID for tracking
+            scope: "article" = article-only context; "external" = includes deep search
 
         Returns:
             Dict with answer, confidence, context_used, conversation_id
@@ -60,6 +62,7 @@ class ConversationEngine:
                 "confidence": 0.0,
                 "context_used": [],
                 "error": "no_api_key",
+                "scope": scope,
             }
 
         # Fetch article context
@@ -70,18 +73,39 @@ class ConversationEngine:
                 "confidence": 0.0,
                 "context_used": [],
                 "error": "article_not_found",
+                "scope": scope,
             }
 
-        # Build grounded prompt with optional conversation history
-        prompt = self._build_prompt(question, context, conversation_context)
+        # External search: run a lean deep search for cross-referencing
+        external_context = ""
+        if scope == "external":
+            try:
+                external_context = await self._run_external_search(question, context)
+            except Exception as e:
+                logger.warning(f"External search for Q&A failed: {e}")
 
-        system_prompt = (
-            "You are CliLens.AI's article analysis assistant. You ONLY answer "
-            "questions based on the provided article content, claims, and verification "
-            "results. If the article doesn't contain information to answer the question, "
-            "say so clearly. Never make up facts or cite sources not in the context. "
-            "Be concise, factual, and reference specific claims or evidence when possible."
-        )
+        # Build grounded prompt with optional conversation history
+        prompt = self._build_prompt(question, context, conversation_context, external_context)
+
+        if scope == "external":
+            system_prompt = (
+                "You are Climatefacts.ai's research analyst. Answer the user's question "
+                "using the provided article content, claims, and verification results as "
+                "primary context. The EXTERNAL SEARCH RESULTS section contains broader "
+                "information from the platform's climate corpus. Use it to enrich and "
+                "cross-reference your answer, but clearly distinguish between article-specific "
+                "facts and external context. If information across sources conflicts, note the "
+                "discrepancy. Never make up facts. Be concise and factual."
+            )
+        else:
+            system_prompt = (
+                "You are Climatefacts.ai's article analysis assistant. You ONLY answer "
+                "questions based on the provided article content, claims, and verification "
+                "results. If the article doesn't contain information to answer the question, "
+                "say so clearly and suggest switching to 'Research' mode for broader context. "
+                "Never make up facts or cite sources not in the context. "
+                "Be concise, factual, and reference specific claims or evidence when possible."
+            )
 
         try:
             answer = None
@@ -128,6 +152,7 @@ class ConversationEngine:
                     "confidence": 0.0,
                     "context_used": [],
                     "error": "all_providers_failed",
+                    "scope": scope,
                 }
 
             # Estimate confidence based on context relevance
@@ -149,6 +174,7 @@ class ConversationEngine:
                 "confidence": confidence,
                 "context_used": context.get("sources_used", []),
                 "model": used_model,
+                "scope": scope,
             }
 
         except Exception as e:
@@ -158,6 +184,7 @@ class ConversationEngine:
                 "confidence": 0.0,
                 "context_used": [],
                 "error": str(e),
+                "scope": scope,
             }
 
     async def _build_context(self, article_id: UUID) -> dict:
@@ -208,8 +235,42 @@ class ConversationEngine:
             "sources_used": sources_used,
         }
 
+    async def _run_external_search(self, question: str, context: dict) -> str:
+        """Run a lean internal corpus search to enrich Q&A with broader context."""
+        try:
+            from app.domains.intelligence.deep_search_service import DeepSearchService
+            service = DeepSearchService(self.db)
+            result = await service.search(
+                question,
+                country=None,
+                include_weather=False,
+                limit=3,
+                include_hallucination_check=False,
+                include_refinements=False,
+            )
+            if not isinstance(result, dict):
+                return ""
+            answer = result.get("answer", "")
+            citations = result.get("citations", [])
+            parts = []
+            if answer:
+                parts.append(f"External corpus synthesis:\n{answer[:500]}")
+            if citations:
+                parts.append("\nRelated articles found:")
+                for c in citations[:5]:
+                    if c.get("title"):
+                        parts.append(
+                            f"- {c['title']} ({c.get('source_name', 'unknown')}, "
+                            f"credibility: {c.get('credibility', 'N/A')})"
+                        )
+            return "\n".join(parts) if parts else ""
+        except Exception as e:
+            logger.warning(f"External search failed in Q&A: {e}")
+            return ""
+
     def _build_prompt(
-        self, question: str, context: dict, conversation_context: Optional[list[dict]] = None
+        self, question: str, context: dict, conversation_context: Optional[list[dict]] = None,
+        external_context: str = "",
     ) -> str:
         """Build the grounded prompt with article context and conversation history."""
         # Build conversation history section if multi-turn
@@ -228,6 +289,20 @@ class ConversationEngine:
                     + "\n---\n"
                 )
 
+        external_block = ""
+        if external_context:
+            external_block = f"""
+EXTERNAL SEARCH RESULTS:
+{external_context}
+"""
+
+        only_clause = (
+            "Answer the question using ONLY the information provided above." if not external_context
+            else "Use the article content as primary source. Supplement with external search "
+                 "results where the article lacks coverage. Clearly indicate when information "
+                 "comes from external context vs the article itself."
+        )
+
         return f"""ARTICLE TITLE: {context['title']}
 SOURCE: {context['source_name']}
 CREDIBILITY: {context['credibility']}
@@ -238,14 +313,13 @@ ARTICLE TEXT:
 VERIFIED CLAIMS:{context['claims_text'] or ' None extracted yet.'}
 
 ANALYSIS SUMMARY:
-{context.get('insight_summary') or 'Not yet available.'}
+{context.get('insight_summary') or 'Not yet available.'}{external_block}
 {history_section}
 ---
 
 USER QUESTION: {question}
 
-Answer the question using ONLY the information provided above. If the article doesn't \
-contain enough information to fully answer, state what IS known and what isn't covered. \
+{only_clause} \
 If there is conversation history, use it for context but always ground answers in the \
 article data. Format your answer using markdown for readability."""
 

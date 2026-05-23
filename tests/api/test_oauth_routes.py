@@ -43,6 +43,9 @@ class TestOAuthProviderReadiness:
         assert resp.status_code == 200
         body = resp.json()
         assert body["google"] is True
+        assert body["google_client_id"] == "google-client-id-value"
+        assert body["providers"]["google"]["enabled"] is True
+        assert body["providers"]["google"]["client_id"] == "google-client-id-value"
 
     def test_google_provider_uses_gcp_style_secret_env_names(self, monkeypatch):
         monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
@@ -54,6 +57,37 @@ class TestOAuthProviderReadiness:
         assert resp.status_code == 200
         body = resp.json()
         assert body["google"] is True
+
+    def test_google_provider_treats_placeholder_values_as_disabled(self, monkeypatch):
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "placeholder-testing-value")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "placeholder-secret")
+
+        resp = client.get("/api/auth/oauth/providers")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["google"] is False
+        assert body["google_client_id"] == ""
+        assert body["providers"]["google"]["enabled"] is False
+        assert body["providers"]["google"]["client_id"] == ""
+
+    def test_providers_payload_exposes_runtime_client_metadata(self, monkeypatch):
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "gid-123")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "gsecret-123")
+        monkeypatch.setenv("MICROSOFT_CLIENT_ID", "mid-456")
+        monkeypatch.setenv("MICROSOFT_CLIENT_SECRET", "msecret-456")
+
+        resp = client.get("/api/auth/oauth/providers")
+        assert resp.status_code == 200
+        body = resp.json()
+
+        assert body["google"] is True
+        assert body["microsoft"] is True
+        assert body["google_client_id"] == "gid-123"
+        assert body["microsoft_client_id"] == "mid-456"
+        assert body["providers"]["google"]["enabled"] is True
+        assert body["providers"]["google"]["client_id"] == "gid-123"
+        assert body["providers"]["microsoft"]["enabled"] is True
+        assert body["providers"]["microsoft"]["client_id"] == "mid-456"
 
 
 class TestOAuthStateGeneration:

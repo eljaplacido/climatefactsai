@@ -11,14 +11,35 @@ import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
+from urllib.parse import urlparse
 
 from app.core.celery_app import app
 from app.core.database import get_db
 from app.core.logging import get_logger
 from app.domains.intelligence.services import VerificationService
 from app.domains.content.source_profiles import SourceProfileService
+from shared.claims_status_manager import ClaimsStatusManager
 
 logger = get_logger(__name__)
+
+
+def _resolve_source_domain(url: Optional[str], source_name: Optional[str]) -> Optional[str]:
+    """Best-effort resolve canonical source domain from URL or source label."""
+    if url:
+        try:
+            parsed = urlparse(str(url))
+            host = (parsed.netloc or "").lower().strip()
+            if host:
+                return host[4:] if host.startswith("www.") else host
+        except Exception:
+            pass
+
+    if source_name:
+        host = str(source_name).lower().strip()
+        if host:
+            return host[4:] if host.startswith("www.") else host
+
+    return None
 
 
 @app.task(bind=True, max_retries=2, rate_limit="3/m")
@@ -43,6 +64,29 @@ def auto_verify_pending_articles(
     """
     task_id = (task_metadata or {}).get("task_id") or self.request.id or f"autoverify-{uuid4()}"
     db = get_db()
+    status_manager = ClaimsStatusManager(db)
+
+    stale_reset_minutes = 120
+    stale_reset_limit = max(batch_size * 5, 50)
+    stale_reset_count = 0
+    try:
+        stale_reset_count = status_manager.reset_stale_processing(
+            stale_minutes=stale_reset_minutes,
+            limit=stale_reset_limit,
+        )
+        if stale_reset_count:
+            logger.warning(
+                "Recovered stale processing claims rows before verification run",
+                task_id=task_id,
+                recovered=stale_reset_count,
+                stale_minutes=stale_reset_minutes,
+            )
+    except Exception as reset_exc:
+        logger.warning(
+            "Stale processing reset failed; continuing",
+            task_id=task_id,
+            error=str(reset_exc),
+        )
 
     logger.info(
         "auto_verify_pending_articles started",
@@ -89,10 +133,12 @@ def auto_verify_pending_articles(
             "articles_found": 0,
             "verified": 0,
             "failed": 0,
+            "stale_recovered": stale_reset_count,
             "completed_at": datetime.utcnow().isoformat(),
         }
 
     article_ids = [str(r["article_id"]) for r in rows]
+    article_by_id = {str(r["article_id"]): r for r in rows}
     logger.info(
         "Found pending articles for verification",
         task_id=task_id,
@@ -122,25 +168,54 @@ def auto_verify_pending_articles(
     for aid in article_ids:
         try:
             result = asyncio.run(service.verify_article(aid))
+
+            status = str(getattr(result, "status", "") or "").lower()
+            if status != "completed":
+                failed_count += 1
+                error_msg = str(
+                    getattr(result, "error_message", None)
+                    or "Verification pipeline did not complete successfully"
+                )[:500]
+
+                db.execute_update(
+                    """
+                    UPDATE articles
+                    SET claims_status = 'failed',
+                        claims_error_message = :error,
+                        updated_at = NOW()
+                    WHERE article_id = :article_id
+                    """,
+                    {"article_id": aid, "error": error_msg},
+                )
+
+                results.append({
+                    "article_id": aid,
+                    "status": "failed",
+                    "error": error_msg,
+                })
+
+                logger.error(
+                    "Article verification returned non-completed status",
+                    article_id=aid,
+                    returned_status=status or "unknown",
+                    error=error_msg,
+                )
+                continue
+
             verified_count += 1
 
-            claims_count = len(result.claims) if hasattr(result, 'claims') else 0
-            verdicts = result.verdicts if hasattr(result, 'verdicts') else []
-            verified_claims = sum(
-                1 for v in verdicts
-                if hasattr(v, 'verification_status') and v.verification_status in ("verified", "true")
-            )
-            disputed_claims = sum(
-                1 for v in verdicts
-                if hasattr(v, 'verification_status') and v.verification_status in ("false", "disputed")
-            )
+            claims_count = int(getattr(result, "claims_extracted", 0) or 0)
+            verified_claims = int(getattr(result, "claims_verified", 0) or 0)
+            disputed_claims = int(getattr(result, "claims_disputed", 0) or 0)
 
             # Update source profile
             try:
-                source_domain = None
-                if hasattr(result, 'provenance') and result.provenance:
-                    source_domain = result.provenance.get("source_domain")
-                if source_domain:
+                row = article_by_id.get(aid) or {}
+                source_domain = _resolve_source_domain(
+                    row.get("url"),
+                    row.get("source_name"),
+                )
+                if source_domain and (verified_claims > 0 or disputed_claims > 0):
                     sp_svc = SourceProfileService(db)
                     sp_svc.update_claim_stats(
                         source_domain, verified=verified_claims, disputed=disputed_claims
@@ -222,6 +297,7 @@ def auto_verify_pending_articles(
         "articles_found": len(article_ids),
         "verified": verified_count,
         "failed": failed_count,
+        "stale_recovered": stale_reset_count,
         "results": results,
         "completed_at": datetime.utcnow().isoformat(),
     }
@@ -252,6 +328,20 @@ def retry_failed_verifications(
 
     logger.info("retry_failed_verifications started", task_id=task_id)
 
+    status_manager = ClaimsStatusManager(db)
+    stale_reset_count = 0
+    try:
+        stale_reset_count = status_manager.reset_stale_processing(
+            stale_minutes=120,
+            limit=max(batch_size * 5, 50),
+        )
+    except Exception as reset_exc:
+        logger.warning(
+            "Stale processing reset failed during retry run",
+            task_id=task_id,
+            error=str(reset_exc),
+        )
+
     rows = db.execute_query(
         """
         SELECT article_id
@@ -265,7 +355,7 @@ def retry_failed_verifications(
     )
 
     if not rows:
-        return {"task_id": task_id, "retried": 0}
+        return {"task_id": task_id, "retried": 0, "stale_recovered": stale_reset_count}
 
     # Reset to pending so auto_verify picks them up
     retried = 0
@@ -294,7 +384,7 @@ def retry_failed_verifications(
         )
 
     logger.info("retry_failed_verifications completed", task_id=task_id, retried=retried)
-    return {"task_id": task_id, "retried": retried}
+    return {"task_id": task_id, "retried": retried, "stale_recovered": stale_reset_count}
 
 
 @app.task(bind=True, max_retries=1)

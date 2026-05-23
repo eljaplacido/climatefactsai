@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { X, Chrome, Monitor, Eye, EyeOff, Loader2 } from "lucide-react";
 
 interface AuthModalProps {
@@ -13,6 +13,16 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 const MS_CLIENT_ID = process.env.NEXT_PUBLIC_MICROSOFT_CLIENT_ID || "";
 
+type OAuthProviderState = {
+  enabled: boolean;
+  clientId: string;
+};
+
+type OAuthProviderConfig = {
+  google: OAuthProviderState;
+  microsoft: OAuthProviderState;
+};
+
 export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
@@ -21,6 +31,57 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [oauthConfig, setOauthConfig] = useState<OAuthProviderConfig>({
+    google: { enabled: Boolean(GOOGLE_CLIENT_ID), clientId: GOOGLE_CLIENT_ID },
+    microsoft: { enabled: Boolean(MS_CLIENT_ID), clientId: MS_CLIENT_ID },
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOAuthProviders() {
+      try {
+        const resp = await fetch(`${API_URL}/api/auth/oauth/providers`);
+        if (!resp.ok) return;
+
+        const data = await resp.json();
+        const providers = data?.providers;
+        const nextConfig: OAuthProviderConfig = {
+          google: {
+            enabled: Boolean(providers?.google?.enabled ?? data?.google ?? GOOGLE_CLIENT_ID),
+            clientId:
+              String(
+                providers?.google?.client_id ??
+                  data?.google_client_id ??
+                  GOOGLE_CLIENT_ID ??
+                  "",
+              ) || "",
+          },
+          microsoft: {
+            enabled: Boolean(providers?.microsoft?.enabled ?? data?.microsoft ?? MS_CLIENT_ID),
+            clientId:
+              String(
+                providers?.microsoft?.client_id ??
+                  data?.microsoft_client_id ??
+                  MS_CLIENT_ID ??
+                  "",
+              ) || "",
+          },
+        };
+
+        if (!cancelled) {
+          setOauthConfig(nextConfig);
+        }
+      } catch {
+        // Keep build-time fallback.
+      }
+    }
+
+    loadOAuthProviders();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleEmailAuth = useCallback(async () => {
     setLoading(true);
@@ -41,7 +102,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
       }
       const tokens = await resp.json();
       localStorage.setItem("clilens_token", tokens.access_token);
-      localStorage.setItem("clilens_refresh", tokens.refresh_token);
+      localStorage.setItem("clilens_refresh_token", tokens.refresh_token);
+      localStorage.removeItem("clilens_refresh");
       onAuthSuccess({ access_token: tokens.access_token, email });
     } catch (err: any) {
       setError(err.message || "Authentication failed");
@@ -50,16 +112,64 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
     }
   }, [mode, email, password, fullName, onAuthSuccess]);
 
-  const handleOAuth = useCallback((provider: "google" | "microsoft") => {
-    const redirectUri = `${window.location.origin}/auth/callback`;
-    let authUrl: string;
-    if (provider === "google") {
-      authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=openid%20email%20profile&state=${provider}&access_type=offline&prompt=consent`;
-    } else {
-      authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${MS_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=openid%20profile%20email%20User.Read&state=${provider}`;
+  const handleOAuth = useCallback(async (provider: "google" | "microsoft") => {
+    setError(null);
+    setLoading(true);
+
+    try {
+      const providerConfig = oauthConfig[provider];
+      if (!providerConfig.enabled || !providerConfig.clientId) {
+        throw new Error(`${provider === "google" ? "Google" : "Microsoft"} login is not configured`);
+      }
+
+      const stateResp = await fetch(`${API_URL}/api/auth/oauth/state`);
+      if (!stateResp.ok) {
+        throw new Error("Could not initiate OAuth");
+      }
+
+      const { state } = await stateResp.json();
+      if (!state || state.length < 16) {
+        throw new Error("Invalid OAuth state token");
+      }
+
+      try {
+        sessionStorage.setItem("oauth_state", state);
+        sessionStorage.setItem("oauth_provider", provider);
+        sessionStorage.setItem(
+          "oauth_redirect",
+          `${window.location.pathname}${window.location.search}`,
+        );
+      } catch {
+        // sessionStorage unavailable.
+      }
+
+      const redirectUri = `${window.location.origin}/auth/callback`;
+      let authUrl: string;
+      if (provider === "google") {
+        authUrl =
+          `https://accounts.google.com/o/oauth2/v2/auth` +
+          `?client_id=${encodeURIComponent(providerConfig.clientId)}` +
+          `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+          `&response_type=code` +
+          `&scope=${encodeURIComponent("openid email profile")}` +
+          `&state=${encodeURIComponent(state)}` +
+          `&access_type=offline&prompt=consent`;
+      } else {
+        authUrl =
+          `https://login.microsoftonline.com/common/oauth2/v2.0/authorize` +
+          `?client_id=${encodeURIComponent(providerConfig.clientId)}` +
+          `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+          `&response_type=code` +
+          `&scope=${encodeURIComponent("openid profile email User.Read")}` +
+          `&state=${encodeURIComponent(state)}`;
+      }
+
+      window.location.href = authUrl;
+    } catch (err: any) {
+      setError(err?.message || "Failed to start OAuth flow");
+      setLoading(false);
     }
-    window.location.href = authUrl;
-  }, []);
+  }, [oauthConfig]);
 
   if (!isOpen) return null;
 
@@ -74,15 +184,15 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
         </div>
 
         <div className="space-y-3 mb-6">
-          <button onClick={() => handleOAuth("google")} disabled={!GOOGLE_CLIENT_ID}
+          <button onClick={() => handleOAuth("google")} disabled={!oauthConfig.google.enabled || !oauthConfig.google.clientId}
             className="w-full flex items-center gap-3 px-4 py-2.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
             <Chrome className="h-5 w-5 text-blue-500" />
-            {GOOGLE_CLIENT_ID ? "Continue with Google" : "Google Sign-in (configure credentials)"}
+            {oauthConfig.google.enabled ? "Continue with Google" : "Google Sign-in (configure credentials)"}
           </button>
-          <button onClick={() => handleOAuth("microsoft")} disabled={!MS_CLIENT_ID}
+          <button onClick={() => handleOAuth("microsoft")} disabled={!oauthConfig.microsoft.enabled || !oauthConfig.microsoft.clientId}
             className="w-full flex items-center gap-3 px-4 py-2.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
             <Monitor className="h-5 w-5 text-blue-600" />
-            {MS_CLIENT_ID ? "Continue with Microsoft" : "Microsoft Sign-in (configure credentials)"}
+            {oauthConfig.microsoft.enabled ? "Continue with Microsoft" : "Microsoft Sign-in (configure credentials)"}
           </button>
         </div>
 

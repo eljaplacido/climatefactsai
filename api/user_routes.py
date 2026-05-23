@@ -597,6 +597,48 @@ async def get_bookmarks(
     return {"items": items, "folders": folders, "page": page, "limit": limit}
 
 
+@router.get("/bookmarks/{article_id}/status")
+async def get_bookmark_status(
+    article_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Check whether the current user has bookmarked an article.
+    """
+    db = get_postgres()
+
+    try:
+        rows = db.execute_query(
+            """
+            SELECT article_id, folder, notes, bookmarked_at
+            FROM user_bookmarks
+            WHERE user_id = :user_id AND article_id = :article_id
+            LIMIT 1
+            """,
+            {
+                "user_id": current_user["user_id"],
+                "article_id": article_id,
+            },
+        )
+    except Exception:
+        rows = []
+
+    if not rows:
+        return {
+            "article_id": article_id,
+            "bookmarked": False,
+        }
+
+    row = rows[0]
+    return {
+        "article_id": str(row.get("article_id") or article_id),
+        "bookmarked": True,
+        "folder": row.get("folder") or "default",
+        "notes": row.get("notes"),
+        "bookmarked_at": str(row.get("bookmarked_at", "")),
+    }
+
+
 @router.post("/bookmarks/{article_id}")
 async def create_bookmark(
     article_id: str,

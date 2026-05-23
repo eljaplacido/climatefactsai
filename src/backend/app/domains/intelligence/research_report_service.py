@@ -91,7 +91,7 @@ class ResearchReportService:
             analysis, reference_count, has_methodology, data_indicators, content_type,
         )
 
-        prior = self.bayesian.compute_research_prior(
+        prior = self.credibility.compute_research_prior(
             has_doi=bool(detected_doi), venue=venue or metadata.get("venue"), content_type=content_type,
         )
 

@@ -67,11 +67,13 @@ async function apiFetch(
 function storeTokens(access: string, refresh: string) {
   localStorage.setItem("clilens_token", access);
   localStorage.setItem("clilens_refresh_token", refresh);
+  localStorage.removeItem("clilens_refresh");
 }
 
 function clearTokens() {
   localStorage.removeItem("clilens_token");
   localStorage.removeItem("clilens_refresh_token");
+  localStorage.removeItem("clilens_refresh");
   localStorage.removeItem("clilens_user");
 }
 
@@ -86,7 +88,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ---- refresh token ----
   const refreshToken = useCallback(async (): Promise<string | null> => {
-    const refresh = localStorage.getItem("clilens_refresh_token");
+    const refresh =
+      localStorage.getItem("clilens_refresh_token") ||
+      localStorage.getItem("clilens_refresh");
     if (!refresh) return null;
 
     try {
@@ -107,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem("clilens_token", newToken);
       if (data.refresh_token) {
         localStorage.setItem("clilens_refresh_token", data.refresh_token);
+        localStorage.removeItem("clilens_refresh");
       }
       setToken(newToken);
       return newToken;

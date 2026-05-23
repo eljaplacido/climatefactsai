@@ -46,6 +46,8 @@ class DeepSearchService:
         category: Optional[str] = None,
         include_weather: bool = True,
         limit: int = 10,
+        include_hallucination_check: bool = True,
+        include_refinements: bool = True,
     ) -> Dict[str, Any]:
         """
         Perform a deep search combining multiple sources.
@@ -124,29 +126,30 @@ class DeepSearchService:
         # statistic-verification checks run locally; the LLM-grounding
         # sub-check degrades to risk=0.5 gracefully when no LLM key is set.
         hallucination_check: Optional[Dict[str, Any]] = None
-        try:
-            if synthesis:
-                source_texts: List[str] = []
-                for art in internal_results or []:
-                    chunk = (
-                        f"{art.get('title', '')}\n{art.get('excerpt') or ''}".strip()
-                    )
-                    if chunk:
-                        source_texts.append(chunk)
-                external_answer = perplexity_results.get("answer") if isinstance(perplexity_results, dict) else ""
-                if external_answer:
-                    source_texts.append(external_answer)
+        if include_hallucination_check:
+            try:
+                if synthesis:
+                    source_texts: List[str] = []
+                    for art in internal_results or []:
+                        chunk = (
+                            f"{art.get('title', '')}\n{art.get('excerpt') or ''}".strip()
+                        )
+                        if chunk:
+                            source_texts.append(chunk)
+                    external_answer = perplexity_results.get("answer") if isinstance(perplexity_results, dict) else ""
+                    if external_answer:
+                        source_texts.append(external_answer)
 
-                if source_texts:
-                    from app.domains.intelligence.hallucination_detector import (
-                        HallucinationDetector,
-                    )
+                    if source_texts:
+                        from app.domains.intelligence.hallucination_detector import (
+                            HallucinationDetector,
+                        )
 
-                    detector = HallucinationDetector(self.db)
-                    hallucination_check = await detector.check(synthesis, source_texts)
-        except Exception as exc:
-            logger.warning(f"Hallucination check failed; continuing without it: {exc}")
-            hallucination_check = None
+                        detector = HallucinationDetector(self.db)
+                        hallucination_check = await detector.check(synthesis, source_texts)
+            except Exception as exc:
+                logger.warning(f"Hallucination check failed; continuing without it: {exc}")
+                hallucination_check = None
 
         # Methodology: how the answer was assembled. Surfaced in the UI's
         # "How this was answered" drawer so users can audit our pipeline.
@@ -258,18 +261,19 @@ class DeepSearchService:
         # and only fires when both sides return zero — so it doesn't add cost
         # to the happy path.
         clarification_needed: Optional[List[str]] = None
-        if internal_count == 0 and external_count == 0:
-            clarification_needed = await self._suggest_scope_refinements(query, country)
+        if include_refinements:
+            if internal_count == 0 and external_count == 0:
+                clarification_needed = await self._suggest_scope_refinements(query, country)
 
-        if guidance and guidance.get("status") in {"partial", "weak"}:
-            fallback_refinements = await self._suggest_scope_refinements(query, country)
-            if fallback_refinements:
-                clarification_needed = (clarification_needed or []) + fallback_refinements
-                seen: set[str] = set()
-                clarification_needed = [
-                    s for s in clarification_needed
-                    if isinstance(s, str) and s and (s not in seen and not seen.add(s))
-                ][:5]
+            if guidance and guidance.get("status") in {"partial", "weak"}:
+                fallback_refinements = await self._suggest_scope_refinements(query, country)
+                if fallback_refinements:
+                    clarification_needed = (clarification_needed or []) + fallback_refinements
+                    seen: set[str] = set()
+                    clarification_needed = [
+                        s for s in clarification_needed
+                        if isinstance(s, str) and s and (s not in seen and not seen.add(s))
+                    ][:5]
 
         # Phase 4 wave 4: record one provenance row for this deep-search
         # response. Best-effort; never fails the request.
@@ -343,9 +347,35 @@ class DeepSearchService:
         Returns results for both queries plus a comparative analysis.
         If one side fails, partial results are still returned.
         """
+        def _read_timeout(name: str, default: float) -> float:
+            raw = os.getenv(name)
+            if raw is None or raw == "":
+                return default
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                return default
+            return value if value > 0 else default
+
+        side_timeout = _read_timeout("DEEP_SEARCH_COMPARE_SIDE_TIMEOUT_SECONDS", 18.0)
+        synthesis_timeout = _read_timeout("DEEP_SEARCH_COMPARE_SYNTHESIS_TIMEOUT_SECONDS", 8.0)
+
+        async def _run_side(query: str):
+            return await asyncio.wait_for(
+                self.search(
+                    query,
+                    country=country,
+                    include_weather=False,
+                    limit=5,
+                    include_hallucination_check=False,
+                    include_refinements=False,
+                ),
+                timeout=side_timeout,
+            )
+
         raw_a, raw_b = await asyncio.gather(
-            self.search(query_a, country=country, include_weather=True, limit=5),
-            self.search(query_b, country=country, include_weather=True, limit=5),
+            _run_side(query_a),
+            _run_side(query_b),
             return_exceptions=True,
         )
 
@@ -370,12 +400,31 @@ class DeepSearchService:
             result_b["query"] = query_b
             logger.warning(f"Compare side B failed: {raw_b}")
 
-        comparative = await self._generate_comparison(
-            query_a, query_b, result_a, result_b
+        async def _run_bounded(coro):
+            return await asyncio.wait_for(coro, timeout=synthesis_timeout)
+
+        comparative_raw, comparative_structured_raw = await asyncio.gather(
+            _run_bounded(self._generate_comparison(query_a, query_b, result_a, result_b)),
+            _run_bounded(self._generate_comparison_structured(query_a, query_b, result_a, result_b)),
+            return_exceptions=True,
         )
-        comparative_structured = await self._generate_comparison_structured(
-            query_a, query_b, result_a, result_b
+
+        comparative_default = (
+            f'Comparison between "{query_a}" and "{query_b}" could not be generated. '
+            "Both individual analyses are available above."
         )
+
+        if isinstance(comparative_raw, Exception):
+            logger.warning(f"Comparison synthesis failed: {comparative_raw}")
+            comparative = comparative_default
+        else:
+            comparative = comparative_raw or comparative_default
+
+        if isinstance(comparative_structured_raw, Exception):
+            logger.warning(f"Structured comparison synthesis failed: {comparative_structured_raw}")
+            comparative_structured = None
+        else:
+            comparative_structured = comparative_structured_raw
 
         return {
             "query_a": query_a,
@@ -465,11 +514,11 @@ class DeepSearchService:
                            a.content_category, a.overall_credibility, a.reliability_score,
                            a.published_date, a.excerpt,
                            ts_rank(
-                               to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'')),
+                               to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'') || ' ' || COALESCE(a.extracted_text,'')),
                                {tsq_func}('english', :query)
                            ) AS text_rank
                     FROM articles a
-                    WHERE to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,''))
+                    WHERE to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'') || ' ' || COALESCE(a.extracted_text,''))
                           @@ {tsq_func}('english', :query)
                       AND {fts_where}
                     ORDER BY text_rank DESC LIMIT :limit
@@ -497,7 +546,7 @@ class DeepSearchService:
             keywords = [w.strip() for w in query.split() if len(w.strip()) > 2][:4]
             if keywords:
                 ilike_conditions = " OR ".join(
-                    f"LOWER(a.title) LIKE :kw{i} OR LOWER(a.excerpt) LIKE :kw{i}"
+                    f"LOWER(a.title) LIKE :kw{i} OR LOWER(a.excerpt) LIKE :kw{i} OR LOWER(COALESCE(a.extracted_text, '')) LIKE :kw{i}"
                     for i in range(len(keywords))
                 )
                 ilike_params: Dict[str, Any] = {"limit": limit}
@@ -557,8 +606,6 @@ class DeepSearchService:
             "the", "and", "for", "with", "that", "this", "from", "into",
             "about", "what", "how", "when", "where", "which", "is", "are",
             "was", "were", "can", "could", "should", "would", "does", "did",
-            "last", "year", "years", "before", "after", "compare", "comparison",
-            "trend", "trends", "data", "news", "climate",
         }
 
         raw = re.findall(r"[\w]{3,}", (query or "").lower())
@@ -591,7 +638,7 @@ class DeepSearchService:
             except (TypeError, ValueError):
                 rel_score = 0.0
 
-            if overlap >= 0.2 or rel_score >= 0.35:
+            if overlap >= 0.1 or rel_score >= 0.2:
                 kept.append(art)
 
         return kept

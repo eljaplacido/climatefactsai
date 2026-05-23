@@ -41,20 +41,33 @@ export default function ArgumentationGraph({ articleId }: ArgumentationGraphProp
   const [expandedConnections, setExpandedConnections] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+    const timeout = setTimeout(() => {
+      if (!cancelled && loading) setLoading(false);
+    }, 15000);
+
     async function fetchGraph() {
       setLoading(true);
       try {
         const res = await fetch(`${API_BASE}/api/carf/entity-graph/${articleId}`);
         if (!res.ok) throw new Error("Failed to load entity graph");
         const json = await res.json();
-        setData(json);
+        if (!cancelled) {
+          setData(json);
+          setLoading(false);
+        }
       } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setError(err.message);
+          setLoading(false);
+        }
       }
     }
     fetchGraph();
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
   }, [articleId]);
 
   const filteredRelationships = useMemo(() => {

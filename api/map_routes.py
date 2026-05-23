@@ -302,6 +302,37 @@ def _country_region(cc: str) -> Optional[str]:
     return None
 
 
+def _reliability_risk_component(avg_reliability: Optional[float]) -> float:
+    """Convert average reliability into a small additive risk component."""
+    if avg_reliability is None:
+        return 1.2
+
+    rel = max(0.0, min(100.0, float(avg_reliability)))
+    return max(0.0, min(3.0, (70.0 - rel) / 10.0))
+
+
+def _compute_climate_risk_score(
+    article_count: int,
+    claim_count: int,
+    risky_claim_count: int,
+    avg_reliability: Optional[float],
+) -> float:
+    """Compute a dense 0-10 climate risk score for map coloring."""
+    art = max(int(article_count or 0), 0)
+    claims = max(int(claim_count or 0), 0)
+    risky = max(int(risky_claim_count or 0), 0)
+
+    volume_component = min(4.0, math.log1p(art) * 1.15)
+    claim_component = min(2.5, math.log1p(claims) * 0.9)
+    risky_ratio_component = min(2.5, (risky / claims) * 5.0) if claims > 0 else 0.0
+    reliability_component = _reliability_risk_component(avg_reliability)
+
+    return round(
+        min(10.0, volume_component + claim_component + risky_ratio_component + reliability_component),
+        1,
+    )
+
+
 @router.get("/country-stats", response_model=List[CountryStats])
 async def get_country_stats(
     category: Optional[str] = Query(default=None, description="Filter by content category"),
@@ -384,27 +415,32 @@ async def get_country_stats(
 
         country_names = _get_country_names(db)
 
-        # Batch-fetch climate risk data for all countries
+        # Batch-fetch climate risk data for all countries (dense scoring, includes
+        # countries with zero extracted claims via article/reliability fallback).
         risk_map: Dict[str, float] = {}
         try:
             risk_rows = db.execute_query("""
                 SELECT a.country_code,
+                       COUNT(DISTINCT a.article_id) as article_count,
+                       AVG(a.reliability_score) as avg_reliability,
                        COUNT(c.claim_id) as claim_cnt,
                        COUNT(CASE WHEN fc.verification_status
-                             IN ('FALSE','MISLEADING','LACKS_CONTEXT','DISPUTED','UNVERIFIED')
-                             THEN 1 END) as risky_cnt
+                              IN ('FALSE','MISLEADING','LACKS_CONTEXT','DISPUTED','UNVERIFIED')
+                              THEN 1 END) as risky_cnt
                 FROM articles a
-                JOIN claims c ON c.article_id = a.article_id
+                LEFT JOIN claims c ON c.article_id = a.article_id
                 LEFT JOIN fact_checks fc ON fc.claim_id = c.claim_id
                 WHERE a.country_code IS NOT NULL AND a.is_synthetic = FALSE
                 GROUP BY a.country_code
             """)
             for rr in (risk_rows or []):
                 cc_r = rr["country_code"]
-                tc = rr.get("claim_cnt", 0) or 0
-                rc = rr.get("risky_cnt", 0) or 0
-                ratio = rc / tc if tc > 0 else 0
-                risk_map[cc_r] = round(min(100.0, math.log1p(tc) * 10 + ratio * 50), 1)
+                risk_map[cc_r] = _compute_climate_risk_score(
+                    article_count=int(rr.get("article_count") or 0),
+                    claim_count=int(rr.get("claim_cnt") or 0),
+                    risky_claim_count=int(rr.get("risky_cnt") or 0),
+                    avg_reliability=rr.get("avg_reliability"),
+                )
         except Exception:
             pass
 
@@ -429,17 +465,30 @@ async def get_country_stats(
             """, {"cc": cc})
             top_sources = [r["source_name"] for r in (source_rows or [])]
 
+            article_count = int(row.get("article_count") or 0)
+            source_count = int(row.get("source_count") or 0)
+            if source_count == 0 and article_count > 0:
+                source_count = 1
+
+            avg_reliability = row.get("avg_reliability")
+            fallback_risk = _compute_climate_risk_score(
+                article_count=article_count,
+                claim_count=0,
+                risky_claim_count=0,
+                avg_reliability=avg_reliability,
+            )
+
             stats.append(CountryStats(
                 country_code=cc,
                 country_name=country_names.get(cc, cc),
-                article_count=row.get("article_count", 0),
-                source_count=row.get("source_count", 0),
+                article_count=article_count,
+                source_count=source_count,
                 top_topics=top_topics,
                 top_sources=top_sources,
                 last_updated=str(row["last_updated"]) if row.get("last_updated") else None,
-                avg_credibility_score=round(float(row["avg_reliability"]), 1) if row.get("avg_reliability") else None,
+                avg_credibility_score=round(float(avg_reliability), 1) if avg_reliability is not None else None,
                 region=_country_region(cc),
-                climate_risk_score=risk_map.get(cc),
+                climate_risk_score=risk_map.get(cc, fallback_risk),
             ))
 
         return stats
@@ -1716,6 +1765,8 @@ async def get_climate_risk_layer():
         rows = db.execute_query("""
             SELECT
                 a.country_code,
+                COUNT(DISTINCT a.article_id) as article_count,
+                AVG(a.reliability_score) as avg_reliability,
                 COUNT(c.claim_id) as total_claims,
                 COUNT(CASE WHEN fc.verification_status
                       IN ('FALSE','MISLEADING','LACKS_CONTEXT','DISPUTED')
@@ -1723,11 +1774,11 @@ async def get_climate_risk_layer():
                 COUNT(CASE WHEN fc.verification_status = 'UNVERIFIED'
                       THEN 1 END) as unverified
             FROM articles a
-            JOIN claims c ON c.article_id = a.article_id
+            LEFT JOIN claims c ON c.article_id = a.article_id
             LEFT JOIN fact_checks fc ON fc.claim_id = c.claim_id
             WHERE a.country_code IS NOT NULL AND a.is_synthetic = FALSE
             GROUP BY a.country_code
-            ORDER BY total_claims DESC
+            ORDER BY article_count DESC
         """)
     except Exception as e:
         logger.error(f"Climate risk layer query failed: {e}")
@@ -1735,26 +1786,33 @@ async def get_climate_risk_layer():
 
     results: List[ClimateRiskItem] = []
     for r in (rows or []):
+        article_count = int(r.get("article_count") or 0)
+        avg_reliability = r.get("avg_reliability")
         tc = r["total_claims"] or 0
         disp = r.get("disputed", 0) or 0
         unver = r.get("unverified", 0) or 0
         ratio = round((disp + unver) / tc, 3) if tc > 0 else 0.0
-        # Risk score: logarithmic scaling on claim volume + penalty for disputed ratio
-        score = round(min(10.0, math.log1p(tc) * 1.5 + ratio * 5), 1)
+        score = _compute_climate_risk_score(
+            article_count=article_count,
+            claim_count=tc,
+            risky_claim_count=disp + unver,
+            avg_reliability=avg_reliability,
+        )
 
         # Top risk categories
         top_risks: List[str] = []
-        try:
-            risk_type_rows = db.execute_query("""
-                SELECT c.claim_type, COUNT(*) as cnt
-                FROM claims c
-                JOIN articles a ON a.article_id = c.article_id
-                WHERE a.country_code = :cc AND c.claim_type IS NOT NULL
-                GROUP BY c.claim_type ORDER BY cnt DESC LIMIT 3
-            """, {"cc": r["country_code"]})
-            top_risks = [rt["claim_type"] for rt in (risk_type_rows or [])]
-        except Exception:
-            pass
+        if tc > 0:
+            try:
+                risk_type_rows = db.execute_query("""
+                    SELECT c.claim_type, COUNT(*) as cnt
+                    FROM claims c
+                    JOIN articles a ON a.article_id = c.article_id
+                    WHERE a.country_code = :cc AND c.claim_type IS NOT NULL
+                    GROUP BY c.claim_type ORDER BY cnt DESC LIMIT 3
+                """, {"cc": r["country_code"]})
+                top_risks = [rt["claim_type"] for rt in (risk_type_rows or [])]
+            except Exception:
+                pass
 
         results.append(ClimateRiskItem(
             country_code=r["country_code"],

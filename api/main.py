@@ -603,7 +603,20 @@ async def list_articles(
         )
         params["q"] = q
 
-    query += "\n        ORDER BY COALESCE(a.published_date, a.created_at) DESC\n        LIMIT :limit OFFSET :offset"
+    query += """
+        ORDER BY
+            CASE WHEN COALESCE(a.reliability_score, 0) > 0 THEN 0 ELSE 1 END ASC,
+            CASE UPPER(COALESCE(a.overall_credibility, ''))
+                WHEN 'HIGH' THEN 0
+                WHEN 'MEDIUM' THEN 1
+                WHEN 'LOW' THEN 2
+                ELSE 3
+            END ASC,
+            COALESCE(a.reliability_score, 0) DESC,
+            COALESCE(a.source_credibility_score, 0) DESC,
+            COALESCE(a.published_date, a.created_at) DESC
+        LIMIT :limit OFFSET :offset
+    """
 
     try:
         rows = db.execute_query(query, params=params)

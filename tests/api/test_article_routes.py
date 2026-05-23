@@ -78,6 +78,36 @@ class TestArticleListing:
         response = client.get("/api/articles?limit=100")
         assert response.status_code == 200
 
+    def test_list_articles_query_prioritizes_scored_high_credibility(self):
+        """Query should rank scored/high-credibility reports before unrated ones."""
+        import shared.database as _shared_db
+
+        db = _shared_db._postgres_client
+        assert db is not None
+
+        original_execute_query = db.execute_query
+        captured: dict[str, str] = {}
+
+        def _capture(query, params=None):
+            normalized = " ".join(query.split()).lower()
+            if "from articles a" in normalized and "order by" in normalized:
+                captured["query"] = normalized
+            return original_execute_query(query, params)
+
+        db.execute_query = _capture
+        try:
+            response = client.get("/api/articles")
+        finally:
+            db.execute_query = original_execute_query
+
+        assert response.status_code == 200
+        q = captured.get("query", "")
+        assert "case when coalesce(a.reliability_score, 0) > 0 then 0 else 1 end asc" in q
+        assert "case upper(coalesce(a.overall_credibility, ''))" in q
+        assert "coalesce(a.reliability_score, 0) desc" in q
+        assert "coalesce(a.source_credibility_score, 0) desc" in q
+        assert "coalesce(a.published_date, a.created_at) desc" in q
+
 
 class TestArticleFiltering:
     """Test article filtering parameters"""

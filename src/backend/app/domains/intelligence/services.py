@@ -1161,8 +1161,12 @@ class VerificationService:
         try:
             # Fetch article
             article_results = self.db.execute_query(
-                f"SELECT article_id, extracted_text FROM articles WHERE article_id = '{str(article_id)}'",
-                {}
+                """
+                SELECT article_id, extracted_text
+                FROM articles
+                WHERE article_id = :article_id
+                """,
+                {"article_id": str(article_id)},
             )
 
             if not article_results:
@@ -1209,6 +1213,11 @@ class VerificationService:
             
             if not claims:
                 logger.warning(f"No claims extracted from article {article_id}")
+                self.status_manager.set_completed(
+                    article_id,
+                    claims_count=0,
+                    verified_claims_count=0,
+                )
                 return VerificationResult(
                     article_id=article_id,
                     processing_started_at=start_time,

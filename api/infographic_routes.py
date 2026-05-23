@@ -47,7 +47,8 @@ async def get_article_infographic(
     db = get_postgres()
     rows = db.execute_query(
         """SELECT title, reliability_score, source_name, content_category,
-                  claims_count, verified_claims_count, overall_credibility, executive_brief
+                  claims_count, verified_claims_count, overall_credibility, executive_brief,
+                  reliability_breakdown, decomposed_confidence, source_credibility_score
            FROM articles WHERE article_id = :id AND is_synthetic = FALSE""",
         {"id": article_id},
     )
@@ -55,6 +56,22 @@ async def get_article_infographic(
         raise HTTPException(status_code=404, detail="Article not found")
 
     row = rows[0]
+
+    # Parse JSONB fields
+    import json
+    reliability_breakdown = row.get("reliability_breakdown")
+    if isinstance(reliability_breakdown, str):
+        try:
+            reliability_breakdown = json.loads(reliability_breakdown)
+        except (json.JSONDecodeError, TypeError):
+            reliability_breakdown = None
+
+    decomposed_confidence = row.get("decomposed_confidence")
+    if isinstance(decomposed_confidence, str):
+        try:
+            decomposed_confidence = json.loads(decomposed_confidence)
+        except (json.JSONDecodeError, TypeError):
+            decomposed_confidence = None
 
     from app.domains.content.infographic_generator import generate_article_infographic
     svg = generate_article_infographic(
@@ -67,6 +84,10 @@ async def get_article_infographic(
             "verified_count": row.get("verified_claims_count", 0),
             "credibility": row.get("overall_credibility", "UNKNOWN"),
             "brief": row.get("executive_brief"),
+            "reliability_breakdown": reliability_breakdown,
+            "decomposed_confidence": decomposed_confidence,
+            "source_credibility_score": row.get("source_credibility_score"),
+            "article_id": article_id,
         },
         template=template,
     )

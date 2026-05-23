@@ -21,7 +21,7 @@ Usage:
 
 from typing import Optional
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import text
 
 from .logger import LoggerMixin
@@ -337,6 +337,103 @@ class ClaimsStatusManager(LoggerMixin):
                 "verified_claims_count": verified_claims_count
             })
             return False
+
+    def reset_stale_processing(
+        self,
+        stale_minutes: int = 120,
+        limit: int = 200,
+    ) -> int:
+        """
+        Reset stale 'processing' rows back to pending for retry.
+
+        This prevents articles from staying indefinitely in processing when a
+        worker crashes or a task is interrupted mid-flight.
+
+        Args:
+            stale_minutes: Consider rows stale after this many minutes
+            limit: Maximum number of rows to reset per invocation
+
+        Returns:
+            Number of articles reset to pending
+        """
+        try:
+            stale_minutes = max(1, int(stale_minutes))
+            limit = max(1, min(int(limit), 5000))
+        except (TypeError, ValueError):
+            stale_minutes = 120
+            limit = 200
+
+        cutoff = datetime.utcnow() - timedelta(minutes=stale_minutes)
+
+        try:
+            stale_rows = self.postgres.execute_query(
+                """
+                SELECT article_id
+                FROM articles
+                WHERE claims_status = :processing_status
+                  AND (
+                        (updated_at IS NOT NULL AND updated_at < :cutoff)
+                        OR (updated_at IS NULL AND created_at IS NOT NULL AND created_at < :cutoff)
+                      )
+                ORDER BY updated_at ASC
+                LIMIT :limit
+                """,
+                {
+                    "processing_status": self.STATUS_PROCESSING,
+                    "cutoff": cutoff,
+                    "limit": limit,
+                },
+            )
+
+            if not stale_rows:
+                return 0
+
+            timeout_message = (
+                f"Claim verification exceeded {stale_minutes} minutes and "
+                "was reset to pending for retry."
+            )
+
+            recovered = 0
+            for row in stale_rows:
+                article_id = row.get("article_id") if isinstance(row, dict) else None
+                if not article_id:
+                    continue
+
+                rows_updated = self.postgres.execute_update(
+                    """
+                    UPDATE articles
+                    SET claims_status = :status,
+                        claims_error_message = :error_message,
+                        claims_processed_at = NULL,
+                        updated_at = NOW()
+                    WHERE article_id = :article_id
+                      AND claims_status = :processing_status
+                    """,
+                    {
+                        "status": self.STATUS_PENDING,
+                        "error_message": timeout_message,
+                        "article_id": str(article_id),
+                        "processing_status": self.STATUS_PROCESSING,
+                    },
+                )
+                if rows_updated:
+                    recovered += 1
+
+            if recovered:
+                self.logger.warning(
+                    "Reset stale processing articles",
+                    recovered=recovered,
+                    stale_minutes=stale_minutes,
+                )
+
+            return recovered
+
+        except Exception as e:
+            self.log_error(e, context={
+                "stale_minutes": stale_minutes,
+                "limit": limit,
+            })
+            return 0
 
 
 def get_claims_status_manager() -> ClaimsStatusManager:

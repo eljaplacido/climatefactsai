@@ -238,7 +238,20 @@ export const api = {
     source_type?: string;
   }): Promise<SourceProfile[]> {
     const response = await apiClient.get("/api/v2/sources", { params });
-    return response.data;
+    const payload = response.data;
+    if (Array.isArray(payload)) {
+      return payload;
+    }
+    if (Array.isArray(payload?.items)) {
+      return payload.items;
+    }
+    if (Array.isArray(payload?.sources)) {
+      return payload.sources;
+    }
+    if (Array.isArray(payload?.data)) {
+      return payload.data;
+    }
+    return [];
   },
 
   async getSourceProfile(domain: string): Promise<SourceProfile> {
@@ -251,8 +264,8 @@ export const api = {
     return response.data;
   },
 
-  async askArticleQuestion(articleId: string, question: string): Promise<ConversationEntry> {
-    const response = await apiClient.post(`/api/articles/${articleId}/ask`, { question });
+  async askArticleQuestion(articleId: string, question: string, scope: string = "article"): Promise<ConversationEntry> {
+    const response = await apiClient.post(`/api/articles/${articleId}/ask`, { question, scope });
     return response.data;
   },
 
@@ -284,6 +297,30 @@ export const api = {
 
   async getMySources(): Promise<any[]> {
     const response = await apiClient.get("/api/sources/my-sources");
+    return response.data;
+  },
+
+  async getBookmarkStatus(articleId: string): Promise<{
+    article_id: string;
+    bookmarked: boolean;
+    folder?: string;
+    notes?: string | null;
+    bookmarked_at?: string;
+  }> {
+    const response = await apiClient.get(`/api/user/bookmarks/${articleId}/status`);
+    return response.data;
+  },
+
+  async createBookmark(
+    articleId: string,
+    payload: { folder?: string; notes?: string } = {},
+  ): Promise<{ message: string; article_id: string }> {
+    const response = await apiClient.post(`/api/user/bookmarks/${articleId}`, payload);
+    return response.data;
+  },
+
+  async deleteBookmark(articleId: string): Promise<{ message: string }> {
+    const response = await apiClient.delete(`/api/user/bookmarks/${articleId}`);
     return response.data;
   },
 

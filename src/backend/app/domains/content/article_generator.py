@@ -49,11 +49,11 @@ class AnalysisArticleGenerator:
         temperature: float = 0.3,
     ) -> Optional[str]:
         """
-        Generate a structured Perplexity-style analysis article (800-1200 words).
+        Generate a structured Perplexity-style analysis article (1200-1800 words).
 
         Args:
             article_title: Original article title
-            article_text: Original article text (truncated to 3000 chars)
+            article_text: Original article text (truncated to 6000 chars)
             claims: List of extracted claims with categories
             verdicts: List of verdicts with confidence scores
             decomposed_confidence: CARF-style confidence breakdown
@@ -104,7 +104,7 @@ Perplexity-style analysis article for CliLens.AI.
 ORIGINAL ARTICLE TITLE: {article_title}
 
 ORIGINAL ARTICLE EXCERPT:
-{article_text[:3000]}
+{article_text[:6000]}
 
 VERIFICATION RESULTS:
 - Total claims extracted: {total_claims}
@@ -187,7 +187,8 @@ REQUIREMENTS:
 - Use specific numbers and data points from the verification results
 - If confidence is low, clearly state uncertainties
 - Write in professional but accessible English
-- The article should be 800-1200 words
+- The article should be 1200-1800 words of substantive analysis
+- Each section must contain at least one full paragraph of detail
 - Use structured callout blocks (>) for KPIs and key metrics
 - Return ONLY the markdown content, no wrapping or explanation"""
 

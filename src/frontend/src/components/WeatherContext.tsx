@@ -117,13 +117,20 @@ export default function WeatherContext({ articleId }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+    const timeout = setTimeout(() => {
+      if (!cancelled) setLoading(false);
+    }, 15000); // 15s hard timeout
+
     setLoading(true);
     setError(false);
 
     api
       .getArticleWeatherContext(articleId)
       .then((res) => {
-        if (!cancelled) setData(res);
+        if (!cancelled) {
+          setData(res);
+          setLoading(false);
+        }
       })
       .catch(() => {
         if (!cancelled) setError(true);
@@ -134,16 +141,18 @@ export default function WeatherContext({ articleId }: Props) {
 
     return () => {
       cancelled = true;
+      clearTimeout(timeout);
     };
   }, [articleId]);
 
   if (loading) {
     return (
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 animate-pulse">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div className="flex items-center gap-2 text-blue-700 text-sm">
-          <Cloud className="h-4 w-4" />
+          <Cloud className="h-4 w-4 animate-pulse" />
           Loading weather context...
         </div>
+        <div className="mt-2 h-2 bg-blue-100 rounded-full animate-pulse" />
       </div>
     );
   }

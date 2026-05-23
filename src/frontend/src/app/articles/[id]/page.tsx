@@ -9,7 +9,7 @@ import WeatherContext from "@/components/WeatherContext";
 import DecomposedConfidenceChart from "@/components/DecomposedConfidenceChart";
 import ClaimCategoryBreakdown from "@/components/ClaimCategoryBreakdown";
 import EvidenceTimeline from "@/components/EvidenceTimeline";
-import ArticleDetailTabs from "@/components/ArticleDetailTabs";
+import dynamic from "next/dynamic";
 import ShareButton from "@/components/ShareButton";
 import BookmarkButton from "@/components/BookmarkButton";
 import ReanalyzeButton from "@/components/ReanalyzeButton";
@@ -17,21 +17,34 @@ import ArgumentationGraph from "@/components/ArgumentationGraph";
 import Link from "next/link";
 import { Beaker, BarChart3, Scale, Eye, TrendingUp, Info, Loader2, CheckCircle2, AlertCircle, Clock, BookOpen, Leaf, Recycle, Zap, CloudSun, Landmark, ExternalLink, AlertTriangle } from "lucide-react";
 
-async function getArticle(id: string): Promise<ArticleDetail | null> {
-  const isServer = typeof window === 'undefined';
-  const base = isServer
-    ? (process.env.API_INTERNAL_URL || "http://api:8000")
-    : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400");
+const ArticleDetailTabs = dynamic(() => import("@/components/ArticleDetailTabs"), {
+  ssr: false,
+});
 
-  try {
-    const res = await fetch(`${base}/api/v2/articles/${encodeURIComponent(id)}`, {
-      next: { revalidate: 10 },
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as ArticleDetail;
-  } catch {
-    return null;
+async function getArticle(id: string): Promise<ArticleDetail | null> {
+  const isServer = typeof window === "undefined";
+  const apiBases = isServer
+    ? [
+        process.env.API_INTERNAL_URL,
+        process.env.NEXT_PUBLIC_API_URL,
+        "http://localhost:5400",
+      ]
+    : [process.env.NEXT_PUBLIC_API_URL, "http://localhost:5400"];
+
+  for (const base of apiBases) {
+    if (!base) continue;
+    try {
+      const res = await fetch(`${base}/api/v2/articles/${encodeURIComponent(id)}`, {
+        next: { revalidate: 10 },
+      });
+      if (!res.ok) continue;
+      return (await res.json()) as ArticleDetail;
+    } catch {
+      continue;
+    }
   }
+
+  return null;
 }
 
 const CATEGORY_ICONS: Record<string, any> = {
@@ -385,7 +398,15 @@ export default async function ArticlePage({ params }: { params: { id: string } }
           {/* Reliability Breakdown */}
           {article.reliability_breakdown && Object.keys(article.reliability_breakdown).length > 0 && (
             <section>
-              <h2 className="text-lg font-semibold text-gray-900 mb-3">Reliability Breakdown</h2>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold text-gray-900">Reliability Breakdown</h2>
+                <Link
+                  href={`/articles/${article.article_id}/transparency`}
+                  className="text-xs text-clilens-primary hover:underline"
+                >
+                  View full methodology &rarr;
+                </Link>
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {Object.entries(article.reliability_breakdown).map(([key, factor]) => {
                   const f = factor as { label: string; score: number; weight: number; weighted_score: number };
@@ -406,9 +427,17 @@ export default async function ArticlePage({ params }: { params: { id: string } }
                           style={{ width: `${Math.max(score, score > 0 ? 4 : 0)}%` }}
                         />
                       </div>
-                      <p className="mt-1 text-[10px] text-gray-400">
-                        Weight: {weight}%
-                      </p>
+                      <div className="mt-1 flex items-center justify-between">
+                        <p className="text-[10px] text-gray-400">
+                          Weight: {weight}%
+                        </p>
+                        <Link
+                          href={`/articles/${article.article_id}/transparency#${key}`}
+                          className="text-[10px] text-clilens-primary hover:underline"
+                        >
+                          How computed?
+                        </Link>
+                      </div>
                     </div>
                   );
                 })}
@@ -427,15 +456,15 @@ export default async function ArticlePage({ params }: { params: { id: string } }
           {/* Infographic — embedded SVGs */}
           <section>
             <h2 className="text-lg font-semibold text-gray-900 mb-3">Visual Summary</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {(["summary", "claims", "confidence"] as const).map((tpl) => (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {(["summary", "claims", "confidence", "reliability"] as const).map((tpl) => (
                 <div
                   key={tpl}
                   className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden"
                 >
                   <img
                     src={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400"}/api/articles/${article.article_id}/infographic?template=${tpl}`}
-                    alt={`${tpl} infographic`}
+                    alt={`${tpl} infographic for ${article.title}`}
                     className="w-full h-auto"
                     loading="lazy"
                   />

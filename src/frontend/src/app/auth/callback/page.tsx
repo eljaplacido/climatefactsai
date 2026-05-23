@@ -74,7 +74,8 @@ function CallbackHandler() {
         // NOTE: localStorage is the current pattern; migrating to httpOnly
         // cookies is tracked as security P0 S5 (Sprint 1 follow-up).
         localStorage.setItem("clilens_token", tokens.access_token);
-        localStorage.setItem("clilens_refresh", tokens.refresh_token);
+        localStorage.setItem("clilens_refresh_token", tokens.refresh_token);
+        localStorage.removeItem("clilens_refresh");
         localStorage.setItem("clilens_user", JSON.stringify({
           user_id: tokens.user_id, email: tokens.email, full_name: tokens.full_name, avatar_url: tokens.avatar_url,
         }));

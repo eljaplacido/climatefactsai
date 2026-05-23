@@ -33,6 +33,7 @@ QA_LIMITS = {
 class AskQuestionRequest(BaseModel):
     """Request to ask a question about an article."""
     question: str = Field(..., min_length=5, max_length=500, description="Question about the article")
+    scope: str = Field(default="article", pattern="^(article|external)$", description="Context scope: article-only or external search")
     conversation_context: Optional[List[dict]] = Field(
         default=None,
         description="Previous Q&A pairs for multi-turn context: [{question, answer}]"
@@ -138,6 +139,7 @@ async def ask_article_question(
                             question=request.question,
                             user_id=UUID(user_id) if user_id != "anonymous" else None,
                             conversation_context=request.conversation_context,
+                            scope=request.scope,
                         ))
                     )
             else:
@@ -146,6 +148,7 @@ async def ask_article_question(
                     question=request.question,
                     user_id=UUID(user_id) if user_id != "anonymous" else None,
                     conversation_context=request.conversation_context,
+                    scope=request.scope,
                 )
         except RuntimeError:
             result = asyncio.run(engine.ask(
@@ -153,6 +156,7 @@ async def ask_article_question(
                 question=request.question,
                 user_id=UUID(user_id) if user_id != "anonymous" else None,
                 conversation_context=request.conversation_context,
+                scope=request.scope,
             ))
 
         if result is None:

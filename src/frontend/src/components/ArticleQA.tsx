@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { MessageCircle, Send, Loader2, ChevronDown, ChevronUp, AlertCircle, Search, ArrowRight } from "lucide-react";
+import { MessageCircle, Send, Loader2, ChevronDown, ChevronUp, AlertCircle, Search, ArrowRight, Globe, FileText } from "lucide-react";
 import type { ConversationEntry, ClaimDetail } from "@/types";
 import { api } from "@/lib/api";
 import Markdown from "./Markdown";
@@ -89,6 +89,7 @@ function getFollowUpSuggestions(lastAnswer: string, claims?: ClaimDetail[]): str
 export default function ArticleQA({ articleId, articleTitle, contentCategory, claims }: ArticleQAProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [question, setQuestion] = useState("");
+  const [scope, setScope] = useState<"article" | "external">("article");
   const [conversations, setConversations] = useState<ConversationEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -136,7 +137,7 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
     setConversations((prev) => [...prev, tempEntry]);
 
     try {
-      const result = await api.askArticleQuestion(articleId, queryText);
+      const result = await api.askArticleQuestion(articleId, queryText, scope);
       setConversations((prev) =>
         prev.map((c) =>
           c.conversation_id === "pending"
@@ -309,28 +310,57 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
           )}
 
           {/* Input */}
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask a question about this article..."
-              className="flex-1 border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-clilens-primary focus:border-transparent outline-none"
-              disabled={isLoading}
-              maxLength={500}
-            />
-            <button
-              onClick={() => handleAsk()}
-              disabled={!question.trim() || isLoading}
-              className="p-2.5 bg-clilens-primary text-white rounded-lg disabled:opacity-50 hover:bg-clilens-primary/90 transition-colors"
-            >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-            </button>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={scope === "article"
+                  ? "Ask about this article..."
+                  : "Ask with platform research scope..."}
+                className="flex-1 border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-clilens-primary focus:border-transparent outline-none"
+                disabled={isLoading}
+                maxLength={500}
+              />
+              <button
+                onClick={() => handleAsk()}
+                disabled={!question.trim() || isLoading}
+                className="p-2.5 bg-clilens-primary text-white rounded-lg disabled:opacity-50 hover:bg-clilens-primary/90 transition-colors"
+              >
+                {isLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+            <div className="flex items-center gap-1 text-xs">
+              <span className="text-gray-400">Context:</span>
+              <button
+                onClick={() => setScope("article")}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border ${
+                  scope === "article"
+                    ? "bg-clilens-primary/10 text-clilens-primary border-clilens-primary/30"
+                    : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
+                }`}
+              >
+                <FileText className="h-3 w-3" />
+                Article
+              </button>
+              <button
+                onClick={() => setScope("external")}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border ${
+                  scope === "external"
+                    ? "bg-clilens-primary/10 text-clilens-primary border-clilens-primary/30"
+                    : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
+                }`}
+              >
+                <Globe className="h-3 w-3" />
+                Research
+              </button>
+            </div>
           </div>
         </div>
       )}

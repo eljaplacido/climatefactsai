@@ -20,6 +20,16 @@ const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 const MS_CLIENT_ID = process.env.NEXT_PUBLIC_MICROSOFT_CLIENT_ID || "";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
 
+type OAuthProviderState = {
+  enabled: boolean;
+  clientId: string;
+};
+
+type OAuthProviderConfig = {
+  google: OAuthProviderState;
+  microsoft: OAuthProviderState;
+};
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -30,6 +40,10 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [oauthConfig, setOauthConfig] = useState<OAuthProviderConfig>({
+    google: { enabled: Boolean(GOOGLE_CLIENT_ID), clientId: GOOGLE_CLIENT_ID },
+    microsoft: { enabled: Boolean(MS_CLIENT_ID), clientId: MS_CLIENT_ID },
+  });
 
   const redirect = searchParams?.get("redirect") || "/dashboard";
 
@@ -38,6 +52,54 @@ function LoginForm() {
       router.replace(redirect);
     }
   }, [authLoading, isLoggedIn, router, redirect]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOAuthProviders() {
+      try {
+        const resp = await fetch(`${API_URL}/api/auth/oauth/providers`);
+        if (!resp.ok) return;
+
+        const data = await resp.json();
+        const providers = data?.providers;
+
+        const nextConfig: OAuthProviderConfig = {
+          google: {
+            enabled: Boolean(providers?.google?.enabled ?? data?.google ?? GOOGLE_CLIENT_ID),
+            clientId:
+              String(
+                providers?.google?.client_id ??
+                data?.google_client_id ??
+                GOOGLE_CLIENT_ID ??
+                "",
+              ) || "",
+          },
+          microsoft: {
+            enabled: Boolean(providers?.microsoft?.enabled ?? data?.microsoft ?? MS_CLIENT_ID),
+            clientId:
+              String(
+                providers?.microsoft?.client_id ??
+                data?.microsoft_client_id ??
+                MS_CLIENT_ID ??
+                "",
+              ) || "",
+          },
+        };
+
+        if (!cancelled) {
+          setOauthConfig(nextConfig);
+        }
+      } catch {
+        // Fall back to build-time env values.
+      }
+    }
+
+    loadOAuthProviders();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -59,6 +121,11 @@ function LoginForm() {
     setError(null);
     setLoading(true);
     try {
+      const providerConfig = oauthConfig[provider];
+      if (!providerConfig.enabled || !providerConfig.clientId) {
+        throw new Error(`${provider === "google" ? "Google" : "Microsoft"} login is not configured`);
+      }
+
       // Fetch a random CSRF state token from the backend (>=16 chars, URL-safe).
       // The literal "google"/"microsoft" string we used before failed the
       // backend's state-length check, so OAuth never round-tripped successfully.
@@ -83,7 +150,7 @@ function LoginForm() {
       if (provider === "google") {
         authUrl =
           `https://accounts.google.com/o/oauth2/v2/auth` +
-          `?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}` +
+          `?client_id=${encodeURIComponent(providerConfig.clientId)}` +
           `&redirect_uri=${encodeURIComponent(redirectUri)}` +
           `&response_type=code` +
           `&scope=${encodeURIComponent("openid email profile")}` +
@@ -92,7 +159,7 @@ function LoginForm() {
       } else {
         authUrl =
           `https://login.microsoftonline.com/common/oauth2/v2.0/authorize` +
-          `?client_id=${encodeURIComponent(MS_CLIENT_ID)}` +
+          `?client_id=${encodeURIComponent(providerConfig.clientId)}` +
           `&redirect_uri=${encodeURIComponent(redirectUri)}` +
           `&response_type=code` +
           `&scope=${encodeURIComponent("openid profile email User.Read")}` +
@@ -146,7 +213,7 @@ function LoginForm() {
           <div className="space-y-3 mb-6">
             <button
               onClick={() => handleOAuth("google")}
-              disabled={!GOOGLE_CLIENT_ID}
+              disabled={!oauthConfig.google.enabled || !oauthConfig.google.clientId}
               className="w-full flex items-center justify-center gap-3 px-4 py-2.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Chrome className="h-5 w-5 text-blue-500" />
@@ -154,7 +221,7 @@ function LoginForm() {
             </button>
             <button
               onClick={() => handleOAuth("microsoft")}
-              disabled={!MS_CLIENT_ID}
+              disabled={!oauthConfig.microsoft.enabled || !oauthConfig.microsoft.clientId}
               className="w-full flex items-center justify-center gap-3 px-4 py-2.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Monitor className="h-5 w-5 text-blue-600" />

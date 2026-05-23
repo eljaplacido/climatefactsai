@@ -44,6 +44,19 @@ def _make_country_db(*, countries: Optional[List[Dict[str, Any]]] = None):
                 "country_code": "FI", "article_count": 12, "source_count": 4,
                 "last_updated": now, "avg_reliability": 78.5,
             }]
+        if (
+            "count(distinct a.article_id) as article_count" in q
+            and "count(c.claim_id) as total_claims" in q
+            and "group by a.country_code" in q
+        ):
+            return [{
+                "country_code": "FI",
+                "article_count": 12,
+                "avg_reliability": 78.5,
+                "total_claims": 10,
+                "disputed": 1,
+                "unverified": 1,
+            }]
         if "unnest(tags)" in q and "count(*)" in q:
             return [{"tag": "climate", "cnt": 6}, {"tag": "energy", "cnt": 3}]
         if "select source_name, count(*) as cnt" in q and "avg(reliability_score)" in q:
@@ -169,6 +182,70 @@ class TestCountryStats:
     def test_reliability_min_bounds(self, client, map_db):
         assert client.get("/api/map/country-stats?reliability_min=999").status_code == 422
         assert client.get("/api/map/country-stats?reliability_min=-1").status_code == 422
+
+    def test_source_count_falls_back_to_one_when_articles_exist(self, client, map_db):
+        original = map_db.execute_query.side_effect
+
+        def _side_effect(query, params=None):
+            q = " ".join(query.split()).lower()
+            if (
+                "select a.country_code" in q
+                and "count(*) as article_count" in q
+                and "group by a.country_code" in q
+                and "coalesce(c.location_country" not in q
+            ):
+                return [{
+                    "country_code": "FI",
+                    "article_count": 5,
+                    "source_count": 0,
+                    "last_updated": datetime.utcnow(),
+                    "avg_reliability": 72.0,
+                }]
+            return original(query, params)
+
+        map_db.execute_query.side_effect = _side_effect
+
+        resp = client.get("/api/map/country-stats")
+        assert resp.status_code == 200
+        first = resp.json()[0]
+        assert first["article_count"] == 5
+        assert first["source_count"] == 1
+
+
+class TestClimateRiskLayer:
+    def test_layer_returns_dense_scores_even_without_claims(self, client, map_db):
+        from api import map_routes
+
+        map_routes._cache.clear()
+        original = map_db.execute_query.side_effect
+
+        def _side_effect(query, params=None):
+            q = " ".join(query.split()).lower()
+            if (
+                "count(distinct a.article_id) as article_count" in q
+                and "count(c.claim_id) as total_claims" in q
+                and "group by a.country_code" in q
+            ):
+                return [{
+                    "country_code": "FI",
+                    "article_count": 9,
+                    "avg_reliability": 82.0,
+                    "total_claims": 0,
+                    "disputed": 0,
+                    "unverified": 0,
+                }]
+            return original(query, params)
+
+        map_db.execute_query.side_effect = _side_effect
+
+        resp = client.get("/api/map/layers/climate-risk")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["country_code"] == "FI"
+        assert data[0]["claim_count"] == 0
+        assert data[0]["disputed_ratio"] == 0.0
+        assert data[0]["risk_score"] > 0
 
 
 # ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Bookmark } from "lucide-react";
 import clsx from "clsx";
+import { api } from "@/lib/api";
 
 const STORAGE_KEY = "clilens-bookmarks";
 
@@ -29,18 +30,59 @@ interface BookmarkButtonProps {
   size?: "sm" | "md";
 }
 
+function hasAuthToken(): boolean {
+  if (typeof window === "undefined") return false;
+  return Boolean(localStorage.getItem("clilens_token"));
+}
+
 export default function BookmarkButton({ articleId, size = "md" }: BookmarkButtonProps) {
   const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    setSaved(getBookmarks().includes(articleId));
+    let cancelled = false;
+
+    async function syncStatus() {
+      const localSaved = getBookmarks().includes(articleId);
+      setSaved(localSaved);
+
+      if (!hasAuthToken()) {
+        return;
+      }
+
+      try {
+        const status = await api.getBookmarkStatus(articleId);
+        if (!cancelled) {
+          setSaved(Boolean(status.bookmarked));
+          const current = getBookmarks();
+          if (status.bookmarked && !current.includes(articleId)) {
+            setBookmarks([...current, articleId]);
+          }
+          if (!status.bookmarked && current.includes(articleId)) {
+            setBookmarks(current.filter((id) => id !== articleId));
+          }
+        }
+      } catch {
+        // Keep local fallback state.
+      }
+    }
+
+    syncStatus();
+    return () => {
+      cancelled = true;
+    };
   }, [articleId]);
 
-  function toggle(e: React.MouseEvent) {
+  async function toggle(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
+    if (busy) return;
+
+    setBusy(true);
+
     const current = getBookmarks();
     let next: string[];
+
     if (current.includes(articleId)) {
       next = current.filter((id) => id !== articleId);
       setSaved(false);
@@ -49,6 +91,22 @@ export default function BookmarkButton({ articleId, size = "md" }: BookmarkButto
       setSaved(true);
     }
     setBookmarks(next);
+
+    if (hasAuthToken()) {
+      try {
+        if (next.includes(articleId)) {
+          await api.createBookmark(articleId);
+        } else {
+          await api.deleteBookmark(articleId);
+        }
+      } catch {
+        // Revert optimistic state on server failure.
+        setBookmarks(current);
+        setSaved(current.includes(articleId));
+      }
+    }
+
+    setBusy(false);
   }
 
   const iconSize = size === "sm" ? "h-4 w-4" : "h-5 w-5";
@@ -63,6 +121,7 @@ export default function BookmarkButton({ articleId, size = "md" }: BookmarkButto
           ? "text-amber-500 hover:text-amber-600"
           : "text-gray-400 hover:text-gray-600"
       )}
+      disabled={busy}
       title={saved ? "Remove bookmark" : "Bookmark article"}
     >
       <Bookmark

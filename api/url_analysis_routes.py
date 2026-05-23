@@ -11,7 +11,7 @@ import hashlib
 import os
 import re
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4, UUID
 from urllib.parse import urlparse
 import asyncio
@@ -75,6 +75,106 @@ def _read_int_env(name: str, default: int, minimum: int, maximum: int) -> int:
         return maximum
 
     return value
+
+
+def _coerce_utc_naive_datetime(value: object) -> Optional[datetime]:
+    """Normalize DB datetime payloads to naive UTC datetimes."""
+    if value is None:
+        return None
+
+    dt_value: Optional[datetime] = None
+    if isinstance(value, datetime):
+        dt_value = value
+    elif isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        try:
+            dt_value = datetime.fromisoformat(raw)
+        except ValueError:
+            return None
+
+    if dt_value is None:
+        return None
+
+    if dt_value.tzinfo is not None:
+        return dt_value.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt_value
+
+
+def _timeout_stale_processing_analysis(db, analysis_id: str, row: dict) -> dict:
+    """
+    Fail stale URL analyses stuck in pending/processing for too long.
+
+    This prevents indefinite spinner states when the background task crashes or
+    does not complete.
+    """
+    current_status = str(row.get("status") or "").lower()
+    if current_status not in {"pending", "processing"}:
+        return row
+
+    timeout_minutes = _read_int_env(
+        name="URL_ANALYSIS_PROCESSING_TIMEOUT_MIN",
+        default=20,
+        minimum=1,
+        maximum=24 * 60,
+    )
+
+    reference_dt = _coerce_utc_naive_datetime(row.get("processing_started_at"))
+    if reference_dt is None:
+        reference_dt = _coerce_utc_naive_datetime(row.get("created_at"))
+
+    if reference_dt is None:
+        return row
+
+    now_utc = datetime.utcnow()
+    elapsed_ms = int((now_utc - reference_dt).total_seconds() * 1000)
+    if elapsed_ms < timeout_minutes * 60 * 1000:
+        return row
+
+    timeout_message = (
+        "URL analysis timed out before completion. "
+        "Please retry with a shorter or more accessible URL."
+    )
+
+    try:
+        db.execute_update(
+            """
+            UPDATE url_analyses
+            SET status = 'failed',
+                error_message = COALESCE(error_message, :error),
+                completed_at = COALESCE(completed_at, NOW()),
+                processing_time_ms = COALESCE(processing_time_ms, :elapsed_ms),
+                updated_at = NOW()
+            WHERE analysis_id = :analysis_id
+              AND status IN ('pending', 'processing')
+            """,
+            {
+                "analysis_id": analysis_id,
+                "error": timeout_message,
+                "elapsed_ms": max(elapsed_ms, 0),
+            },
+        )
+    except Exception as exc:
+        logger.warning(f"Failed to persist URL analysis timeout state for {analysis_id}: {exc}")
+
+    updated_row = dict(row)
+    updated_row["status"] = "failed"
+    if not updated_row.get("error_message"):
+        updated_row["error_message"] = timeout_message
+    if not updated_row.get("completed_at"):
+        updated_row["completed_at"] = now_utc
+    if not updated_row.get("processing_time_ms"):
+        updated_row["processing_time_ms"] = max(elapsed_ms, 0)
+
+    logger.warning(
+        "URL analysis marked failed after timeout",
+        analysis_id=analysis_id,
+        timeout_minutes=timeout_minutes,
+    )
+    return updated_row
 
 
 def _ensure_anonymous_user_id(db) -> Optional[str]:
@@ -1516,6 +1616,7 @@ async def get_analysis_result(
         )
 
     result = results[0]
+    result = _timeout_stale_processing_analysis(db, job_id, result)
 
     # --- Authorization gate ---
     is_owner = False

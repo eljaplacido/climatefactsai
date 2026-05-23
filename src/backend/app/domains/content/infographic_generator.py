@@ -64,8 +64,10 @@ def generate_article_infographic(
 
     Args:
         article_data: Dict with title, score, source_name, category,
-                      claim_count, verified_count, credibility, brief.
-        template: "summary" | "claims" | "confidence"
+                      claim_count, verified_count, credibility, brief,
+                      reliability_breakdown, decomposed_confidence,
+                      source_credibility_score, article_id.
+        template: "summary" | "claims" | "confidence" | "reliability"
 
     Returns:
         SVG string
@@ -74,6 +76,7 @@ def generate_article_infographic(
         "summary": _generate_summary,
         "claims": _generate_claims,
         "confidence": _generate_confidence,
+        "reliability": _generate_reliability_radar,
     }
 
     generator = generators.get(template, _generate_summary)
@@ -82,6 +85,60 @@ def generate_article_infographic(
     except Exception as e:
         logger.error(f"Infographic generation failed ({template}): {e}")
         return _generate_fallback(article_data)
+
+
+def _generate_reliability_radar(data: Dict) -> str:
+    """Reliability factor radar card (800x500) with platform methodology indicator."""
+    title = escape(data.get("title", "Untitled")[:60])
+    breakdown = data.get("reliability_breakdown") or {}
+    article_id = data.get("article_id", "")
+
+    factors = []
+    if isinstance(breakdown, dict):
+        for key, val in breakdown.items():
+            if isinstance(val, dict):
+                score = val.get("score", val.get("weighted_score", 0))
+                if isinstance(score, (int, float)):
+                    pct = min(100, max(0, int(round(float(score) * 100 if float(score) <= 1 else float(score)))))
+                    label = val.get("label", key.replace("_", " ").title())
+                    factors.append((label, pct))
+
+    if not factors:
+        return _generate_fallback(data)
+
+    rows = ""
+    y = 120
+    for label, pct in factors[:6]:
+        color = _score_color(pct)
+        rows += f"""  <text x="40" y="{y}" font-family="Arial, sans-serif" font-size="12" fill="{BRAND["text"]}">{escape(label[:30])}</text>
+  <rect x="220" y="{y - 10}" width="{pct * 3.6}" height="14" rx="4" fill="{color}" opacity="0.85"/>
+  <text x="{224 + pct * 3.6}" y="{y}" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="{color}">{pct}%</text>
+"""
+        y += 38
+
+    return f'''<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500">
+  <rect width="800" height="500" rx="16" fill="{BRAND["bg"]}"/>
+  <rect width="800" height="6" fill="{BRAND["primary"]}"/>
+
+  <text x="40" y="50" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="{BRAND["text"]}">Reliability Factor Breakdown</text>
+  <text x="40" y="75" font-family="Arial, sans-serif" font-size="12" fill="{BRAND["muted"]}">{title}</text>
+
+  <rect x="40" y="100" width="720" height="1" fill="#e5e7eb"/>
+
+{rows}
+  <rect y="410" width="800" height="1" fill="#e5e7eb"/>
+
+  <text x="40" y="440" font-family="Arial, sans-serif" font-size="10" fill="{BRAND["muted"]}">
+    Computed by Climatefacts.ai verification engine. Factors weighted per platform methodology.
+  </text>
+  <text x="40" y="458" font-family="Arial, sans-serif" font-size="10" fill="{BRAND["primary"]}">
+    View full methodology at /methodology
+  </text>
+
+  <rect y="470" width="800" height="30" rx="0" fill="{BRAND["primary"]}"/>
+  <text x="40" y="490" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="white">Climatefacts.ai</text>
+</svg>'''
 
 
 def _generate_summary(data: Dict) -> str:

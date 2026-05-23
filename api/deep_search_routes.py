@@ -167,6 +167,13 @@ async def deep_search(
             limit=request.limit,
         )
 
+        guidance_status = None
+        methodology = result.get("methodology") if isinstance(result, dict) else None
+        if isinstance(methodology, dict):
+            guidance = methodology.get("guidance")
+            if isinstance(guidance, dict):
+                guidance_status = guidance.get("status")
+
         # Log usage
         if user_id:
             UsageTracker.log_usage(
@@ -181,13 +188,20 @@ async def deep_search(
             query=request.query[:100],
             internal_count=result.get("internal_articles_count", 0),
             external_count=result.get("external_sources_count", 0),
+            guidance_status=guidance_status,
         )
 
         return DeepSearchResponse(**result)
 
     except Exception as e:
         logger.error(f"Deep search failed: {e}", query=request.query[:100])
-        raise HTTPException(status_code=500, detail="Deep search failed. Please try again.")
+        guidance_hint = (
+            " Try narrowing by country/timeframe or use 'Get query help in chat'."
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Deep search failed. Please try again.{guidance_hint}",
+        )
 
 
 # =============================================================================

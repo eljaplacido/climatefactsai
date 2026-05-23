@@ -118,6 +118,9 @@ def record_negative_finding(
             confidence=0.0,
         ),
     )
+
+
+def record_provenance(db, record: ProvenanceRecord) -> Optional[int]:
     """Insert one provenance row. Returns the new id, or None on failure.
 
     Best-effort: any DB error (table missing, network blip, FK violation)

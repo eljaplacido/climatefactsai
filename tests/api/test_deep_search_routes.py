@@ -228,3 +228,20 @@ class TestCompareEndpoint:
             json={"query_a": "ab", "query_b": "valid query"},
         )
         assert resp.status_code == 422
+
+    def test_compare_returns_partial_payload_when_service_raises(self, client, monkeypatch):
+        fake_service_cls = MagicMock()
+        instance = MagicMock()
+        instance.compare = AsyncMock(side_effect=RuntimeError("compare timeout"))
+        fake_service_cls.return_value = instance
+
+        import app.domains.intelligence.deep_search_service as svc_mod
+        monkeypatch.setattr(svc_mod, "DeepSearchService", fake_service_cls)
+
+        resp = client.post(
+            "/api/deep-search/compare",
+            json={"query_a": "wind north", "query_b": "solar south"},
+        )
+
+        assert resp.status_code == 500
+        assert "comparison failed" in resp.json()["detail"].lower()

@@ -64,12 +64,38 @@ def _read_secret_env(*names: str) -> str:
     return ""
 
 
+def _looks_placeholder(value: str) -> bool:
+    """Detect obvious placeholder credentials that should not be treated as configured."""
+    if not value:
+        return False
+    v = value.strip().lower()
+    if not v:
+        return False
+    if "placeholder" in v:
+        return True
+    return v in {
+        "changeme",
+        "replace-me",
+        "dummy",
+        "dummy-value",
+        "example",
+        "example-value",
+    }
+
+
 def _oauth_config() -> dict:
     """Load OAuth provider credentials dynamically from env."""
     google_client_id = _read_secret_env("GOOGLE_CLIENT_ID", "google-client-id")
     google_client_secret = _read_secret_env("GOOGLE_CLIENT_SECRET", "google-client-secret")
     microsoft_client_id = _read_secret_env("MICROSOFT_CLIENT_ID", "microsoft-client-id")
     microsoft_client_secret = _read_secret_env("MICROSOFT_CLIENT_SECRET", "microsoft-client-secret")
+
+    if _looks_placeholder(google_client_id) or _looks_placeholder(google_client_secret):
+        google_client_id = ""
+        google_client_secret = ""
+    if _looks_placeholder(microsoft_client_id) or _looks_placeholder(microsoft_client_secret):
+        microsoft_client_id = ""
+        microsoft_client_secret = ""
 
     return {
         "google_client_id": google_client_id,
@@ -90,9 +116,27 @@ async def generate_oauth_state():
 async def get_available_providers():
     """Return which OAuth providers are configured."""
     cfg = _oauth_config()
+    google_enabled = bool(cfg["google_client_id"] and cfg["google_client_secret"])
+    microsoft_enabled = bool(cfg["ms_client_id"] and cfg["ms_client_secret"])
+
     return {
-        "google": bool(cfg["google_client_id"] and cfg["google_client_secret"]),
-        "microsoft": bool(cfg["ms_client_id"] and cfg["ms_client_secret"]),
+        # Backward-compatible booleans
+        "google": google_enabled,
+        "microsoft": microsoft_enabled,
+        # Runtime client metadata for frontend OAuth button wiring
+        "google_client_id": cfg["google_client_id"] if google_enabled else "",
+        "microsoft_client_id": cfg["ms_client_id"] if microsoft_enabled else "",
+        # Preferred structured payload for new clients
+        "providers": {
+            "google": {
+                "enabled": google_enabled,
+                "client_id": cfg["google_client_id"] if google_enabled else "",
+            },
+            "microsoft": {
+                "enabled": microsoft_enabled,
+                "client_id": cfg["ms_client_id"] if microsoft_enabled else "",
+            },
+        },
     }
 
 

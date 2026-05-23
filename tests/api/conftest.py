@@ -69,6 +69,8 @@ class SmartFakeDB:
         # Session state (added for stateful refresh-token flow — migration 017).
         # Keyed by jti so /refresh can look up by JTI from the JWT payload.
         self._sessions: Dict[str, Dict[str, Any]] = {}
+        # Bookmark state keyed by user -> article_id.
+        self._bookmarks: Dict[str, Dict[str, Dict[str, Any]]] = {}
 
     def _article_listing(self, params: Optional[Dict]) -> List[Dict]:
         limit = (params or {}).get("limit", 20)
@@ -210,6 +212,48 @@ class SmartFakeDB:
         if "from article_feedback" in q:
             return [{"total_feedback": 0, "useful": 0, "not_useful": 0, "flagged": 0, "average_reliability": None}]
 
+        # ---- BOOKMARKS ----
+        if "select article_id, folder, notes, bookmarked_at" in q and "from user_bookmarks" in q:
+            user_id = params.get("user_id")
+            article_id = params.get("article_id")
+            user_bookmarks = self._bookmarks.get(user_id, {})
+            row = user_bookmarks.get(article_id)
+            return [row] if row else []
+
+        if "from user_bookmarks b" in q:
+            user_id = params.get("user_id")
+            folder = params.get("folder")
+            user_bookmarks = list(self._bookmarks.get(user_id, {}).values())
+            if folder:
+                user_bookmarks = [r for r in user_bookmarks if r.get("folder") == folder]
+            user_bookmarks.sort(key=lambda r: str(r.get("bookmarked_at", "")), reverse=True)
+
+            # Mimic LEFT JOIN article fields expected by /api/user/bookmarks response
+            rows: List[Dict[str, Any]] = []
+            for row in user_bookmarks:
+                rows.append(
+                    {
+                        "article_id": row.get("article_id"),
+                        "title": self._article_row.get("title"),
+                        "source_name": self._article_row.get("source_name"),
+                        "bookmarked_at": row.get("bookmarked_at"),
+                        "folder": row.get("folder"),
+                        "notes": row.get("notes"),
+                        "credibility": self._article_row.get("overall_credibility"),
+                    }
+                )
+            return rows
+
+        if "select distinct folder from user_bookmarks" in q:
+            user_id = params.get("user_id")
+            folders = sorted(
+                {
+                    row.get("folder", "default")
+                    for row in self._bookmarks.get(user_id, {}).values()
+                }
+            )
+            return [{"folder": f} for f in folders]
+
         # ---- SELECT 1 (existence check) ----
         if "select 1 from articles where article_id" in q:
             aid = params.get("article_id")
@@ -272,6 +316,30 @@ class SmartFakeDB:
                         row["revoked_at"] = self.now
                         row["revoke_reason"] = reason or "replay_detected"
             return None
+
+        # ---- BOOKMARKS: INSERT/UPSERT ----
+        if "insert into user_bookmarks" in q:
+            user_id = params.get("user_id")
+            article_id = params.get("article_id")
+            if user_id and article_id:
+                user_bookmarks = self._bookmarks.setdefault(user_id, {})
+                user_bookmarks[article_id] = {
+                    "user_id": user_id,
+                    "article_id": article_id,
+                    "folder": params.get("folder", "default"),
+                    "notes": params.get("notes"),
+                    "bookmarked_at": self.now,
+                }
+            return None
+
+        # ---- BOOKMARKS: DELETE ----
+        if "delete from user_bookmarks" in q:
+            user_id = params.get("user_id")
+            article_id = params.get("article_id")
+            user_bookmarks = self._bookmarks.get(user_id, {})
+            if article_id in user_bookmarks:
+                del user_bookmarks[article_id]
+            return 1
 
         return None
 

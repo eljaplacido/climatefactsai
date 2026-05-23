@@ -557,6 +557,57 @@ class TestAnalyzeUrlGet:
         assert "access denied" in resp_no_token.json()["detail"].lower()
         assert resp_wrong_token.status_code == 403
 
+    def test_get_analysis_times_out_stale_processing_job(self, client):
+        """Stale processing rows should be marked failed instead of spinning forever."""
+        import shared.database as _shared_db
+        from uuid import UUID
+        from datetime import timedelta
+        from api.url_analysis_routes import _generate_job_token
+
+        analysis_uuid = UUID("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")
+        now = datetime.utcnow()
+        rows = [{
+            "user_id": "00000000-0000-0000-0000-000000000000",
+            "analysis_id": analysis_uuid,
+            "submitted_url": "https://example.com/stale-job",
+            "status": "processing",
+            "title": "Stale processing result",
+            "source_name": "example.com",
+            "source_domain": "example.com",
+            "extracted_text": "body",
+            "language_code": "en",
+            "published_date": None,
+            "reliability_score": None,
+            "overall_credibility": None,
+            "extracted_claims": [],
+            "fact_checks": [],
+            "created_at": now - timedelta(minutes=45),
+            "processing_started_at": now - timedelta(minutes=41),
+            "completed_at": None,
+            "processing_time_ms": None,
+            "error_message": None,
+        }]
+
+        db = _smart_url_db(rows_for_get=rows)
+        prior = _shared_db._postgres_client
+        _shared_db._postgres_client = db
+        try:
+            token = _generate_job_token(str(analysis_uuid))
+            resp = client.get(f"/api/analyze-url/{analysis_uuid}?token={token}")
+        finally:
+            _shared_db._postgres_client = prior
+
+        assert resp.status_code == 200, resp.text
+        payload = resp.json()
+        assert payload["status"] == "failed"
+        assert "timed out" in (payload.get("error_message") or "").lower()
+
+        updates = [
+            call for call in db.execute_update.call_args_list
+            if "update url_analyses" in " ".join(str(call.args[0]).split()).lower()
+        ]
+        assert updates, "Expected stale timeout update to be persisted"
+
 
 # ---------------------------------------------------------------------------
 # Background task — 503 when LLM key missing
