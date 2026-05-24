@@ -13,7 +13,18 @@ _logger = logging.getLogger("corporate_repo")
 
 
 def upsert_company(db, name: str, **kwargs) -> str:
-    """Insert or update a company, return company_id."""
+    """Insert or update a company, return company_id.
+
+    Dedup strategy (in order — first match wins):
+      1. Strong: ticker / isin / lei when any is present
+      2. Weak fallback: case-insensitive name + country_code
+
+    The weak fallback handles SBTi imports where most rows lack ticker
+    and any unique identifier — without it every SBTi target creates a
+    fresh duplicate company row. See production_deploy_2026_05_24.md
+    for the dedup incident this fixes.
+    """
+    # Strong dedup by identifier.
     existing = db.execute_query(
         "SELECT company_id FROM companies WHERE "
         "(ticker = :ticker AND :ticker IS NOT NULL) OR "
@@ -25,6 +36,15 @@ def upsert_company(db, name: str, **kwargs) -> str:
             "lei": kwargs.get("lei"),
         },
     )
+    # Weak fallback by name + country only if no identifier match.
+    if not existing:
+        existing = db.execute_query(
+            "SELECT company_id FROM companies WHERE "
+            "LOWER(TRIM(name)) = LOWER(TRIM(:name)) "
+            "AND (country_code = :cc OR (country_code IS NULL AND :cc IS NULL)) "
+            "LIMIT 1",
+            {"name": name, "cc": kwargs.get("country_code")},
+        )
     if existing:
         company_id = str(existing[0]["company_id"])
         db.execute_update(
