@@ -20,7 +20,10 @@ from app.domains.content.corporate.schemas import DisclosureRecord
 
 _logger = logging.getLogger("sbti_adapter")
 
-SBTI_CSV_URL = "https://sciencebasedtargets.org/download/target-dashboard"
+SBTI_CSV_URL = (
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vRUls6LEAlOAGCEXuLdOZ"
+    "DNYiFmf_VJHh5Gz1cdKKoaLQQx832pyr9ynbFJDgJM3KorP5u97ODewQmx/pub?output=csv"
+)
 
 SOURCE_NAME = "sbti"
 
@@ -29,7 +32,9 @@ class SBTIAdapter:
     source_name = SOURCE_NAME
 
     def __init__(self) -> None:
-        self.client = httpx.AsyncClient(timeout=60.0)
+        # follow_redirects=True for the sciencebasedtargets.org → Google Sheets
+        # hop that happens 2024 onwards.
+        self.client = httpx.AsyncClient(timeout=60.0, follow_redirects=True)
 
     async def sync(self, db) -> dict:
         count = 0
