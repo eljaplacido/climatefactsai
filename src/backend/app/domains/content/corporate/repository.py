@@ -134,15 +134,29 @@ def upsert_disclosure(db, record: DisclosureRecord) -> None:
 
 
 def get_company(db, ticker_or_id: str) -> Optional[CompanyProfile]:
+    # Phase 8 fix (2026-05-24): Postgres errors with InvalidTextRepresentation
+    # when casting non-UUID strings (e.g. "MSFT") against the UUID column.
+    # Detect UUIDs and use the right WHERE clause.
+    import uuid as _uuid
+    try:
+        _uuid.UUID(str(ticker_or_id))
+        is_uuid = True
+    except (ValueError, AttributeError, TypeError):
+        is_uuid = False
+    where_clause = (
+        "c.company_id = :q::uuid"
+        if is_uuid
+        else "c.ticker = :q"
+    )
     rows = db.execute_query(
-        """SELECT c.*,
+        f"""SELECT c.*,
                   COUNT(cd.disclosure_id) AS disclosure_count,
                   MAX(cd.reporting_year) AS latest_disclosure_year,
                   BOOL_OR(cd.sbti_validated) AS sbti_validated,
                   MAX(cd.net_zero_target_year) AS net_zero_target_year
            FROM companies c
            LEFT JOIN company_climate_disclosures cd ON cd.company_id = c.company_id
-           WHERE c.ticker = :q OR c.company_id = :q
+           WHERE {where_clause}
            GROUP BY c.company_id LIMIT 1""",
         {"q": ticker_or_id},
     )
