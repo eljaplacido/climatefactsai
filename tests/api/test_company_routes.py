@@ -348,69 +348,88 @@ class TestAdapterSyncEndpoint:
         for src in ("sbti", "cdp", "net_zero_tracker"):
             assert src in str(body)
 
-    def test_200_when_token_valid_sbti(self, monkeypatch):
+    def test_202_when_token_valid_sbti(self, monkeypatch):
+        """Phase 8 refactor (2026-05-24): adapter sync now runs in a
+        background task. The POST returns 202 + a 'scheduled' envelope
+        immediately; result is checkable via GET on the same path."""
+        # Clear any prior in-memory run state from sibling tests.
+        from api.company_routes import _LAST_SYNC_RUN
+        _LAST_SYNC_RUN.clear()
         monkeypatch.setenv("CORPORATE_SYNC_TOKEN", "correct-secret")
-        mock_result = {"source": "sbti", "upserted": 42, "errors": []}
-        with patch(
-            "app.domains.content.corporate.sbti_adapter.SBTIAdapter"
-        ) as MockAdapter:
-            instance = MockAdapter.return_value
-            instance.sync = AsyncMock(return_value=mock_result)
-            resp = client.post(
-                "/api/companies/admin/sync/sbti",
-                headers={"x-corporate-sync-token": "correct-secret"},
-            )
-        assert resp.status_code == 200
-        assert resp.json() == mock_result
+        resp = client.post(
+            "/api/companies/admin/sync/sbti",
+            headers={"x-corporate-sync-token": "correct-secret"},
+        )
+        assert resp.status_code == 202
+        body = resp.json()
+        assert body["status"] == "scheduled"
+        assert body["source"] == "sbti"
 
-    def test_200_when_token_valid_cdp(self, monkeypatch):
+    def test_202_when_token_valid_cdp(self, monkeypatch):
+        from api.company_routes import _LAST_SYNC_RUN
+        _LAST_SYNC_RUN.clear()
         monkeypatch.setenv("CORPORATE_SYNC_TOKEN", "correct-secret")
-        mock_result = {"source": "cdp", "upserted": 100, "errors": []}
-        with patch(
-            "app.domains.content.corporate.cdp_adapter.CDPAdapter"
-        ) as MockAdapter:
-            instance = MockAdapter.return_value
-            instance.sync = AsyncMock(return_value=mock_result)
-            resp = client.post(
-                "/api/companies/admin/sync/cdp",
-                headers={"x-corporate-sync-token": "correct-secret"},
-            )
-        assert resp.status_code == 200
+        resp = client.post(
+            "/api/companies/admin/sync/cdp",
+            headers={"x-corporate-sync-token": "correct-secret"},
+        )
+        assert resp.status_code == 202
         assert resp.json()["source"] == "cdp"
 
-    def test_200_when_token_valid_nzt(self, monkeypatch):
+    def test_202_when_token_valid_nzt(self, monkeypatch):
+        from api.company_routes import _LAST_SYNC_RUN
+        _LAST_SYNC_RUN.clear()
         monkeypatch.setenv("CORPORATE_SYNC_TOKEN", "correct-secret")
-        mock_result = {"source": "net_zero_tracker", "upserted": 50, "errors": []}
-        with patch(
-            "app.domains.content.corporate.nzt_adapter.NetZeroTrackerAdapter"
-        ) as MockAdapter:
-            instance = MockAdapter.return_value
-            instance.sync = AsyncMock(return_value=mock_result)
-            resp = client.post(
-                "/api/companies/admin/sync/net_zero_tracker",
-                headers={"x-corporate-sync-token": "correct-secret"},
-            )
-        assert resp.status_code == 200
+        resp = client.post(
+            "/api/companies/admin/sync/net_zero_tracker",
+            headers={"x-corporate-sync-token": "correct-secret"},
+        )
+        assert resp.status_code == 202
         assert resp.json()["source"] == "net_zero_tracker"
 
-    def test_partial_failure_still_returns_200(self, monkeypatch):
-        """Adapter may report partial failures via the `errors` array.
-        The endpoint surfaces that as 200 + the errors list, not 500 —
-        the operator can decide whether to re-run."""
-        monkeypatch.setenv("CORPORATE_SYNC_TOKEN", "correct-secret")
-        mock_result = {
-            "source": "sbti",
-            "upserted": 30,
-            "errors": ["row 5: missing target year", "row 12: invalid country"],
+    def test_409_when_sync_already_running(self, monkeypatch):
+        """A second POST while a sync is in flight returns 409 — operator
+        can't accidentally double-trigger and double-write."""
+        from api.company_routes import _LAST_SYNC_RUN
+        _LAST_SYNC_RUN.clear()
+        _LAST_SYNC_RUN["sbti"] = {
+            "source": "sbti", "status": "running",
+            "started_at": "2026-05-24T12:00:00Z", "finished_at": None,
+            "upserted": 0, "errors": [], "warning": None,
         }
-        with patch(
-            "app.domains.content.corporate.sbti_adapter.SBTIAdapter"
-        ) as MockAdapter:
-            instance = MockAdapter.return_value
-            instance.sync = AsyncMock(return_value=mock_result)
-            resp = client.post(
-                "/api/companies/admin/sync/sbti",
-                headers={"x-corporate-sync-token": "correct-secret"},
-            )
+        monkeypatch.setenv("CORPORATE_SYNC_TOKEN", "correct-secret")
+        resp = client.post(
+            "/api/companies/admin/sync/sbti",
+            headers={"x-corporate-sync-token": "correct-secret"},
+        )
+        assert resp.status_code == 409
+        assert resp.json()["status"] == "already_running"
+        _LAST_SYNC_RUN.clear()
+
+    def test_get_status_never_run(self):
+        from api.company_routes import _LAST_SYNC_RUN
+        _LAST_SYNC_RUN.clear()
+        resp = client.get("/api/companies/admin/sync/sbti")
         assert resp.status_code == 200
-        assert len(resp.json()["errors"]) == 2
+        body = resp.json()
+        assert body["status"] == "never_run"
+        assert body["upserted"] == 0
+
+    def test_get_status_after_completed_run(self):
+        from api.company_routes import _LAST_SYNC_RUN
+        _LAST_SYNC_RUN["cdp"] = {
+            "source": "cdp", "status": "completed",
+            "started_at": "2026-05-24T12:00:00Z",
+            "finished_at": "2026-05-24T12:05:00Z",
+            "upserted": 1234, "errors": [], "warning": None,
+        }
+        resp = client.get("/api/companies/admin/sync/cdp")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "completed"
+        assert body["upserted"] == 1234
+        _LAST_SYNC_RUN.clear()
+
+    def test_get_status_unknown_source_400(self):
+        resp = client.get("/api/companies/admin/sync/unknown_source")
+        assert resp.status_code == 400

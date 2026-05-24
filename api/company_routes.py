@@ -15,7 +15,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from api.rate_limiter import TIER_LIMITS, UsageTracker
@@ -217,13 +218,69 @@ def _analyze_claim(claim_text: str, context: str) -> tuple:
 
 _VALID_SOURCES = {"sbti", "cdp", "net_zero_tracker"}
 
+# Phase 8 (2026-05-24, refactor) — in-memory last-run tracker. Single Cloud
+# Run instance so this is fine for now; if we scale to >1 instance we'll
+# move this to Postgres. Operators GET /api/companies/admin/sync/{source}
+# to see the last run's outcome.
+_LAST_SYNC_RUN: Dict[str, Dict[str, Any]] = {}
+
+
+def _run_adapter_sync_blocking(source: str) -> None:
+    """Run one adapter sync to completion, recording the outcome.
+
+    Called from FastAPI BackgroundTasks as a regular `def` so it runs on
+    a thread-pool worker — never blocks the main event loop. Uses its
+    own asyncio event loop because the underlying adapter calls are
+    async (httpx fetch) while the DB calls are sync (psycopg2).
+    """
+    import asyncio
+    from datetime import datetime
+
+    db = get_postgres()
+    started = datetime.utcnow().isoformat() + "Z"
+    _LAST_SYNC_RUN[source] = {
+        "source": source, "status": "running",
+        "started_at": started, "finished_at": None,
+        "upserted": 0, "errors": [], "warning": None,
+    }
+    try:
+        if source == "sbti":
+            from app.domains.content.corporate.sbti_adapter import SBTIAdapter
+            result = asyncio.run(SBTIAdapter().sync(db))
+        elif source == "cdp":
+            from app.domains.content.corporate.cdp_adapter import CDPAdapter
+            result = asyncio.run(CDPAdapter().sync(db))
+        else:  # net_zero_tracker
+            from app.domains.content.corporate.nzt_adapter import NetZeroTrackerAdapter
+            result = asyncio.run(NetZeroTrackerAdapter().sync(db))
+        _LAST_SYNC_RUN[source].update(
+            status="completed",
+            finished_at=datetime.utcnow().isoformat() + "Z",
+            upserted=int(result.get("upserted", 0)),
+            errors=list(result.get("errors", []))[:50],
+            warning=result.get("warning"),
+        )
+        logger.info(
+            f"Adapter sync complete: {source} upserted={result.get('upserted', 0)} "
+            f"errors={len(result.get('errors', []))}"
+        )
+    except Exception as exc:
+        _LAST_SYNC_RUN[source].update(
+            status="failed",
+            finished_at=datetime.utcnow().isoformat() + "Z",
+            errors=[str(exc)[:500]],
+        )
+        logger.error(f"Adapter sync {source} failed: {exc}")
+
 
 @router.post("/admin/sync/{source}")
 async def trigger_adapter_sync(
     source: str,
+    background_tasks: BackgroundTasks,
     x_corporate_sync_token: Optional[str] = Header(default=None),
 ):
-    """Run one corporate-data adapter end-to-end. Token-gated."""
+    """Schedule an adapter sync. Returns 202 immediately; sync runs in
+    background. Status checkable via GET /admin/sync/{source}."""
     expected = os.environ.get("CORPORATE_SYNC_TOKEN")
     if not expected:
         raise HTTPException(
@@ -237,20 +294,42 @@ async def trigger_adapter_sync(
             status_code=400,
             detail=f"Unknown source {source!r}. Expected one of: {sorted(_VALID_SOURCES)}",
         )
-
-    db = get_postgres()
-    if source == "sbti":
-        from app.domains.content.corporate.sbti_adapter import SBTIAdapter
-        result = await SBTIAdapter().sync(db)
-    elif source == "cdp":
-        from app.domains.content.corporate.cdp_adapter import CDPAdapter
-        result = await CDPAdapter().sync(db)
-    else:  # net_zero_tracker
-        from app.domains.content.corporate.nzt_adapter import NetZeroTrackerAdapter
-        result = await NetZeroTrackerAdapter().sync(db)
-
-    logger.info(
-        f"Adapter sync complete: {source} upserted={result.get('upserted', 0)} "
-        f"errors={len(result.get('errors', []))}"
+    # Reject re-trigger while one is in flight
+    current = _LAST_SYNC_RUN.get(source, {})
+    if current.get("status") == "running":
+        return JSONResponse(
+            status_code=409,
+            content={
+                "status": "already_running",
+                "source": source,
+                "started_at": current.get("started_at"),
+            },
+        )
+    background_tasks.add_task(_run_adapter_sync_blocking, source)
+    return JSONResponse(
+        status_code=202,
+        content={
+            "status": "scheduled",
+            "source": source,
+            "message": (
+                "Sync running in background. "
+                f"GET /api/companies/admin/sync/{source} to check status."
+            ),
+        },
     )
-    return result
+
+
+@router.get("/admin/sync/{source}")
+async def get_adapter_sync_status(source: str):
+    """Last-run outcome for an adapter sync. Public — surfaces only
+    aggregate counts + status, never row-level data."""
+    if source not in _VALID_SOURCES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown source {source!r}. Expected one of: {sorted(_VALID_SOURCES)}",
+        )
+    return _LAST_SYNC_RUN.get(source) or {
+        "source": source, "status": "never_run",
+        "started_at": None, "finished_at": None,
+        "upserted": 0, "errors": [], "warning": None,
+    }
