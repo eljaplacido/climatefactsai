@@ -119,6 +119,11 @@ src/frontend/.next/
 src/frontend/node_modules/
 archive/legacy_frontend/dist/
 
+# Build / test artifacts (Phase 8 2026-05-24)
+src/frontend/tsconfig.tsbuildinfo
+src/frontend/playwright-report/
+src/frontend/test-results/
+
 
 # Claude Flow generated files
 .claude/settings.local.json

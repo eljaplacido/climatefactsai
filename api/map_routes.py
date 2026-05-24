@@ -1865,3 +1865,57 @@ async def get_country_claim_ledger(
             "confidence": r.get("confidence"),
         })
     return {"country_code": cc, "since_days": since_days, "claims": claims, "total": len(claims)}
+
+
+# ---------------------------------------------------------------------------
+# Phase 8 MH4 (2026-05-24) — Country warming projections.
+#
+# Returns IPCC AR6 SSP-based warming projections at 2030 / 2050 / 2100
+# horizons for the three canonical scenarios (SSP1-2.6 / SSP2-4.5 /
+# SSP3-7.0). Read-only, cache-friendly. Backing table seeded by
+# migration 035.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/country/{cc}/projections")
+async def get_country_projections(cc: str):
+    """Warming projections per scenario + horizon for a single country."""
+    cc = cc.upper().strip()
+    if len(cc) != 2 or not cc.isalpha():
+        raise HTTPException(status_code=400, detail="Invalid country code")
+
+    db = get_postgres()
+    try:
+        rows = db.execute_query(
+            """SELECT scenario, horizon_year, temp_anomaly_c,
+                      methodology_version, citation_url
+               FROM country_projections
+               WHERE country_code = :cc
+               ORDER BY scenario, horizon_year""",
+            {"cc": cc},
+        )
+    except Exception as exc:
+        logger.warning(f"Country projections query failed for {cc}: {exc}")
+        rows = []
+
+    # Group rows by scenario for the frontend.
+    scenarios: dict = {}
+    citation_url = None
+    methodology_version = None
+    for r in rows or []:
+        sc = r["scenario"]
+        scenarios.setdefault(sc, []).append({
+            "horizon_year": r["horizon_year"],
+            "temp_anomaly_c": float(r["temp_anomaly_c"]),
+        })
+        citation_url = citation_url or r.get("citation_url")
+        methodology_version = methodology_version or r.get("methodology_version")
+
+    return {
+        "country_code": cc,
+        "scenarios": scenarios,
+        "available": bool(scenarios),
+        "methodology_version": methodology_version,
+        "citation_url": citation_url,
+        "baseline_note": "Warming relative to 1850-1900 pre-industrial baseline.",
+    }

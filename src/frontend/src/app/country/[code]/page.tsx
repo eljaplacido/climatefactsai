@@ -14,6 +14,7 @@ import {
   Loader2,
   Map as MapIcon,
   GitCompare,
+  TrendingUp,
 } from "lucide-react";
 import { useUrlState, URL_STATE_SERIALIZERS } from "@/lib/useUrlState";
 import {
@@ -31,6 +32,7 @@ import {
 import EmbedShareButton from "@/components/EmbedShareButton";
 import MultiViewTabs from "@/components/MultiViewTabs";
 import AOISubscribeButton from "@/components/AOISubscribeButton";
+import ProjectionsPanel from "@/components/ProjectionsPanel";
 
 /**
  * Country Climate Passport — Phase 2B (2026-05-23), MH3 from the
@@ -57,12 +59,13 @@ import AOISubscribeButton from "@/components/AOISubscribeButton";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
 
-type TabKey = "overview" | "news" | "climate" | "sources" | "claims";
+type TabKey = "overview" | "news" | "climate" | "projections" | "sources" | "claims";
 
 const TABS: { key: TabKey; label: string; icon: any }[] = [
   { key: "overview", label: "Overview", icon: Globe },
   { key: "news", label: "News", icon: Newspaper },
   { key: "climate", label: "Climate Data", icon: Thermometer },
+  { key: "projections", label: "Projections", icon: TrendingUp },
   { key: "sources", label: "Sources", icon: Shield },
   { key: "claims", label: "Claim Ledger", icon: ScrollText },
 ];
@@ -72,7 +75,9 @@ const TABS: { key: TabKey; label: string; icon: any }[] = [
 const tabSerializer = {
   encode: (v: TabKey) => (v === "overview" ? null : v),
   decode: (raw: string | null): TabKey => {
-    const candidates: TabKey[] = ["overview", "news", "climate", "sources", "claims"];
+    const candidates: TabKey[] = [
+      "overview", "news", "climate", "projections", "sources", "claims",
+    ];
     return (candidates.find((t) => t === raw) ?? "overview") as TabKey;
   },
 };
@@ -484,6 +489,14 @@ export default function CountryPassportPage() {
         {tab === "climate" && (
           <Panel id="climate" testId="passport-panel-climate">
             <ClimateTab climate={climate} countryName={detail.country_name} />
+          </Panel>
+        )}
+        {tab === "projections" && (
+          <Panel id="projections" testId="passport-panel-projections">
+            <ProjectionsPanel
+              countryCode={detail.country_code}
+              countryName={detail.country_name}
+            />
           </Panel>
         )}
         {tab === "sources" && (

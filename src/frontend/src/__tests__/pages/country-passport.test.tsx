@@ -209,7 +209,8 @@ describe('Country Climate Passport (Phase 2B / MH3)', () => {
       expect(screen.getByRole('tablist')).toBeInTheDocument(),
     )
     const tabs = screen.getAllByRole('tab')
-    expect(tabs).toHaveLength(5)
+    // Phase 8 MH4 (2026-05-24): bumped to 6 with the new Projections tab.
+    expect(tabs).toHaveLength(6)
     for (const t of tabs) {
       expect(t).toHaveAttribute('aria-controls')
     }

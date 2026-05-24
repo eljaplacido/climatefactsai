@@ -392,6 +392,45 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 client_ip = request.client.host if request.client else "unknown"
                 self._check_ip_rate_limit(client_ip, "url_analysis", max_per_day=5)
 
+        # For corporate claim verification — Phase 8 (2026-05-24).
+        # The /analyze endpoint writes a row to company_claims on every call.
+        # Even with Pydantic length bounds + DB enum constraints, an
+        # unthrottled endpoint would let an attacker spam claim rows. Anon
+        # callers get 10/day per IP; authenticated callers get 50/day,
+        # higher tiers proportionally higher. The claim taxonomy is
+        # deterministic so verification itself is cheap — this gate is
+        # about preventing storage pollution, not compute exhaustion.
+        elif (
+            request.url.path.startswith("/api/companies/")
+            and request.url.path.endswith("/analyze")
+            and request.method == "POST"
+        ):
+            if user:
+                user_id = str(user.get("user_id"))
+                subscription_tier = user.get("subscription_tier", "freemium")
+                # Tier-aware per-day limit. Mirrors the URL-analysis pattern
+                # but uses a higher base since the verification is cheaper
+                # than full URL extraction + fact-check.
+                per_day = {
+                    "freemium": 20,
+                    "standard": 100,
+                    "basic": 100,  # alias
+                    "professional": 500,
+                    "enterprise": None,  # unlimited
+                }.get(subscription_tier, 20)
+                if per_day is not None:
+                    client_ip = request.client.host if request.client else "unknown"
+                    self._check_ip_rate_limit(
+                        f"user:{user_id}",
+                        "corporate_claim_verify",
+                        max_per_day=per_day,
+                    )
+            else:
+                client_ip = request.client.host if request.client else "unknown"
+                self._check_ip_rate_limit(
+                    client_ip, "corporate_claim_verify", max_per_day=10
+                )
+
         response = await call_next(request)
 
         return response

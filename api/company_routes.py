@@ -4,16 +4,18 @@ GET  /api/companies                    — paginated company index
 GET  /api/companies/{ticker}           — company profile + disclosures + claims
 GET  /api/companies/{ticker}/claims    — company claims list
 POST /api/companies/{ticker}/analyze   — LLM-based claim verification
+POST /api/companies/admin/sync/{source} — Phase 8: trigger SBTi/CDP/NZT adapter
 """
 
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from api.rate_limiter import TIER_LIMITS, UsageTracker
@@ -201,3 +203,54 @@ def _analyze_claim(claim_text: str, context: str) -> tuple:
         )
 
     return ("other", "unverified", None, None)
+
+
+# ---------------------------------------------------------------------------
+# Phase 8 (2026-05-24) — Adapter sync endpoint.
+#
+# Triggers one of the three corporate-data adapters (SBTi / CDP / Net Zero
+# Tracker). Token-gated via `CORPORATE_SYNC_TOKEN` env var. If the env var is
+# unset the endpoint returns 503 — explicit opt-in so a fresh deploy doesn't
+# expose an unprotected ingestion trigger.
+# ---------------------------------------------------------------------------
+
+
+_VALID_SOURCES = {"sbti", "cdp", "net_zero_tracker"}
+
+
+@router.post("/admin/sync/{source}")
+async def trigger_adapter_sync(
+    source: str,
+    x_corporate_sync_token: Optional[str] = Header(default=None),
+):
+    """Run one corporate-data adapter end-to-end. Token-gated."""
+    expected = os.environ.get("CORPORATE_SYNC_TOKEN")
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="Adapter sync disabled — set CORPORATE_SYNC_TOKEN to enable",
+        )
+    if x_corporate_sync_token != expected:
+        raise HTTPException(status_code=401, detail="Invalid sync token")
+    if source not in _VALID_SOURCES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown source {source!r}. Expected one of: {sorted(_VALID_SOURCES)}",
+        )
+
+    db = get_postgres()
+    if source == "sbti":
+        from app.domains.content.corporate.sbti_adapter import SBTIAdapter
+        result = await SBTIAdapter().sync(db)
+    elif source == "cdp":
+        from app.domains.content.corporate.cdp_adapter import CDPAdapter
+        result = await CDPAdapter().sync(db)
+    else:  # net_zero_tracker
+        from app.domains.content.corporate.nzt_adapter import NetZeroTrackerAdapter
+        result = await NetZeroTrackerAdapter().sync(db)
+
+    logger.info(
+        f"Adapter sync complete: {source} upserted={result.get('upserted', 0)} "
+        f"errors={len(result.get('errors', []))}"
+    )
+    return result

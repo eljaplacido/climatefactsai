@@ -1,4 +1,4 @@
-"""Corporate claim-verification route unit tests — Phase 7 B3 (2026-05-24).
+"""Corporate route unit tests — Phase 7 B3 + Phase 8 adapters (2026-05-24).
 
 Pins the pure-function analyzer at the heart of /api/companies/{ticker}/analyze.
 The analyzer is a heuristic MVP (keyword + disclosure-context lookup) — its
@@ -16,11 +16,18 @@ Tests target:
 
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi.testclient import TestClient
 
 from api.company_routes import _analyze_claim, _format_disclosure_context
+from api.main import app
+
+
+client = TestClient(app)
 
 
 # ---------------------------------------------------------------------------
@@ -293,3 +300,117 @@ class TestAnalyzerWithRealisticContext:
         assert verdict == "disputed"
         assert "SBTi" in flag
         assert "sciencebasedtargets.org" in evidence
+
+
+# ---------------------------------------------------------------------------
+# Phase 8 (2026-05-24) — Adapter sync endpoint.
+#
+# Token-gated, three valid sources. Run a real TestClient request against
+# /api/companies/admin/sync/{source} and assert the gate behaviour. The
+# adapter itself is mocked — these tests pin the ROUTE contract, not the
+# upstream HTTP calls each adapter makes (those are exercised by separate
+# adapter unit tests).
+# ---------------------------------------------------------------------------
+
+
+class TestAdapterSyncEndpoint:
+    def test_503_when_sync_token_env_unset(self, monkeypatch):
+        """Fail-safe default: if CORPORATE_SYNC_TOKEN is not set in the
+        environment, the endpoint is *off* (503). A fresh deploy can't
+        accidentally expose an unprotected ingestion trigger."""
+        monkeypatch.delenv("CORPORATE_SYNC_TOKEN", raising=False)
+        resp = client.post("/api/companies/admin/sync/sbti")
+        assert resp.status_code == 503
+        assert "CORPORATE_SYNC_TOKEN" in resp.json()["detail"]
+
+    def test_401_when_token_wrong(self, monkeypatch):
+        monkeypatch.setenv("CORPORATE_SYNC_TOKEN", "correct-secret")
+        resp = client.post(
+            "/api/companies/admin/sync/sbti",
+            headers={"x-corporate-sync-token": "wrong-secret"},
+        )
+        assert resp.status_code == 401
+
+    def test_401_when_token_header_missing(self, monkeypatch):
+        monkeypatch.setenv("CORPORATE_SYNC_TOKEN", "correct-secret")
+        resp = client.post("/api/companies/admin/sync/sbti")
+        assert resp.status_code == 401
+
+    def test_400_when_source_unknown(self, monkeypatch):
+        monkeypatch.setenv("CORPORATE_SYNC_TOKEN", "correct-secret")
+        resp = client.post(
+            "/api/companies/admin/sync/unknown_source",
+            headers={"x-corporate-sync-token": "correct-secret"},
+        )
+        assert resp.status_code == 400
+        # Lists the valid sources in the error so the operator can copy-paste.
+        body = resp.json()
+        for src in ("sbti", "cdp", "net_zero_tracker"):
+            assert src in str(body)
+
+    def test_200_when_token_valid_sbti(self, monkeypatch):
+        monkeypatch.setenv("CORPORATE_SYNC_TOKEN", "correct-secret")
+        mock_result = {"source": "sbti", "upserted": 42, "errors": []}
+        with patch(
+            "app.domains.content.corporate.sbti_adapter.SBTIAdapter"
+        ) as MockAdapter:
+            instance = MockAdapter.return_value
+            instance.sync = AsyncMock(return_value=mock_result)
+            resp = client.post(
+                "/api/companies/admin/sync/sbti",
+                headers={"x-corporate-sync-token": "correct-secret"},
+            )
+        assert resp.status_code == 200
+        assert resp.json() == mock_result
+
+    def test_200_when_token_valid_cdp(self, monkeypatch):
+        monkeypatch.setenv("CORPORATE_SYNC_TOKEN", "correct-secret")
+        mock_result = {"source": "cdp", "upserted": 100, "errors": []}
+        with patch(
+            "app.domains.content.corporate.cdp_adapter.CDPAdapter"
+        ) as MockAdapter:
+            instance = MockAdapter.return_value
+            instance.sync = AsyncMock(return_value=mock_result)
+            resp = client.post(
+                "/api/companies/admin/sync/cdp",
+                headers={"x-corporate-sync-token": "correct-secret"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["source"] == "cdp"
+
+    def test_200_when_token_valid_nzt(self, monkeypatch):
+        monkeypatch.setenv("CORPORATE_SYNC_TOKEN", "correct-secret")
+        mock_result = {"source": "net_zero_tracker", "upserted": 50, "errors": []}
+        with patch(
+            "app.domains.content.corporate.nzt_adapter.NetZeroTrackerAdapter"
+        ) as MockAdapter:
+            instance = MockAdapter.return_value
+            instance.sync = AsyncMock(return_value=mock_result)
+            resp = client.post(
+                "/api/companies/admin/sync/net_zero_tracker",
+                headers={"x-corporate-sync-token": "correct-secret"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["source"] == "net_zero_tracker"
+
+    def test_partial_failure_still_returns_200(self, monkeypatch):
+        """Adapter may report partial failures via the `errors` array.
+        The endpoint surfaces that as 200 + the errors list, not 500 —
+        the operator can decide whether to re-run."""
+        monkeypatch.setenv("CORPORATE_SYNC_TOKEN", "correct-secret")
+        mock_result = {
+            "source": "sbti",
+            "upserted": 30,
+            "errors": ["row 5: missing target year", "row 12: invalid country"],
+        }
+        with patch(
+            "app.domains.content.corporate.sbti_adapter.SBTIAdapter"
+        ) as MockAdapter:
+            instance = MockAdapter.return_value
+            instance.sync = AsyncMock(return_value=mock_result)
+            resp = client.post(
+                "/api/companies/admin/sync/sbti",
+                headers={"x-corporate-sync-token": "correct-secret"},
+            )
+        assert resp.status_code == 200
+        assert len(resp.json()["errors"]) == 2
