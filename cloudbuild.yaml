@@ -127,7 +127,9 @@ steps:
       - "--concurrency=80"
       - "--max-instances=5"
       - "--min-instances=0"
-      - "--timeout=300"
+      # Phase 8 (2026-05-24) — bump from 300s to 1800s so the corporate
+      # adapter sync (10k+ row SBTi import) doesn't get killed mid-flight.
+      - "--timeout=1800"
       - "--quiet"
     waitFor:
       - "push-api"
