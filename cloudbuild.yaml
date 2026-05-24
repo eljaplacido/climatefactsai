@@ -131,7 +131,10 @@ steps:
       - "--cpu=1"
       - "--concurrency=80"
       - "--max-instances=5"
-      - "--min-instances=0"
+      # Phase 8 (2026-05-24) — keep 1 instance warm so FastAPI
+      # BackgroundTasks (corporate adapter sync) actually complete instead
+      # of being killed when Cloud Run scales to zero. Negligible cost.
+      - "--min-instances=1"
       # Phase 8 (2026-05-24) — bump from 300s to 1800s so the corporate
       # adapter sync (10k+ row SBTi import) doesn't get killed mid-flight.
       - "--timeout=1800"
