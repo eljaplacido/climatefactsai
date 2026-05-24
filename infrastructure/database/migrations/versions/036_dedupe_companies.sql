@@ -18,8 +18,11 @@
 --
 -- Idempotent: re-running it after the first pass is a no-op because
 -- there will be no duplicates to find.
-
-BEGIN;
+--
+-- Note: NO explicit BEGIN/COMMIT — scripts/run_migrations.py already wraps
+-- each migration in its own transaction via the psycopg2 connection
+-- context manager. Adding nested BEGIN here would error
+-- "transaction already in progress".
 
 WITH ranked AS (
     SELECT
@@ -124,5 +127,3 @@ BEGIN
     RAISE NOTICE 'Migration 036 complete: % companies after dedupe', n_companies;
 END
 $$;
-
-COMMIT;
