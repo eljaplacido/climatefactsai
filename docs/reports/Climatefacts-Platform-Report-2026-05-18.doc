@@ -1,0 +1,836 @@
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name=ProgId content=Word.Document>
+<meta name=Generator content="Microsoft Word">
+<meta name=Originator content="Microsoft Word">
+<title>Climatefacts.ai &mdash; Platform Report (2026-05-18)</title>
+<!--[if gte mso 9]><xml>
+ <w:WordDocument>
+  <w:View>Print</w:View>
+  <w:Zoom>100</w:Zoom>
+  <w:DoNotOptimizeForBrowser/>
+ </w:WordDocument>
+</xml><![endif]-->
+<style>
+@page WordSection1 { size: 21cm 29.7cm; margin: 2.2cm 2.2cm 2.2cm 2.2cm; }
+div.WordSection1 { page: WordSection1; }
+body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color:#111; line-height: 1.42; }
+h1 { font-family: 'Calibri Light', Calibri, sans-serif; font-size: 26pt; color:#0E5C4A; margin:0 0 4pt 0; }
+h2 { font-family: 'Calibri Light', Calibri, sans-serif; font-size: 18pt; color:#0E5C4A; border-bottom: 1px solid #0E5C4A; padding-bottom:3pt; margin-top:22pt; }
+h3 { font-family: Calibri, sans-serif; font-size: 14pt; color:#1A6B57; margin-top:14pt; }
+h4 { font-family: Calibri, sans-serif; font-size: 12pt; color:#2A2A2A; margin-top:10pt; margin-bottom:4pt; }
+p  { margin: 4pt 0 6pt 0; }
+ul, ol { margin: 4pt 0 8pt 22pt; }
+li { margin-bottom: 2pt; }
+code, kbd { font-family: Consolas, 'Courier New', monospace; font-size: 10pt; background:#F2F2F2; padding:0 3px; }
+pre { font-family: Consolas, 'Courier New', monospace; font-size: 9.5pt; background:#F6F6F6; border:1px solid #DDD; padding:6pt 8pt; }
+table { border-collapse: collapse; width: 100%; margin: 6pt 0 12pt 0; font-size: 10pt; }
+th, td { border: 1px solid #B8B8B8; padding: 4pt 6pt; vertical-align: top; }
+th { background:#E8F1EE; color:#0E5C4A; text-align:left; }
+.callout { border-left: 4pt solid #0E5C4A; background:#F4FAF8; padding:8pt 12pt; margin: 8pt 0 12pt 0; }
+.subtle { color:#555; font-size: 10pt; }
+.tag { display:inline-block; background:#E8F1EE; color:#0E5C4A; padding:1px 6px; border-radius:8px; font-size:9pt; margin-right:4px; }
+.kpi { font-weight:bold; color:#0E5C4A; }
+hr { border:none; border-top: 1px dashed #BBB; margin: 14pt 0; }
+.cover { text-align:left; margin-top: 20pt; }
+.cover .title { font-size: 30pt; color:#0E5C4A; font-weight: 600; }
+.cover .subtitle { font-size: 14pt; color:#444; margin-top:6pt; }
+.cover .meta { margin-top: 18pt; font-size: 11pt; color:#333; }
+</style>
+</head>
+<body>
+<div class=WordSection1>
+
+<!-- ============================== COVER ============================== -->
+<div class=cover>
+<div class=title>Climatefacts.ai</div>
+<div class=subtitle>Platform Vision, Architecture, Agentic Capabilities, Data &amp; Semantic Layer, and Forward Roadmap</div>
+<div class=meta>
+<p><b>Report date:</b> 18 May 2026<br>
+<b>Codebase reference:</b> branch <code>main</code> &mdash; latest commit <code>edb0a23</code> &nbsp;|&nbsp; rebrand commit <code>1b96d3a</code><br>
+<b>Owner:</b> CISU Regen (<a href="https://cisuregen.com/">cisuregen.com</a>)<br>
+<b>Audience:</b> product leadership, engineering, partners, auditors</p>
+</div>
+</div>
+
+<hr>
+
+<!-- ============================== TABLE OF CONTENTS ============================== -->
+<h2>Contents</h2>
+<ol>
+<li>Executive Summary</li>
+<li>Solution Vision</li>
+<li>Feature Inventory (what the platform does today)</li>
+<li>System Architecture</li>
+<li>Agentic Features &amp; AI Pipeline</li>
+<li>Data &amp; Semantic Layer</li>
+<li>Truth-Machine Grading (current honest score)</li>
+<li>Development Roadmap &mdash; Now / What is Left</li>
+<li>Deployment &amp; Operations Status</li>
+<li>Known Gaps, Risks, and Recommendations</li>
+<li>Glossary &amp; Reference</li>
+</ol>
+
+<!-- ============================== 1. EXECUTIVE SUMMARY ============================== -->
+<h2>1. Executive Summary</h2>
+
+<p><b>Climatefacts.ai</b> (formerly <i>CliLens.AI</i>; rebrand finalised 2026-05-17, commit <code>1b96d3a</code>) is a production-grade,
+domain-driven, full-stack climate intelligence platform. It is owned and stewarded by <b>CISU Regen</b>,
+whose mission is to &ldquo;develop regenerative and resilient economies, organisations, and communities of the future.&rdquo;
+The platform&rsquo;s tagline &mdash; <i>&ldquo;Trust as a Service&rdquo;</i> &mdash; reflects its core promise: every claim ships with
+evidence trails, transparent prompts, calibrated confidence, and per-LLM-call provenance.</p>
+
+<p>The platform has progressed through five visible phases of work since early 2026:</p>
+<ul>
+  <li><b>Phase 1 &mdash;</b> Resolve known issues (mock-data purge, schema fixes, Vitest baseline). <i>Complete.</i></li>
+  <li><b>Phase 2 &mdash;</b> Architecture decision (Kafka removed; Celery + Redis adopted; 7-container compose). <i>Complete.</i></li>
+  <li><b>Phase 3 &mdash;</b> EU expansion and global RSS ingestion (215 feeds, 8 regions, 198 reference countries). <i>Complete.</i></li>
+  <li><b>Phase 4 &mdash;</b> &ldquo;Truth-machine&rdquo; uplift: provenance, calibration, multi-LLM verification, drift, public methodology, compliance docs. <i>Complete.</i></li>
+  <li><b>Phase 5 &mdash;</b> Cloud cut-over on GCP project <code>climatenews-495412</code> (region <code>europe-west4</code>). <i>In progress.</i></li>
+</ul>
+
+<p>The 2026-05-16 &rarr; 2026-05-17 push delivered <b>32 commits</b> that lifted the platform&rsquo;s self-reported
+&ldquo;truth-machine&rdquo; composite from <span class="kpi">2.2/5</span> (pre-audit) to a claimed <span class="kpi">~4.78/5</span>.
+A subsequent independent analytical audit (2026-05-18, see <code>docs/audits/2026-05-18-analytical-audit.md</code>)
+reduces the honestly-defensible composite to <span class="kpi">~3.6/5</span> with concrete, actionable gaps
+(see &sect;7 and &sect;10). Both numbers are surfaced in this report to keep the picture truthful for auditors.</p>
+
+<div class=callout>
+<b>Headline state (2026-05-18).</b> Climatefacts.ai is functionally a complete climate-news verification platform &mdash;
+ingestion, search, map, deep-search, URL analysis, agentic chat, dashboards, subscriptions, OAuth, methodology surfaces and
+admin tooling all operate end-to-end. Six external indicator adapters (Climate&nbsp;TRACE, OWID, Climate&nbsp;Action&nbsp;Tracker, UNFCCC&nbsp;NDC,
+IRENA, ND-GAIN) feed the sustainability score. Two pre-existing data-integrity gaps surfaced in the latest enrichment work
+(3,588 synthetic seed articles &mdash; now flagged via migration 025; and RSS ingestion currently persisting summaries instead of
+full article bodies) are the most material credibility risks before launch.
+</div>
+
+<!-- ============================== 2. VISION ============================== -->
+<h2>2. Solution Vision</h2>
+
+<h3>2.1 Mission statement</h3>
+<p>Climatefacts.ai is a global climate communication and truth-verification platform. Anyone, anywhere, in any language,
+can obtain fact-checked climate news from their region, accompanied by transparent credibility scoring, country-level
+sustainability context, and (in the planned final state) ready-to-share short-form video produced from the same evidence.</p>
+
+<h3>2.2 Strategic positioning</h3>
+<ul>
+  <li><b>From localised news service &rarr; global communication platform.</b> The original MVP framed itself as a
+      Finnish climate-news site; the current architecture, feeds and data adapters span 87+ ISO countries today and 198
+      country surfaces in the UI (with depth growing as ingestion runs land).</li>
+  <li><b>From article aggregator &rarr; trust infrastructure.</b> The platform deliberately operates as a
+      &ldquo;truth machine&rdquo;: every analytical output (claim verdict, sustainability score, chat answer, deep-search synthesis)
+      records its prompt, its model, its retrieval strategy, its source IDs, and its hallucination risk score in the
+      <code>claim_provenance</code> table, and exposes them at <code>/api/methodology/audit-trail/&hellip;</code> and on the public
+      <code>/methodology</code> page.</li>
+  <li><b>From single product &rarr; partner-ready platform.</b> The methodology surface, OAuth (Google + Microsoft),
+      subscription tiers, API keys and rate-limited endpoints are all built so the same data and models can be embedded
+      in partner workflows.</li>
+</ul>
+
+<h3>2.3 Audience and tiers</h3>
+<table>
+<tr><th>Audience</th><th>Use case</th><th>Subscription tier</th></tr>
+<tr><td>Citizens &amp; journalists</td><td>Read fact-checked climate news; check a URL; explore country views.</td><td>Freemium</td></tr>
+<tr><td>Researchers &amp; analysts</td><td>Deep-search, methodology drawer, sustainability comparisons, audit trails.</td><td>Basic / Professional</td></tr>
+<tr><td>Newsrooms &amp; NGOs</td><td>Bulk analysis, saved queries, scheduled re-runs, API keys.</td><td>Professional</td></tr>
+<tr><td>Governments &amp; partners</td><td>Embedded API, white-label methodology surface, custom calibration labels.</td><td>Enterprise</td></tr>
+</table>
+
+<h3>2.4 Long-horizon vision (preserved from <code>docs/VISION_GLOBAL_CLIMATE_PLATFORM.md</code>)</h3>
+<p>The roadmap envisions an end-to-end production pipeline where users can pick any country on a world map and instantly
+receive (i) localised, translated, fact-checked articles, (ii) interactive credibility &amp; sustainability dashboards, and
+(iii) auto-produced 15&ndash;60 s vertical videos for TikTok / Reels / YouTube Shorts. The current build delivers (i) and (ii)
+in depth; (iii) remains a planned future phase (Video Production Pipeline &mdash; see &sect;8).</p>
+
+<!-- ============================== 3. FEATURES ============================== -->
+<h2>3. Feature Inventory</h2>
+
+<p>The platform exposes <b>50+ REST endpoints</b> across 37 route modules in <code>api/</code> and the corresponding
+Next.js&nbsp;14 App-Router pages in <code>src/frontend/src/app/</code>. The matrix below reflects the audited functional state
+(see <code>docs/audits/2026-05-18-functional-audit.md</code> &mdash; every endpoint listed there resolves to a real DB query
+or live service, with graceful degradation when an external dependency is unavailable).</p>
+
+<h3>3.1 News &amp; content discovery</h3>
+<ul>
+  <li><b>198-country reference catalogue</b> &mdash; live coverage scales with ingestion; current local DB holds ~666 real
+      articles plus 3,588 synthetic seed rows (now flagged via migration <code>025_articles_is_synthetic.sql</code>).</li>
+  <li><b>RSS ingestion</b> across ~156 feeds in 87 distinct ISO alpha-2 countries (Europe&nbsp;70, NA&nbsp;20, Africa&nbsp;25,
+      LATAM&nbsp;20, Asia/Oceania&nbsp;29, ME&nbsp;17, Global/International&nbsp;19, Research/Industry&nbsp;15).</li>
+  <li><b>Document ingestion</b> &mdash; PDF / DOCX / TXT / MD / HTML upload via <code>POST /api/articles/ingest/upload</code>
+      and arbitrary URL ingestion via <code>POST /api/articles/ingest</code>.</li>
+  <li><b>Article detail</b> with claims tab, fact-check tab, evidence chain, similar articles, infographic generator,
+      open-graph image generator, re-analyse trigger, and grounded article-level Q&amp;A
+      (<code>POST /api/articles/{id}/ask</code>).</li>
+  <li><b>Search</b> &mdash; multilingual Postgres FTS (migration 018) with pgvector semantic fallback to OpenAI ada-002
+      embeddings; FTS used as a graceful fallback when embeddings are unavailable.</li>
+  <li><b>Categories, tags and themes</b> &mdash; populated automatically by an editorial-gate classifier; theme registry
+      surfaced at <code>GET /api/map/available-themes</code>.</li>
+</ul>
+
+<h3>3.2 Climate intelligence map</h3>
+<ul>
+  <li><b>Interactive world map</b> with country-stat, discussed-country-stat, topic-density and source-coverage layers.</li>
+  <li><b>Agentic map query</b> (<code>POST /api/map/query</code>) &mdash; natural-language or structured intent &rarr;
+      country highlight set.</li>
+  <li><b>Country drill-down</b> with article count, sustainability score, climate-risk overlay, temperature anomalies,
+      compare mode (multiple countries side-by-side), and timeline of coverage.</li>
+  <li><b>Filterable</b> by source, theme, reliability band, region; CTAs for &ldquo;Suggest a source&rdquo;
+      for under-covered countries.</li>
+</ul>
+
+<h3>3.3 Deep search (Perplexity-style)</h3>
+<ul>
+  <li><b>Synthesised answers</b> grounded in the internal corpus plus optional external retrieval via Perplexity;
+      see <code>api/deep_search_routes.py</code> (<code>/api/deep-search</code>, <code>/api/deep-search/compare</code>,
+      <code>/api/deep-search/weather-context</code>, <code>/api/deep-search/intelligence-brief</code>,
+      <code>/api/deep-search/weather-location</code>).</li>
+  <li><b>HallucinationDetector</b> grading every synthesis (entity + statistic + LLM-grounding triplet).</li>
+  <li><b>Provenance</b> recorded against <code>deep_search_session_id</code> in <code>claim_provenance</code> (migration 023).</li>
+</ul>
+
+<h3>3.4 URL analysis (truth-machine on a single article)</h3>
+<ul>
+  <li><b>Pipeline:</b> ingest URL &rarr; extract claims (DeepSeek primary, Anthropic secondary for cross-verification) &rarr;
+      multi-LLM agreement scoring &rarr; HallucinationDetector grounding &rarr; calibrated reliability score &rarr;
+      surfaced in UrlAnalysisDetail with the full methodology block.</li>
+  <li><b>SSRF + replay hardening</b> (commit <code>4b371cb</code>), URL job-token, redirect re-validation.</li>
+  <li><b>Re-analyse</b> path with structured failure reasons.</li>
+</ul>
+
+<h3>3.5 Green transition / sustainability</h3>
+<ul>
+  <li><b>Country green profile</b> &mdash; <code>/api/green-transition/country/{cc}</code> returns the sustainability score,
+      its components (renewable share, inverted per-capita emissions, CAT policy rating), the legacy coverage_index, the
+      score basis caveat, the indicators_used count and the confidence band.</li>
+  <li><b>Leaderboard</b> &mdash; <code>/api/green-transition/leaderboard</code>.</li>
+  <li><b>Side-by-side compare</b> across multiple countries &mdash; <code>/api/green-transition/compare</code>.</li>
+</ul>
+
+<h3>3.6 Methodology &amp; trust surface</h3>
+<ul>
+  <li><b>Public</b> <code>/methodology</code> page surfacing live prompt registry, formula, indicator catalogue,
+      calibration metrics, per-source hallucination rates, drift verdicts and compliance documents.</li>
+  <li><b>Backend</b> &mdash; <code>/api/methodology</code>, <code>/api/methodology/prompts</code>,
+      <code>/api/methodology/sustainability-formula</code>, <code>/api/methodology/indicators</code>,
+      <code>/api/methodology/calibration?signal=&hellip;</code>, <code>/api/methodology/hallucination-rates</code>,
+      <code>/api/methodology/audit-trail/{url-analysis|article|claim|deep-search}/{id}</code>.</li>
+  <li><b>Drift detection</b> &mdash; <code>/api/drift/source-mix</code>, <code>/api/drift/prompt-fingerprints</code>
+      (KL-divergence over Laplace-smoothed multinomials, thresholds 0.10 / 0.25 / 0.50 nats).</li>
+  <li><b>Calibration labels &amp; refit</b> &mdash; admin endpoints to feed reviewer ground truth and to refit the Platt
+      scalers on demand; nightly Celery beat job <code>nightly-calibration-refit</code> at 03:00 UTC.</li>
+</ul>
+
+<h3>3.7 Forecasts, similarity, infographics, OG images</h3>
+<ul>
+  <li><b>Forecasts</b> &mdash; multi-source comparison (<code>api/forecast_routes.py</code>).</li>
+  <li><b>Similarity</b> &mdash; pgvector + HNSW (migration 019) for related-article suggestions.</li>
+  <li><b>Infographics</b> &mdash; <code>api/infographic_routes.py</code> generates shareable visuals per article.</li>
+  <li><b>Open-graph images</b> &mdash; <code>api/og_image_routes.py</code> (the <code>&lt;meta property=og:image&gt;</code> hookup
+      in page heads is still pending; see &sect;10).</li>
+</ul>
+
+<h3>3.8 User accounts, billing &amp; admin</h3>
+<ul>
+  <li><b>JWT auth</b> with stateful refresh tokens via the <code>sessions</code> table (migration 017), replay detection,
+      revoke-on-password-change, <code>/api/auth/logout</code>.</li>
+  <li><b>OAuth</b> Google (production-verified end-to-end on 2026-05-17) + Microsoft.</li>
+  <li><b>Subscriptions</b> &mdash; Stripe webhooks, tier upgrades/downgrades, cancellation.</li>
+  <li><b>Bookmarks, saved queries, scheduled re-runs, user activity, API keys, exports, feed preferences.</b></li>
+  <li><b>Admin</b> &mdash; trigger workflow, recent workflows, analytics dashboards (pipeline, sources, countries).</li>
+</ul>
+
+<h3>3.9 Compliance &amp; security</h3>
+<ul>
+  <li>Privacy Policy, Terms of Service, GDPR DPIA, Data Processing Inventory and Compliance README under
+      <code>docs/compliance/</code> (commit <code>c8da977</code>).</li>
+  <li>SSRF protection on URL fetch (incl. redirect chain re-validation), DOMPurify on user HTML, JWT secret rotation
+      readiness, OAuth CSRF state, scheduler secret header, admin secret header.</li>
+  <li>Rate limiting (Redis-backed) and structured logging (structlog) plus distributed tracing through
+      OpenTelemetry &rarr; Jaeger.</li>
+</ul>
+
+<!-- ============================== 4. ARCHITECTURE ============================== -->
+<h2>4. System Architecture</h2>
+
+<h3>4.1 Topology</h3>
+<p>The default operational stack is <code>docker-compose.simple.yml</code> with seven services. The optional full stack
+(<code>docker-compose.yml</code>) adds Kafka, Grafana, Prometheus and a microservice constellation; the Kafka path was
+formally retired during Phase 2 (ADR: <code>docs/architecture/adr-kafka-to-redis-celery.md</code>) and is preserved only
+for legacy experimentation.</p>
+
+<pre>
++----------------+
+|   Frontend     |   Next.js 14 (App Router) + TypeScript + Tailwind + Leaflet + Recharts
+|  port 5300     |
++--------+-------+
+         |  HTTP/REST  (JWT bearer; OAuth handoff via /auth/callback)
+         v
++----------------+
+|   API Server   |   FastAPI 0.109 + Python 3.11
+|  port 5400     |   37 route modules under api/*.py
++--------+-------+
+         |
+   +-----+-----+----------+
+   v           v          v
++--------+ +-------+ +-------------+
+|Postgres| | Redis | | Celery      |   Worker + Beat
+| 5433   | | 5379  | | (async DAG) |   ingestion / processing / nightly refit
+| +pgvec | |       | +-----+-------+
++--------+ +-------+       |
+                           v
+                       +-------+
+                       |Jaeger |   OTLP traces (port 5686)
+                       +-------+
+</pre>
+
+<h3>4.2 Domain-driven backend layout</h3>
+<p>The backend follows a domain-driven design (DDD) layout under <code>src/backend/app/domains/</code> with three live
+domains and one placeholder:</p>
+<ul>
+  <li><b>content/</b> &mdash; article repository, RSS/document adapters, embedding service, category service,
+      forecast service, weather-context service, source profiles, indicator adapters
+      (<code>indicators/{base,climate_trace,owid,climate_action_tracker,unfccc_ndc,irena,nd_gain}.py</code>),
+      enrichment service, infographic generator.</li>
+  <li><b>intelligence/</b> &mdash; the &ldquo;truth-machine&rdquo; layer:
+      <code>llm_client.py</code>, <code>prompts.py</code> (versioned registry),
+      <code>claim_classifier.py</code>, <code>cynefin_router.py</code>, <code>carf_integration.py</code> (optional proxy),
+      <code>anthropic_claim_extractor.py</code>, <code>multi_llm_verifier.py</code>, <code>hallucination_detector.py</code>,
+      <code>weather_claim_validator.py</code>, <code>bayesian_credibility.py</code>, <code>weather_enriched_scoring.py</code>,
+      <code>sustainability_score.py</code>, <code>calibration.py</code> + <code>calibration_store.py</code>,
+      <code>provenance.py</code>, <code>drift_detection.py</code>, <code>hybrid_rag_service.py</code>,
+      <code>deep_search_service.py</code>, <code>conversation_engine.py</code>, <code>research_report_service.py</code>,
+      <code>cross_article_service.py</code>, <code>analysis_engine.py</code>, <code>graph_retriever.py</code>,
+      <code>evidence_retriever.py</code>, <code>semantic_query_service.py</code>, <code>transparency.py</code>.</li>
+  <li><b>trust/</b> &mdash; trust ratings, schemas, services and repository for credibility tier management.</li>
+  <li><b>identity/</b> &mdash; placeholder for future user-identity work (currently empty).</li>
+</ul>
+
+<h3>4.3 Frontend layout</h3>
+<p>Next.js 14 App Router under <code>src/frontend/src/app/</code> with 25+ routes:
+<code>/</code>, <code>/map</code>, <code>/search</code>, <code>/deep-search</code>, <code>/analyze</code>,
+<code>/research</code>, <code>/sources</code>, <code>/suggest-source</code>, <code>/feed</code>, <code>/forecasts</code>,
+<code>/methodology</code>, <code>/about</code>, <code>/articles/[id]</code>, <code>/articles/[id]/transparency</code>,
+<code>/login</code>, <code>/signup</code>, <code>/forgot-password</code>, <code>/auth/callback</code>,
+<code>/dashboard</code> (with history, saved, subscription, settings sub-routes),
+<code>/admin</code> (with pipeline + analytics sub-routes), <code>/submit</code>.</p>
+<p>Key components: <code>ArticleCard</code>, <code>ArticleDetailTabs</code>, <code>ArticleQA</code>,
+<code>AdvancedInsights</code>, <code>CredibilityGauge</code>, <code>ClaimCard</code>,
+<code>ClaimCategoryBreakdown</code>, <code>CountrySelector</code>, <code>DecomposedConfidenceChart</code>,
+<code>EvidenceChain</code>, <code>EvidenceTimeline</code>, <code>FactCheckBadge</code>, <code>FactCheckDetail</code>,
+<code>MethodologyDrawer</code> (consumes the new <code>retrieval_strategy</code> / <code>prompts_used</code> /
+<code>HallucinationBlock</code> fields), <code>UrlAnalysisForm</code>, <code>WeatherContext</code>,
+<code>ContextualAssistant</code> / <code>AgenticAssistant</code> (the global chat panel), <code>MapAgenticChat</code>,
+<code>MapCountryPanel</code>, <code>SimilarArticles</code>, <code>SourceProfileCard</code>.</p>
+
+<h3>4.4 Cross-cutting concerns</h3>
+<table>
+<tr><th>Concern</th><th>Mechanism</th><th>Module / File</th></tr>
+<tr><td>Authentication</td><td>JWT access + stateful refresh sessions</td><td><code>api/auth_routes.py</code>, <code>api/auth_utils.py</code>, migration 017</td></tr>
+<tr><td>OAuth</td><td>Google + Microsoft, CSRF state, email_verified gating</td><td><code>api/oauth_routes.py</code></td></tr>
+<tr><td>Rate limiting</td><td>Redis-backed sliding window</td><td><code>api/rate_limiter.py</code></td></tr>
+<tr><td>Tracing</td><td>OpenTelemetry &rarr; Jaeger (X-Request-ID propagation)</td><td><code>api/observability_middleware.py</code></td></tr>
+<tr><td>Logging</td><td>Structlog with JSON output</td><td>application-wide</td></tr>
+<tr><td>Background work</td><td>Celery worker + beat (ingestion, embedding, calibration refit, indicator sync)</td><td><code>src/backend/app/tasks/*</code>, <code>celery_app.py</code></td></tr>
+<tr><td>Email</td><td>Transactional service for auth flows</td><td><code>api/email_service.py</code></td></tr>
+<tr><td>Scheduler</td><td>HTTP-triggered <code>/api/scheduler/&hellip;</code> with X-Scheduler-Secret</td><td><code>api/scheduler_routes.py</code></td></tr>
+<tr><td>Compliance</td><td>Privacy / ToS / DPIA / DPI docs surfaced from <code>/methodology</code></td><td><code>docs/compliance/</code></td></tr>
+</table>
+
+<!-- ============================== 5. AGENTIC FEATURES ============================== -->
+<h2>5. Agentic Features &amp; AI Pipeline</h2>
+
+<h3>5.1 LLM stack</h3>
+<table>
+<tr><th>Role</th><th>Provider / model</th><th>Notes</th></tr>
+<tr><td>Primary LLM (claim extraction, chat synthesis, deep search)</td><td><b>DeepSeek</b> (<code>deepseek-reasoner</code> by default)</td><td>Pinned in <code>.env</code>; cheap-first preference per <code>article_enrichment_service.py</code>.</td></tr>
+<tr><td>Secondary verifier (multi-LLM cross-check)</td><td><b>Anthropic</b> (<code>ANTHROPIC_MODEL</code> env, default Claude)</td><td>Used by <code>anthropic_claim_extractor.py</code> + <code>multi_llm_verifier.py</code>.</td></tr>
+<tr><td>Embeddings</td><td><b>OpenAI</b> <code>text-embedding-ada-002</code></td><td>HNSW index on <code>article_embeddings</code> (migration 019); FTS fallback if absent.</td></tr>
+<tr><td>External web retrieval</td><td><b>Perplexity</b></td><td>Optional; deep-search degrades to internal-corpus-only without it.</td></tr>
+<tr><td>Optional structured reasoning</td><td><b>CARF</b> (HTTP proxy)</td><td><code>carf_integration.py</code>; falls back to <code>CynefinRouter</code> when unreachable.</td></tr>
+</table>
+
+<h3>5.2 The chat / contextual assistant</h3>
+<p>The global panel (<code>ContextualAssistant</code> &rarr; <code>AgenticAssistant</code>) is <i>context-aware</i> &mdash; the
+current view (route, article id, country, compare countries, analysis id, deep-search query) flows into
+<code>view_context</code> on every request. The panel dispatches to one of three backends depending on context:</p>
+<ul>
+  <li><code>POST /api/chat</code> &mdash; general Q&amp;A; HybridRAG (FTS + vector + knowledge graph) with Cynefin
+      classification, view-context hydration and a HallucinationDetector grounding pass.</li>
+  <li><code>POST /api/map/query</code> &mdash; map-mode; returns <code>country_highlights</code> for the map page state.</li>
+  <li><code>POST /api/articles/{id}/ask</code> &mdash; single-article grounded Q&amp;A on the active article only.</li>
+</ul>
+
+<div class=callout>
+<b>Honest current limit.</b> The chat is <i>conversational only</i>. There is no tool-call / function-call protocol that
+lets the LLM act on the platform &mdash; it cannot trigger URL analysis, apply filters, bookmark articles, open a country
+panel, navigate to <code>/methodology</code>, run a deep search or write calibration labels.
+Adding any of those requires a structured <code>actions: [{type, params, label}]</code> payload from the backend and
+client-side dispatchers in <code>AgenticAssistant</code>. See &sect;10, item 1 for the recommended action protocol.
+</div>
+
+<h3>5.3 Truth-machine pipeline (per URL analysis)</h3>
+<ol>
+  <li><b>Fetch</b> &mdash; SSRF-hardened HTTP fetch with redirect re-validation; URL job-token issued for the run.</li>
+  <li><b>Cynefin classification</b> &mdash; <code>cynefin_router.py</code> ports the projectcarfcynepic prompt; falls back
+      to keyword classifier when CARF is offline.</li>
+  <li><b>Claim extraction</b> &mdash; DeepSeek primary; Anthropic secondary (env-gated via
+      <code>CLILENS_MULTI_LLM_VERIFY=1</code>). Both use the same versioned prompt
+      (<code>claim_extraction</code> v1.0) from <code>intelligence/prompts.py</code> to isolate model divergence from
+      prompt divergence.</li>
+  <li><b>Multi-LLM cross-verification</b> &mdash; Jaccard token-set similarity &ge; 0.5 = corroborated; uncorroborated
+      claims have confidence multiplied by 0.7; <code>agreement_score</code> recorded.</li>
+  <li><b>Hallucination check</b> &mdash; entity overlap (0.30) + statistic accuracy (0.30) + LLM-grounding (0.40) composite
+      against the article body; flagged segments persisted in <code>claim_provenance.raw_metadata</code>.</li>
+  <li><b>Calibration</b> &mdash; raw <code>reliability_score</code>, <code>agreement_score</code> and (1&minus;<code>hallucination_score</code>)
+      are passed through Platt scalers fitted on labelled reviewer data;
+      <code>calibrated_reliability_score</code> surfaces on the detail view when a fit exists.</li>
+  <li><b>Provenance</b> &mdash; one row per LLM-producing step into <code>claim_provenance</code> with model + prompt name
+      + version + SHA-256 fingerprint + retrieval strategy + source_article_ids + raw_metadata; auditable through
+      <code>/api/methodology/audit-trail/url-analysis/{id}</code>.</li>
+</ol>
+
+<h3>5.4 Truth-machine pipeline (per deep-search session)</h3>
+<p>The same provenance + hallucination + Cynefin flow is applied to multi-source synthesis. Each session is keyed by
+<code>deep_search_session_id</code> (migration 023). Hallucination scoring runs against the union of titles/snippets
+returned by HybridRAG; <code>methodology.hallucination_check</code> is surfaced inline to the user.</p>
+
+<h3>5.5 Drift detection</h3>
+<p><code>intelligence/drift_detection.py</code> implements two KL-divergence pipelines:</p>
+<ul>
+  <li><b>Source-mix drift</b> &mdash; recent N days vs. baseline window; alerts when reliance on one publisher creeps up.</li>
+  <li><b>Prompt-fingerprint drift</b> &mdash; detects silent prompt edits by comparing recent vs. baseline fingerprint
+      distributions in <code>claim_provenance</code>.</li>
+</ul>
+<p>Thresholds (0.10 / 0.25 / 0.50 nats) are hard-coded constants today. The audit (&sect;7) flags this for per-deployment
+calibration.</p>
+
+<h3>5.6 Multi-agent coordination (development-time, not runtime)</h3>
+<p>The repository&rsquo;s <code>CLAUDE.md</code> declares the SPARC methodology and Claude-Flow swarm orchestration patterns
+(specification &rarr; pseudocode &rarr; architecture &rarr; refinement &rarr; completion) plus 54 named agent roles. This is a
+<b>development-workflow</b> convention, not a runtime feature of the deployed application. The runtime system is a
+deterministic FastAPI + Celery service; the multi-agent &ldquo;swarm&rdquo; is used by Claude Code / Claude-Flow during
+authoring of the code, not when Climatefacts.ai serves user requests.</p>
+
+<!-- ============================== 6. DATA & SEMANTIC LAYER ============================== -->
+<h2>6. Data &amp; Semantic Layer</h2>
+
+<h3>6.1 Relational schema (live)</h3>
+<p>The Postgres 16 + pgvector schema is incrementally evolved via SQL migrations under
+<code>infrastructure/database/migrations/versions/</code>. Migrations applied since 2026-05-16 (017&ndash;025):</p>
+<table>
+<tr><th>Migration</th><th>Purpose</th></tr>
+<tr><td><code>017_sessions_table.sql</code></td><td>Stateful refresh-token sessions (jti, user_id, revoked_at).</td></tr>
+<tr><td><code>018_multilingual_fts.sql</code></td><td>Language-aware tsvector via <code>clilens_lang_cfg(language_code)</code>; multilingual FTS.</td></tr>
+<tr><td><code>019_hnsw_article_embeddings.sql</code></td><td>HNSW partial index on <code>article_embeddings</code>; replaces IVFFlat.</td></tr>
+<tr><td><code>020_country_indicators.sql</code></td><td><code>indicator_definitions</code> + <code>country_indicators</code> + 9 seed indicators.</td></tr>
+<tr><td><code>021_claim_provenance.sql</code></td><td>Per-extraction audit table; checked at least one of claim/url_analysis/article id present.</td></tr>
+<tr><td><code>022_calibration_labels.sql</code></td><td><code>calibration_labels</code> + <code>calibration_fits</code> (Platt params).</td></tr>
+<tr><td><code>023_claim_provenance_more_signals.sql</code></td><td>Adds deep_search_session_id + cynefin_classification_id columns to claim_provenance.</td></tr>
+<tr><td><code>024_indicator_sync_logs.sql</code></td><td>Adapter-run audit log.</td></tr>
+<tr><td><code>025_articles_is_synthetic.sql</code></td><td>Flag column + backfill marking 3,588 demo seed articles.</td></tr>
+</table>
+
+<h3>6.2 Indicator catalogue &amp; adapter framework</h3>
+<p>Every external country-level indicator flows through a common adapter ABC (<code>indicators/base.py</code>:
+<code>IndicatorAdapter</code> &rarr; <code>IndicatorRecord</code> &rarr; <code>SyncResult</code>). Concrete adapters:</p>
+<table>
+<tr><th>Adapter</th><th>Source</th><th>Cadence</th><th>Indicators</th></tr>
+<tr><td><code>climate_trace.py</code></td><td>Climate TRACE</td><td>Daily</td><td>Sector emissions (tCO2e)</td></tr>
+<tr><td><code>owid.py</code></td><td>Our World in Data</td><td>Weekly</td><td>Per-capita emissions; renewable share of electricity</td></tr>
+<tr><td><code>climate_action_tracker.py</code></td><td>CAT</td><td>Weekly</td><td>5-band policy rating &rarr; 0&ndash;100 score</td></tr>
+<tr><td><code>unfccc_ndc.py</code></td><td>UNFCCC (via Climate Watch)</td><td>Weekly</td><td>NDC target year + reduction</td></tr>
+<tr><td><code>irena.py</code></td><td>IRENA (via OWID mirror)</td><td>Weekly</td><td>Renewable capacity MW per technology</td></tr>
+<tr><td><code>nd_gain.py</code></td><td>Notre Dame ND-GAIN</td><td>Monthly</td><td>Adaptation readiness index</td></tr>
+</table>
+<p>The adapter framework is idempotent (upsert by indicator_id + country_code + year); schema drift on upstream sources
+is debug-logged and skipped rather than crashing the run. Every sync writes one row into <code>indicator_sync_logs</code>
+for operator visibility.</p>
+
+<h3>6.3 Sustainability composite (methodology v1)</h3>
+<p>The formula in <code>intelligence/sustainability_score.py</code> is a weighted Bayesian-style composite over the
+indicators above:</p>
+<pre>
+sustainability_score = 0.40 * normalize_emissions_per_capita_inv(OWID)
+                     + 0.40 * renewable_share_electricity(OWID)
+                     + 0.20 * climate_action_tracker_band(CAT)
+</pre>
+<p>Re-weighting on missing components is transparent (denominator drops). Confidence bands widen with fewer indicators:
+&plusmn;25 (1), &plusmn;15 (2), &plusmn;10 (3+). Methodology version is pinned to every output
+(<code>sustainability_v1_2026_05</code>).</p>
+<div class=callout>
+<b>Known formula gap (analytical audit, 2026-05-18).</b> UNFCCC&nbsp;NDC, IRENA and ND-GAIN are fetched and stored but
+<i>not</i> currently consumed by the composite &mdash; only Climate TRACE, OWID and CAT enter the score. ND-GAIN adaptation
+readiness in particular biases the composite against vulnerable low-emitter nations. Recommended remediation:
+add a fourth component (ND-GAIN, weight 0.15) and rebalance to 0.35/0.35/0.15/0.15, bumping
+<code>METHODOLOGY_VERSION</code> to <code>sustainability_v2_2026_05</code>. See &sect;10, item 2.
+</div>
+
+<h3>6.4 Provenance schema</h3>
+<p>One row per LLM-producing step. Columns:
+<code>provenance_id</code>, <code>claim_id</code>, <code>url_analysis_id</code>, <code>article_id</code>,
+<code>deep_search_session_id</code>, <code>cynefin_classification_id</code>, <code>model</code>, <code>prompt_name</code>,
+<code>prompt_version</code>, <code>prompt_fingerprint</code> (SHA-256), <code>extraction_method</code>,
+<code>retrieval_strategy</code>, <code>source_article_ids</code> (JSONB array of UUIDs),
+<code>hallucination_score</code>, <code>raw_metadata</code> (JSONB), <code>created_at</code>.</p>
+<p>The CHECK constraint enforces &ldquo;at least one of (claim_id, url_analysis_id, article_id, deep_search_session_id,
+cynefin_classification_id) is non-null&rdquo; so sessions without persistent claim rows can still be audited.</p>
+
+<h3>6.5 Calibration data plane</h3>
+<ul>
+  <li><code>calibration_labels(label_id, url_analysis_id, label_truth, labeled_by, label_method, &hellip;)</code> &mdash;
+      reviewer ground-truth.</li>
+  <li><code>calibration_fits(signal, a, b, n_labels, brier, ece, fitted_at, &hellip;)</code> &mdash; per-signal Platt
+      parameters; one row per refit.</li>
+  <li>Signals: <code>reliability_score</code>, <code>agreement_score</code>, <code>hallucination_score</code> (inverted to
+      &ldquo;1 &minus; risk&rdquo; so higher = better).</li>
+  <li>Floor: <code>min_labels=5</code> for a fit; the analytical audit recommends raising to 50 with a
+      &ldquo;preview&rdquo; tag and a UI banner when active fit was learned on too few labels.</li>
+</ul>
+
+<h3>6.6 Retrieval (semantic layer)</h3>
+<ul>
+  <li><b>FTS (lexical):</b> language-aware via <code>clilens_lang_cfg(language_code)</code> mapping to <code>regconfig</code>.</li>
+  <li><b>Vector (semantic):</b> OpenAI ada-002 (1536-d) embeddings; HNSW partial index on <code>article_embeddings</code>.</li>
+  <li><b>Knowledge graph:</b> entities &amp; relationships extracted by <code>EntityExtractionService</code> alongside
+      embedding population in <code>src/backend/app/tasks/ingestion.py</code> and post-summary
+      <code>src/backend/app/tasks/processing.py</code>. Consumed by <code>graph_retriever.py</code> within HybridRAG.</li>
+  <li><b>HybridRAG composition:</b> <code>hybrid_rag_service.py</code> blends FTS + vector + KG with a Cynefin pre-routing
+      decision; deep search additionally folds in Perplexity external retrieval when keyed.</li>
+</ul>
+
+<h3>6.7 Versioned prompt registry</h3>
+<p><code>intelligence/prompts.py</code> exposes a <code>PromptTemplate</code> registry with version + fingerprint + rationale.
+Every LLM caller fetches via <code>get_prompt(name)</code> rather than inlining strings; the methodology block records
+<code>prompts_used.&lt;name&gt;</code> for the run and the public <code>/api/methodology/prompts</code> endpoint surfaces the
+full registry. This makes &ldquo;the prompt changed silently&rdquo; impossible without bumping the version.</p>
+
+<h3>6.8 Country / regional reference</h3>
+<ul>
+  <li><code>countries</code> table holds the 198-country reference catalogue with continent, lat/long, news_sources_available,
+      articles_count.</li>
+  <li>Regions: europe, north_america, africa, latin_america, asia, middle_east, global, research (exposed via
+      <code>/api/map/regions</code>).</li>
+  <li>Ingestion country list is governed by the <code>INGESTION_COUNTRIES</code> env var on the API service; the cloud
+      default (23 EU-leaning codes) was the root cause of the &ldquo;cloud version has only BG/RO/SI/ES&rdquo; symptom diagnosed
+      on 2026-05-17. The recommended global 80-country override is documented in <code>.env.example</code>.</li>
+</ul>
+
+<h3>6.9 Synthetic-data hygiene</h3>
+<p>Two data-integrity issues surfaced during the 2026-05-18 enrichment session and remain only partially mitigated:</p>
+<ol>
+  <li><b>3,588 synthetic seed articles</b> (1,008 from <code>populate_demo_articles.py</code> with example.com URLs;
+      2,580 from <code>seed_full_global.py</code> with clilens.ai URLs). Flagged via migration 025 and excluded from
+      <code>batch_enrich</code> and the backfill script &mdash; but <b>still visible to users on the map, search and
+      compare surfaces</b>. Frontend filtering on <code>is_synthetic = FALSE</code> is the recommended next step.</li>
+  <li><b>RSS adapter stores feed summaries, not article bodies.</b> The Celery RSS pipeline (<code>rss_adapter.py</code>:
+      <code>_parse_feed</code>) reads <code>feed.summary</code>, truncates to 500 chars, and writes to
+      <code>extracted_text</code>. The full-page extractor exists at
+      <code>src/backend/services/ingestion_service/src/scraper.py:_fetch_article_content</code> but is only wired into an
+      unused Kafka consumer. Consequence: every downstream consumer of <code>extracted_text</code> (claim extraction,
+      hallucination check, enrichment, embeddings, search) operates on title-plus-summary stubs. The truth-machine work
+      is honest about <i>what</i> it does &mdash; but its inputs are smaller than expected. Estimated fix: 3&ndash;4 hours
+      (add <code>trafilatura</code>; fetch+extract on RSS ingest with timeout + fallback).</li>
+</ol>
+
+<!-- ============================== 7. TRUTH-MACHINE GRADE ============================== -->
+<h2>7. Truth-Machine Grading (current honest score)</h2>
+
+<p>Two grade snapshots are recorded against the same composite framework. The self-reported grade after the 32-commit
+truth-machine session is <span class="kpi">~4.78/5</span>. The 2026-05-18 analytical audit re-assesses to
+<span class="kpi">~3.6/5</span> by reading the source and cross-checking against the claimed evidence.
+Both are published here verbatim so partners and auditors can make their own call.</p>
+
+<table>
+<tr><th>Axis</th><th>Self-claim (2026-05-17)</th><th>Audited (2026-05-18)</th><th>Top gap</th></tr>
+<tr><td>Reliability</td><td>4.4&ndash;4.8</td><td>3.5</td><td>8-publisher venue whitelist is the entire source-tiering apparatus</td></tr>
+<tr><td>Transparency</td><td>4.7&ndash;4.8</td><td>4.5</td><td>Audit trail returns UUIDs without joined titles/URLs</td></tr>
+<tr><td>Traceability</td><td>4.6&ndash;4.8</td><td>4.3</td><td><code>source_article_ids</code> array not denormalised in endpoint response</td></tr>
+<tr><td>Calibration</td><td>4.6&ndash;4.7</td><td>2.8</td><td>Likely &lt;50 labels in production; <code>min_labels=5</code> too low for stable Platt</td></tr>
+<tr><td>Hallucination</td><td>4.8</td><td>3.2</td><td>Entity check is set-intersect; statistic check rejects multi-source synthesis</td></tr>
+<tr><td>Drift detection</td><td>4.8</td><td>4.0</td><td>Thresholds hard-coded; 30-day baseline window too short for a new platform</td></tr>
+<tr><td>Sustainability</td><td>4.8</td><td>3.3</td><td>ND-GAIN unused; weights diverge from docs; mixed-year inputs unflagged</td></tr>
+<tr><td>Multi-LLM</td><td>4.8</td><td>3.5</td><td>Shared prompt collapses model independence; shared-bias hallucinations score 1.0</td></tr>
+<tr><td>Claim extraction</td><td>4.7</td><td>3.5</td><td>Overlapping type/category taxonomy; no hedge handling; paraphrase tolerated</td></tr>
+<tr><td><b>Composite</b></td><td><b>4.78</b></td><td><b>3.6</b></td><td>~1.18 points of optimism between claim and code</td></tr>
+</table>
+
+<p>The five-step audit&rsquo;s remediations to honestly hit 4.8:</p>
+<ol>
+  <li>Wire <b>ND-GAIN</b> into the sustainability composite (rebalance to 0.35/0.35/0.15/0.15; bump methodology version).</li>
+  <li>Set <b>min_labels_for_inference = 50</b> in <code>calibration_store.py</code>; tag preview fits; expose
+      <code>n_labels</code> and <code>is_preview</code> at <code>/api/methodology/calibration</code>.</li>
+  <li>Replace the 8-publisher venue whitelist with a <b>DB-backed credibility-tier table</b> seeded with Scimago JR
+      quartiles and retracted-paper flags.</li>
+  <li>Add a <b><code>numeric_grounded</code> cross-check</b> in <code>multi_llm_verifier.py</code> against
+      <code>country_indicators</code>; halve confidence when corroborated but not numerically grounded.</li>
+  <li>Compute <b><code>year_spread</code></b> across contributing components in
+      <code>sustainability_score.py</code>; widen <code>confidence_band</code> by <code>2 * year_spread</code>.</li>
+</ol>
+
+<!-- ============================== 8. ROADMAP ============================== -->
+<h2>8. Development Roadmap &mdash; Now / What Is Left</h2>
+
+<h3>8.1 What is &ldquo;now&rdquo; (the past two sessions)</h3>
+<ul>
+  <li><b>32 commits</b> from <code>f476142</code> to <code>b5addda</code> (2026-05-16 &rarr; 2026-05-17) covering Sprint 1
+      P0 security fixes (OAuth state CSRF, SSRF, DOMPurify, URL job-token), stateful sessions (S2), multilingual FTS,
+      HNSW vector index, indicator framework + 3 adapters, sustainability formula, prompt registry, methodology surface,
+      claim provenance, multi-LLM verification, calibration math + endpoints, KL drift, hallucination on URL+chat+deep-search,
+      red-team CI gate, frontend methodology drawer, public /methodology page, nightly calibration refit.</li>
+  <li><b>3 follow-up commits</b> (post-audit) shipped the final adapter trio (UNFCCC NDC + IRENA + ND-GAIN) plus the
+      <code>DEPLOYMENT_LAUNCH_CHECKLIST.md</code>.</li>
+  <li><b>Backend test suite: 480 passed / 0 failed / 1 skipped</b> at end of session; 740/12 in the prior full sweep
+      (12 needed live LLM keys or were pre-existing brittle tests).</li>
+  <li><b>Cloud cut-over commit (<code>edb0a23</code>)</b>: Cloud Build config for frontend image, <code>.gcloudignore</code>,
+      PyJWT pin alignment.</li>
+  <li><b>Rebrand commit (<code>1b96d3a</code>)</b>: 36 files updated from &ldquo;CliLens&rdquo; to &ldquo;Climatefacts.ai&rdquo; in
+      user-facing copy; internal identifiers preserved (env-var names, Postgres functions, localStorage token key, Tailwind
+      classes) to avoid invalidating live sessions and data.</li>
+  <li><b>Enrichment session (2026-05-18)</b>: 174 real articles enriched via DeepSeek; 293 ChatML training rows captured
+      to <code>data/training/enrichment_dataset.jsonl</code>; <code>scripts/backfill_enrichment.py</code> added; synthetic-article
+      flag migration shipped.</li>
+</ul>
+
+<h3>8.2 Phase 1 &mdash; Sprint 1 P0 security (close-out work remaining)</h3>
+<ul>
+  <li><b>S5 &mdash; httpOnly cookie migration.</b> ~20-file frontend refactor: drop <code>localStorage.getItem("clilens_token")</code>
+      across the app, switch axios to <code>withCredentials</code>, set backend <code>Set-Cookie</code> on login/oauth/refresh,
+      add CSRF double-submit middleware. Estimated 4&ndash;6 hours; biggest single blast radius in the open list.</li>
+</ul>
+
+<h3>8.3 Phase 2 &mdash; Data layer foundation (mostly done)</h3>
+<ul>
+  <li><b>D1 &mdash; migration directory schism.</b> Three incompatible <code>versions/</code> trees
+      (<code>migrations/versions/</code>, <code>infrastructure/database/migrations/versions/</code>,
+      <code>database/migrations/</code>). Consolidate via a one-off PR with a fresh-DB integration test. ~3&ndash;4 hours.</li>
+  <li><b>D2 &mdash; <code>url_analyses.user_id</code> VARCHAR(255) &rarr; UUID FK</b> with backfill. Destructive ALTER; needs
+      data migration. ~2&ndash;3 hours.</li>
+  <li><b>P2 &mdash; <code>/api/map/compare</code></b> 4-aggregate-per-country &rarr; single CTE + <code>asyncio.gather</code>.
+      ~6&ndash;8&times; faster.</li>
+</ul>
+
+<h3>8.4 Phase 3 &mdash; Real scoring (live + remediations)</h3>
+<ul>
+  <li><b>Wave 6 done:</b> 6 adapters live (Climate TRACE, OWID, CAT, UNFCCC NDC, IRENA, ND-GAIN).</li>
+  <li><b>Remediation:</b> wire UNFCCC NDC + IRENA + ND-GAIN into the sustainability composite (none consumed today).</li>
+  <li><b>Wave 7 / future:</b> additional adapters per <code>docs/audits/2026-05-18-data-sources-audit.md</code>:</li>
+  <ul>
+    <li><b>Sprint A &mdash; Coverage</b> (1 week). RSS packs for Pacific&nbsp;SIDS, francophone Africa, Caribbean, Central
+        America, Central Asia. Adds ~38 countries; closes the single biggest credibility gap (climate vulnerability
+        concentrates in these regions).</li>
+    <li><b>Sprint B &mdash; Disclosure layer</b> (2 weeks). CDP + SBTi + Net Zero Tracker adapters; new
+        <code>company_climate_disclosures</code> schema. Unlocks the Sustainability and Business dimensions.</li>
+    <li><b>Sprint C &mdash; Sentiment + research depth</b> (1.5 weeks). Google Trends (<code>pytrends</code>) +
+        arXiv/EarthArXiv OAI-PMH + CrossRef + Semantic Scholar. Unlocks Consumer Trends; deepens Research dimension.</li>
+    <li><b>Tourism layer</b> deferred until Sprint A lands (UNWTO, Eurostat <code>tour_*</code>, NOAA Coral Reef Watch,
+        Vanat Snow &amp; Mountain).</li>
+  </ul>
+</ul>
+
+<h3>8.5 Phase 4 &mdash; Provenance + methodology versioning (live + remediations)</h3>
+<ul>
+  <li><b>Audit-trail endpoint</b> should join titles/URLs onto <code>source_article_ids</code> so external auditors do not
+      see opaque UUIDs.</li>
+  <li><b>&ldquo;What fraction of analyses have a provenance row?&rdquo;</b> metric is missing &mdash; a silent collapse of writes is
+      currently invisible. Add a SQL-backed counter and surface on <code>/api/methodology</code>.</li>
+</ul>
+
+<h3>8.6 Phase 5 &mdash; Calibration (live + remediations)</h3>
+<ul>
+  <li><b>Wave 8 pending:</b> admin UI for reviewers to enter calibration labels (currently API-only).</li>
+  <li>Raise <code>min_labels=5</code> &rarr; 50; tag preview fits; surface <code>n_labels</code> + <code>is_preview</code> on
+      <code>/api/methodology/calibration</code>; refuse to apply preview fits in
+      <code>apply_latest_to_reliability</code>.</li>
+  <li><b>Ground-truth labelling effort</b> &mdash; not a dev task; reviewers need to populate
+      <code>calibration_labels</code>. Nightly Celery refit picks them up automatically.</li>
+</ul>
+
+<h3>8.7 Phase 6 &mdash; Robustness &amp; continuous monitoring (live + remediations)</h3>
+<ul>
+  <li><b>Per-deployment threshold calibration</b> for KL drift (currently hard-coded constants).</li>
+  <li><b>Hallucination detector hardening</b>: entity check via NER (not regex on capitalised n-grams);
+      statistic check on numeric synthesis across the union of sources, not single-source membership.</li>
+  <li><b>Numeric grounding</b> in <code>multi_llm_verifier.py</code> against <code>country_indicators</code> for
+      emissions/renewable claims (closes the &ldquo;both LLMs agree on a hallucinated number&rdquo; failure mode).</li>
+</ul>
+
+<h3>8.8 Phase 7 &mdash; Agentic chat tool-use (proposed; not started)</h3>
+<p>The single largest user-experience uplift identified in the UI/UX audit. Backend exposes an optional
+<code>actions: [{type, params, label}]</code> payload on <code>/api/chat</code>; client renders clickable chips above
+the message input. Minimum viable action types:</p>
+<ul>
+  <li><code>navigate</code>, <code>analyze_url</code>, <code>apply_search_filters</code>, <code>apply_map_filters</code>,
+      <code>open_methodology_section</code>, <code>open_country</code>, <code>start_deep_search</code>,
+      <code>bookmark_article</code>, <code>start_calibration_label</code> (admin).</li>
+</ul>
+
+<h3>8.9 Phase 8 &mdash; Production &amp; scale</h3>
+<ul>
+  <li><b>Cloud cut-over</b> on GCP project <code>climatenews-495412</code>, region <code>europe-west4</code>: in progress.
+      Cloud Build config for the frontend image landed in commit <code>edb0a23</code>; backend Cloud Run service
+      <code>climatenews-api</code> is live; frontend Cloud Run service <code>climatenews-frontend</code> at
+      <code>https://climatenews-frontend-srzwxdzmaq-ez.a.run.app/</code>.</li>
+  <li><b>Override <code>INGESTION_COUNTRIES</code></b> on Cloud Run API service with the 80-country global list
+      (current default is 23 EU-leaning codes; root cause of the &ldquo;cloud only sees BG/RO/SI/ES&rdquo; symptom).</li>
+  <li>Cloud Scheduler triggers for the 6 indicator adapters + 3 calibration refits (HTTP POST with
+      <code>X-Scheduler-Secret</code> / <code>X-Admin-Secret</code>).</li>
+  <li>HTTPS + CDN + monitoring (Grafana / Prometheus / Jaeger).</li>
+  <li>Mobile app (React Native or PWA) &mdash; deferred.</li>
+  <li>Real-time alerting for breaking climate events &mdash; deferred.</li>
+</ul>
+
+<h3>8.10 Phase 9 &mdash; Long-horizon (Video Production Pipeline)</h3>
+<p>Per the original vision document, an end-to-end &ldquo;article &rarr; vertical video &rarr; social post&rdquo; pipeline
+remains the longest-horizon target:</p>
+<ul>
+  <li>Script generation (Claude / DeepSeek) &rarr; TTS (ElevenLabs / Azure) &rarr; B-roll search (Pexels API) &rarr;
+      fact-check graphic generation &rarr; FFmpeg / Remotion render (1080&times;1920, 9:16, 15&ndash;60s).</li>
+  <li>Social media OAuth + publish API integrations: TikTok, Instagram Reels (Graph API), YouTube Shorts (Data API v3),
+      LinkedIn, X.</li>
+  <li>Scheduled auto-publish + analytics ingestion (views, likes, shares).</li>
+</ul>
+<p>Database schema sketches for <code>videos</code>, <code>social_media_posts</code>, <code>user_social_accounts</code>
+already exist in the vision doc but are not yet provisioned.</p>
+
+<!-- ============================== 9. DEPLOYMENT ============================== -->
+<h2>9. Deployment &amp; Operations Status</h2>
+
+<h3>9.1 Environments</h3>
+<table>
+<tr><th>Environment</th><th>Status</th><th>URL / location</th></tr>
+<tr><td>Local development</td><td>Operational</td><td><code>docker-compose -f docker-compose.simple.yml up -d</code>; API <code>localhost:5400</code>, Frontend <code>localhost:5300</code></td></tr>
+<tr><td>Cloud (GCP)</td><td>In rollout</td><td>Project <code>climatenews-495412</code>, region <code>europe-west4</code></td></tr>
+<tr><td>Frontend (Cloud Run)</td><td>Live</td><td><code>https://climatenews-frontend-srzwxdzmaq-ez.a.run.app/</code></td></tr>
+<tr><td>API (Cloud Run)</td><td>Live (limited <code>INGESTION_COUNTRIES</code>)</td><td><code>climatenews-api</code> service</td></tr>
+</table>
+
+<h3>9.2 Required environment variables (launch)</h3>
+<ul>
+  <li><b>Core:</b> <code>JWT_SECRET_KEY</code> (&ge;32 chars), <code>DATABASE_URL</code>, <code>REDIS_URL</code>.</li>
+  <li><b>OAuth:</b> <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code>, <code>OAUTH_STATE_SECRET</code>;
+      optional <code>MICROSOFT_CLIENT_ID</code>, <code>MICROSOFT_CLIENT_SECRET</code>, <code>MICROSOFT_TENANT_ID</code>.</li>
+  <li><b>Scheduler/admin:</b> <code>SCHEDULER_SECRET</code>, <code>CLILENS_CALIBRATION_ADMIN_SECRET</code>.</li>
+  <li><b>LLM providers:</b> <code>DEEPSEEK_API_KEY</code>, <code>ANTHROPIC_API_KEY</code>, <code>ANTHROPIC_MODEL</code>,
+      <code>OPENAI_API_KEY</code>; optional <code>PERPLEXITY_API_KEY</code>, <code>CARF_API_URL</code> + <code>CARF_API_KEY</code>.</li>
+  <li><b>Ingestion:</b> <code>INGESTION_COUNTRIES</code> &mdash; <i>override with the 80-country global list on Cloud Run</i>.</li>
+  <li><b>Enrichment:</b> <code>CLILENS_ENRICHMENT_PROVIDER</code> (deepseek|openai|anthropic|unset for cascade),
+      <code>CLILENS_TRAINING_DATASET_PATH</code>.</li>
+  <li><b>Frontend:</b> <code>NEXT_PUBLIC_API_URL</code>, <code>NEXT_PUBLIC_GOOGLE_CLIENT_ID</code>,
+      <code>NEXT_PUBLIC_MICROSOFT_CLIENT_ID</code>.</li>
+</ul>
+
+<h3>9.3 Cloud Scheduler triggers (operator task)</h3>
+<table>
+<tr><th>Endpoint</th><th>Cadence</th><th>Header</th></tr>
+<tr><td><code>POST /api/scheduler/indicators/sync?source=climate_trace</code></td><td>daily 04:00 UTC</td><td><code>X-Scheduler-Secret</code></td></tr>
+<tr><td><code>POST /api/scheduler/indicators/sync?source=owid</code></td><td>weekly Mon 04:30 UTC</td><td><code>X-Scheduler-Secret</code></td></tr>
+<tr><td><code>POST /api/scheduler/indicators/sync?source=cat</code></td><td>weekly Wed 05:00 UTC</td><td><code>X-Scheduler-Secret</code></td></tr>
+<tr><td><code>POST /api/scheduler/indicators/sync?source=unfccc_ndc</code></td><td>weekly Tue 05:00 UTC</td><td><code>X-Scheduler-Secret</code></td></tr>
+<tr><td><code>POST /api/scheduler/indicators/sync?source=irena</code></td><td>weekly Thu 05:00 UTC</td><td><code>X-Scheduler-Secret</code></td></tr>
+<tr><td><code>POST /api/scheduler/indicators/sync?source=nd_gain</code></td><td>monthly 1st 05:30 UTC</td><td><code>X-Scheduler-Secret</code></td></tr>
+<tr><td>Celery beat <code>nightly-calibration-refit</code></td><td>03:00 UTC</td><td>n/a (in-process)</td></tr>
+</table>
+
+<h3>9.4 Smoke tests (public)</h3>
+<ul>
+  <li><code>GET /api/methodology</code>, <code>/prompts</code>, <code>/sustainability-formula</code>,
+      <code>/indicators</code>, <code>/calibration?signal=reliability_score</code>, <code>/hallucination-rates</code>.</li>
+  <li><code>GET /api/drift/source-mix</code>, <code>/api/drift/prompt-fingerprints</code>.</li>
+  <li><code>GET /api/auth/oauth/state</code> (32-hex CSRF token), <code>/api/auth/oauth/providers</code>.</li>
+  <li>Frontend: <code>/</code>, <code>/methodology</code>, <code>/about</code>, <code>/login</code>.</li>
+</ul>
+
+<!-- ============================== 10. KNOWN GAPS ============================== -->
+<h2>10. Known Gaps, Risks, and Recommendations</h2>
+
+<h3>10.1 Functional gaps (from <code>docs/audits/2026-05-18-functional-audit.md</code>)</h3>
+<table>
+<tr><th>Sev</th><th>Issue</th><th>Where</th></tr>
+<tr><td>P1</td><td><code>/submit</code> hard-codes <code>http://localhost:5400</code></td><td><code>src/frontend/src/app/submit/page.tsx:20</code></td></tr>
+<tr><td>P2</td><td><code>/api/translate</code> silently returns 503 when both ANTHROPIC and DEEPSEEK keys are absent</td><td><code>api/main.py:436</code></td></tr>
+<tr><td>P2</td><td><code>/api/discovery/discover-news</code> hard-400 when PERPLEXITY_API_KEY unset; anon-IP rate-limit bypasses tier accounting</td><td><code>api/discovery_routes.py:168&ndash;184</code></td></tr>
+<tr><td>P2</td><td>methodology/hallucination-rates joins <code>articles.id</code> (schema uses <code>article_id</code>) &rarr; everything buckets as &ldquo;unknown&rdquo;</td><td><code>api/methodology_routes.py:655</code></td></tr>
+<tr><td>P2</td><td><code>/api/methodology/indicators</code> silently returns empty when indicator migrations not applied</td><td><code>api/methodology_routes.py:206&ndash;243</code></td></tr>
+<tr><td>P2</td><td>legacy <code>overall_green_score</code> is article-count proxy; mitigated by caveat but UI must surface it</td><td><code>api/green_transition_routes.py:117&ndash;147</code></td></tr>
+<tr><td>P2</td><td><code>/api/scheduler/*</code> returns <code>status="skipped"</code> on ImportError; Cloud Scheduler reports 200 OK on dead pipeline</td><td><code>api/scheduler_routes.py:72&ndash;172</code></td></tr>
+<tr><td>P2</td><td><code>/api/research/analyze</code> returns 500 on any failure without distinguishing PDF/DOI/LLM error</td><td><code>api/research_routes.py:31&ndash;66</code></td></tr>
+<tr><td>P2</td><td>calibration refit returns <code>insufficient_data</code> but no UI to enter labels from <code>/methodology</code></td><td><code>api/methodology_routes.py:450&ndash;470</code></td></tr>
+</table>
+
+<h3>10.2 UI/UX gaps (from <code>docs/audits/2026-05-18-uiux-audit.md</code>)</h3>
+<ul>
+  <li><b>P1 &mdash;</b> Chat is read-only / answer-only; cannot drive the platform. Action protocol required (see &sect;8.8).</li>
+  <li><b>P1 &mdash;</b> <code>/feed</code> hard-codes 33 countries vs the platform&rsquo;s advertised 198-country coverage.</li>
+  <li><b>P1 &mdash;</b> <code>/search</code> falls back to plain text spinner while <code>/</code> uses skeletons &mdash;
+      inconsistent across the two most-used pages.</li>
+  <li><b>P1 &mdash;</b> Dark-mode tokens on the home page produce light-on-light when the theme toggles.</li>
+  <li><b>P2 &mdash;</b> Accessibility: icon-only buttons (theme toggle, remove-bookmark, view-mode) lack
+      <code>aria-label</code>s.</li>
+  <li><b>P2 &mdash;</b> Article detail page has no <code>&lt;main&gt;</code> landmark.</li>
+  <li><b>P3 &mdash;</b> Nav hides on <code>/articles/*</code>, <code>/dashboard/*</code>, etc.; standalone pages have no
+      navigation back.</li>
+</ul>
+
+<h3>10.3 Analytical gaps (from <code>docs/audits/2026-05-18-analytical-audit.md</code>)</h3>
+<ul>
+  <li>ND-GAIN fetched but unused in the sustainability composite.</li>
+  <li>Calibration <code>min_labels=5</code> too low for stable Platt scaling.</li>
+  <li>Venue whitelist of 8 publishers is the entire source-tiering apparatus.</li>
+  <li>Multi-LLM shared-prompt design collapses model independence; numeric grounding against indicators not enforced.</li>
+  <li>Mixed-year indicator inputs blended into one score without confidence-band widening.</li>
+  <li>Drift thresholds hard-coded; 30-day baseline too short for a new platform.</li>
+  <li>Hallucination entity check is regex on capitalised n-grams (over-flags numeric synthesis, under-flags entity
+      hallucination).</li>
+</ul>
+
+<h3>10.4 Data-integrity gaps</h3>
+<ul>
+  <li>3,588 synthetic seed articles still surfaced on the map, search and compare frontends (migration 025 added the
+      flag; frontend filter is the pending follow-up).</li>
+  <li>RSS adapter persists summaries rather than article bodies &mdash; the entire downstream chain operates on stubs.</li>
+</ul>
+
+<h3>10.5 Recommended next-sprint shape</h3>
+<ol>
+  <li><b>Hardening + data integrity (1 week).</b> Ship RSS full-body extraction (trafilatura), filter synthetic flag on
+      frontends, fix the <code>articles.id</code> &harr; <code>article_id</code> bug in hallucination-rates, harden
+      <code>/api/scheduler/*</code> failure modes.</li>
+  <li><b>Sustainability v2 + calibration honesty (3&ndash;4 days).</b> ND-GAIN into composite; year_spread band-widening;
+      min_labels=50 with preview tag; n_labels surfaced on <code>/api/methodology/calibration</code>.</li>
+  <li><b>Sprint A &mdash; coverage RSS packs (1 week).</b> Pacific SIDS, francophone Africa, Caribbean, Central America,
+      Central Asia. Adds ~38 countries.</li>
+  <li><b>Agentic chat actions (1 week).</b> Backend <code>actions</code> payload + client dispatchers for the 8 top
+      intent types from &sect;8.8.</li>
+  <li><b>S5 httpOnly cookie migration (4&ndash;6 hours when ready to commit a focused chunk).</b></li>
+</ol>
+
+<!-- ============================== 11. GLOSSARY ============================== -->
+<h2>11. Glossary &amp; Reference</h2>
+<table>
+<tr><th>Term</th><th>Meaning</th></tr>
+<tr><td>CARF</td><td>Causal Analytical Reasoning Framework &mdash; optional external HTTP reasoning engine; fallback is the Cynefin keyword classifier.</td></tr>
+<tr><td>Cynefin</td><td>Sense-making framework used to route claims between simple / complicated / complex / chaotic reasoning paths.</td></tr>
+<tr><td>HybridRAG</td><td>Composed retrieval over FTS + pgvector + knowledge graph, pre-routed by a Cynefin classifier.</td></tr>
+<tr><td>HNSW</td><td>Hierarchical Navigable Small World &mdash; the pgvector ANN index used for embedding similarity.</td></tr>
+<tr><td>Platt scaling</td><td>Two-parameter logistic regression that maps raw model confidences to calibrated probabilities.</td></tr>
+<tr><td>Brier / ECE</td><td>Brier score and Expected Calibration Error &mdash; the two scalar metrics surfaced for each calibration fit.</td></tr>
+<tr><td>KL divergence</td><td>Information-theoretic distance between probability distributions; used for drift detection on source mix and prompt fingerprint.</td></tr>
+<tr><td>ND-GAIN</td><td>Notre Dame Global Adaptation Index &mdash; country adaptation readiness score.</td></tr>
+<tr><td>CAT</td><td>Climate Action Tracker &mdash; 5-band per-country policy rating mapped to 0&ndash;100.</td></tr>
+<tr><td>OWID</td><td>Our World in Data &mdash; CSV-distributed canonical climate datasets.</td></tr>
+<tr><td>Claim provenance</td><td>The audit table that records model + prompt + version + fingerprint + retrieval strategy + source IDs + hallucination score for every LLM-producing step.</td></tr>
+<tr><td>Methodology version</td><td>Pinned identifier (e.g. <code>sustainability_v1_2026_05</code>) attached to every analytical output so historical scores remain reproducible after formula changes.</td></tr>
+</table>
+
+<p class=subtle>This report consolidates the codebase, the project memory index, and the seven audits dated 2026-05-18
+(analytical, functional, UI/UX, performance, data sources, security, projectcarfcynepic comparison). For deeper drill-down
+on any section see the referenced source files and audit documents under <code>docs/audits/</code>.</p>
+
+<p class=subtle><b>Document end.</b> Compiled 2026-05-18 from branch <code>main</code> @ <code>edb0a23</code>.</p>
+
+</div>
+</body>
+</html>

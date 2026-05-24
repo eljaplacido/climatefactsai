@@ -52,16 +52,37 @@ function SourceProfileCard({ profile, compact = false }: SourceProfileCardProps)
       {/* Header */}
       <div className={clsx("px-4 py-3 border-b", band.bg)}>
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Shield className={clsx("h-5 w-5", band.color)} />
-            <h3 className="font-semibold text-gray-900">{profile.source_name}</h3>
+          <div className="flex items-center space-x-2 min-w-0">
+            <Shield className={clsx("h-5 w-5 flex-shrink-0", band.color)} />
+            <h3 className="font-semibold text-gray-900 truncate">{profile.source_name}</h3>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 flex-shrink-0">
             <span className={clsx("text-2xl font-bold", band.color)}>{profile.credibility_score}</span>
             <span className="text-xs text-gray-500">/100</span>
           </div>
         </div>
-        <p className={clsx("text-xs mt-1", band.color)}>{band.label}</p>
+        <div className="mt-1 flex items-center justify-between gap-2 flex-wrap">
+          <p className={clsx("text-xs", band.color)}>{band.label}</p>
+          {/* Phase 0 day 2 (2026-05-23): tier badge from source_credibility_tiers
+              (migration 027). Renders only when the profile has been tier-classified
+              — sources without a tier match show only the band label so we don't
+              mislead users into thinking unknown sources have been vetted. */}
+          {profile.tier && (
+            <span
+              title={
+                profile.tier_prior_bonus != null
+                  ? `Tier ${profile.tier} · prior_bonus +${profile.tier_prior_bonus}`
+                  : `Tier ${profile.tier}`
+              }
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-wider bg-white/70 text-slate-700 border border-slate-200"
+            >
+              {profile.tier}
+              {profile.tier_prior_bonus != null && (
+                <span className="text-slate-500">+{profile.tier_prior_bonus}</span>
+              )}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Body */}

@@ -12,6 +12,15 @@ vi.mock('next/link', () => ({
   ),
 }))
 
+// Phase 2H (2026-05-23): SearchPage now uses useUrlState which depends
+// on next/navigation. Stub the router + searchParams so the existing
+// SearchPage tests keep working under the URL-persistent rollout.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: vi.fn() }),
+  usePathname: () => '/search',
+  useSearchParams: () => new URLSearchParams(),
+}))
+
 vi.mock('@/components/CountrySelector', () => ({
   default: ({ value, onChange }: any) => (
     <select data-testid="country-selector" value={value || ''} onChange={(e) => onChange(e.target.value || null)}>

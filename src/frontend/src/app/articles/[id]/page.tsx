@@ -16,6 +16,8 @@ import ReanalyzeButton from "@/components/ReanalyzeButton";
 import ArgumentationGraph from "@/components/ArgumentationGraph";
 import Link from "next/link";
 import { Beaker, BarChart3, Scale, Eye, TrendingUp, Info, Loader2, CheckCircle2, AlertCircle, Clock, BookOpen, Leaf, Recycle, Zap, CloudSun, Landmark, ExternalLink, AlertTriangle } from "lucide-react";
+import { formatCredibilityPlain } from "@/lib/plainLanguage";
+import ArticleMapBridge from "@/components/ArticleMapBridge";
 
 const ArticleDetailTabs = dynamic(() => import("@/components/ArticleDetailTabs"), {
   ssr: false,
@@ -251,6 +253,32 @@ export default async function ArticlePage({ params }: { params: { id: string } }
               })}
             </div>
           )}
+
+          {/* Phase 2J (2026-05-23) — plain-language interpretation of the
+              article's reliability score. Turns "88/100" into a
+              templated sentence so non-specialist readers get the
+              meaning without needing to parse the scale. */}
+          {(() => {
+            const plain = formatCredibilityPlain(reliabilityScore, {
+              entity: "This article",
+              sampleSize: article.claim_count,
+            });
+            if (!plain.sentence) return null;
+            const toneClass =
+              plain.tone === "alert"
+                ? "text-red-700"
+                : plain.tone === "warn"
+                  ? "text-amber-700"
+                  : "text-emerald-700";
+            return (
+              <p
+                className={`mt-3 text-xs leading-snug ${toneClass}`}
+                data-testid="article-header-plain-language"
+              >
+                {plain.sentence}
+              </p>
+            );
+          })()}
         </header>
 
         <div className="p-6 space-y-8">
@@ -475,6 +503,18 @@ export default async function ArticlePage({ params }: { params: { id: string } }
               ))}
             </div>
           </section>
+
+          {/* Phase 4A (2026-05-23) — Article → Map bridge per the
+              original strategic memo §3.6 ("highest-impact UX move").
+              Turns the article from dead-end into a launchpad for
+              map / passport / deep-search. Renders only when the
+              article has a country code OR at least one tag. */}
+          <ArticleMapBridge
+            articleId={article.article_id}
+            articleTitle={article.title}
+            countryCode={article.country_code}
+            tags={article.tags}
+          />
 
           {/* Local Weather Context */}
           <WeatherContext articleId={article.article_id} />

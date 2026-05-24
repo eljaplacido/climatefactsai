@@ -116,6 +116,66 @@ _DEEP_SEARCH_SYNTHESIS_SYSTEM = (
 )
 
 
+# Phase 0 day 3 (2026-05-23, §3.3 fix). The standard synthesis prompt
+# assumes there's evidence to ground on; on low-evidence queries it would
+# either refuse ("no data available") OR hallucinate a confident answer.
+# Both fail the EU AI Act Art. 50 transparency requirement and our own
+# truth-machine framing. This prompt instead:
+#   - GENERATES an answer from general knowledge anyway (so users get
+#     something useful even when our corpus is thin)
+#   - TAGS each sentence with HIGH/MEDIUM/LOW/NONE retrieval-grounding
+#   - WRAPS the answer in an explicit `confidence: low` envelope
+#   - SUGGESTS three refined queries the user can re-run
+#
+# Returns JSON, not markdown, so the caller can reliably parse the
+# sentence-grounding map and surface per-sentence pills in the UI.
+_DEEP_SEARCH_LOW_EVIDENCE_TEMPLATE = """\
+You are answering a climate research question but the verified corpus and
+external research layer returned very thin evidence ({internal_count} internal
+articles, {external_count} external sources). Generate a calibrated answer
+anyway — DO NOT refuse — but stamp every sentence with how grounded it is in
+the retrieved evidence vs. your general training knowledge.
+
+USER QUERY: "{query}"
+
+INTERNAL ARTICLES (from our verified corpus — may be empty):
+{articles_context}
+
+EXTERNAL RESEARCH (may be empty):
+{perplexity_answer}
+{weather_section}
+---
+
+Return ONLY a valid JSON object with this exact shape:
+{{
+  "answer_markdown": "Your full markdown answer here, written for a curious general reader.",
+  "sentence_grounding": [
+    {{"text": "First sentence of your answer.", "level": "HIGH|MEDIUM|LOW|NONE", "reason": "one short phrase"}},
+    {{"text": "Second sentence...", "level": "...", "reason": "..."}}
+  ],
+  "confidence": "low",
+  "confidence_reason": "one sentence explaining why the answer is low-confidence (e.g. no internal corpus match, external retrieval empty)",
+  "suggested_refinements": ["refined query 1", "refined query 2", "refined query 3"]
+}}
+
+Grounding-level rubric:
+- HIGH: the sentence restates a fact from the retrieved sources above
+- MEDIUM: the sentence reflects well-established consensus the model knows but the retrieval did not surface
+- LOW: the sentence is a reasonable inference but not directly verifiable from retrieval or strong general knowledge
+- NONE: the sentence is speculative, opinion, or framing — not a verifiable claim
+
+Make sentence_grounding entries cover every sentence in answer_markdown. Use 3-7 refined queries that would plausibly return strong evidence. Keep the answer under 250 words.
+"""
+
+_DEEP_SEARCH_LOW_EVIDENCE_SYSTEM = (
+    "You are CliLens.AI's research assistant working under the platform's "
+    "transparency protocol. When evidence is thin, you provide a calibrated "
+    "low-confidence answer with per-sentence grounding tags rather than "
+    "refusing or hallucinating. Return STRICT JSON only — no prose, no "
+    "code fences, no commentary outside the JSON object."
+)
+
+
 _CYNEFIN_SYSTEM = (
     "You are a context classifier for the CliLens.AI climate-news "
     "complexity router (Cynefin-based). Classify each query into "
@@ -230,6 +290,30 @@ PROMPTS: Dict[str, PromptTemplate] = {
             "methodology drawer's source attribution stays honest."
         ),
     ),
+    "deep_search_synthesis_low_evidence": PromptTemplate(
+        name="deep_search_synthesis_low_evidence",
+        version="v1.0",
+        template=_DEEP_SEARCH_LOW_EVIDENCE_TEMPLATE,
+        system=_DEEP_SEARCH_LOW_EVIDENCE_SYSTEM,
+        max_tokens=1200,
+        temperature=0.2,
+        description=(
+            "Routed to instead of `deep_search_synthesis` when retrieval "
+            "returns < 3 total sources. Generates an answer despite the "
+            "evidence gap but tags every sentence with HIGH/MEDIUM/LOW/NONE "
+            "grounding so the UI can render per-sentence calibration pills. "
+            "Returns strict JSON with answer_markdown + sentence_grounding[] "
+            "+ suggested_refinements[]."
+        ),
+        rationale=(
+            "v1.0 added 2026-05-23 (Phase 0 day 3, §3.3 fix). Previously "
+            "the standard synthesis prompt was reused on weak-evidence "
+            "queries — producing either refusal copy ('no data available') "
+            "or hallucinated confidence with no per-sentence calibration. "
+            "Both fail EU AI Act Art. 50 transparency. The sentence-level "
+            "rubric is what makes 'honest answer despite gap' possible."
+        ),
+    ),
     "cynefin_classifier": PromptTemplate(
         name="cynefin_classifier",
         version="v1.0",
@@ -327,15 +411,17 @@ PROMPTS: Dict[str, PromptTemplate] = {
             "- After your answer, append a JSON actions block with helpful navigation suggestions.\n"
             "- The actions block must be a valid JSON object with an 'actions' array.\n\n"
             "AVAILABLE ACTIONS (use ONLY these types):\n"
-            "- navigate: {{path}} — go to a platform route (/map, /search, /deep-search, /methodology, /feed, /sources)\n"
+            "- navigate: {{path}} — go to a platform route (/map, /search, /deep-search, /methodology, /feed, /sources, /companies)\n"
             "- analyze_url: {{url}} — submit a URL for fact-checking\n"
             "- apply_search_filters: {{q, credibility, country, tags, category}} — filter search results\n"
             "- apply_map_filters: {{country, layer}} — zoom/change map view\n"
-            "- open_methodology_section: {{section}} — jump to a methodology section (prompts, calibration, sustainability-formula, source-tiers)\n"
+            "- open_methodology_section: {{section}} — jump to a methodology section (prompts, calibration, sustainability-formula, source-tiers, corporate-verification)\n"
             "- open_country: {{code}} — open country panel on map (2-char ISO code)\n"
             "- start_deep_search: {{q}} — launch deep research on a topic\n"
             "- bookmark_article: {{article_id}} — save an article for later\n"
-            "- start_calibration_label: {{url_analysis_id}} — submit a calibration rating for an analysis\n\n"
+            "- start_calibration_label: {{url_analysis_id}} — submit a calibration rating for an analysis\n"
+            "- open_company: {{ticker}} — open a company's climate disclosure profile (e.g. MSFT, SHEL)\n"
+            "- verify_corporate_claim: {{ticker, claim_text}} — verify a corporate climate claim against the disclosure ledger (ECGT / SBTi)\n\n"
             "Rules:\n"
             "- Only suggest actions that are genuinely useful given the question and answer.\n"
             "- Each action must have type, params (object), and label (short user-facing button text).\n"
@@ -348,7 +434,7 @@ PROMPTS: Dict[str, PromptTemplate] = {
         system=(
             "You are Climatefacts.ai's climate intelligence assistant. Answer concisely "
             "using markdown. After your answer, suggest 0-3 platform actions the user "
-            "might want to take next. Use ONLY the 9 action types documented below. "
+            "might want to take next. Use ONLY the 11 action types documented below. "
             "Output format: markdown answer then a JSON actions block separated by '---'."
         ),
         max_tokens=1200,

@@ -387,3 +387,48 @@ async def recent_indicator_syncs(
             "triggered_by": r.get("triggered_by"),
         })
     return {"available": True, "rows": out, "total": len(out)}
+
+
+# =============================================================================
+# AOI ALERTS — Phase 3C (2026-05-23)
+# =============================================================================
+
+@router.post("/aoi-poll")
+async def scheduled_aoi_poll(
+    x_scheduler_secret: Optional[str] = Header(None, alias="X-Scheduler-Secret"),
+):
+    """Fire the AOI threshold-check loop.
+
+    Cron schedule: hourly (e.g. `0 * * * *`). Loops over every active
+    AOI subscription, batches indicator lookups per variable, runs the
+    crossing detection, and dispatches email alerts via the existing
+    `email_service`. Returns the structured `PollSummary` so operators
+    can spot-check fire counts from the Cloud Scheduler dashboard.
+
+    Runs INLINE (no Celery) per the existing scheduler pattern — for
+    Free-tier hosting this avoids the Redis/Celery worker dependency.
+    Operators on Celery-backed deployments can swap this for a beat
+    task; the underlying `poll_all_active()` is the same callable.
+    """
+    _verify_scheduler_secret(x_scheduler_secret)
+
+    try:
+        from api.aoi_poll_service import poll_all_active
+
+        summary = poll_all_active()
+        return {"status": "ok", "task": "aoi_poll", "summary": summary.to_dict()}
+    except ImportError as exc:
+        logger.error(f"AOI poll module not available: {exc}")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "error",
+                "reason": "aoi_module_unavailable",
+                "error": str(exc),
+            },
+        )
+    except Exception as exc:
+        logger.error("AOI poll loop failed", error=str(exc), traceback=traceback.format_exc())
+        # Don't raise — Cloud Scheduler retries 4xx/5xx. We'd rather log
+        # the failure and let the next tick try again than block.
+        return {"status": "error", "task": "aoi_poll", "error": str(exc)}

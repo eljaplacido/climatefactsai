@@ -8,8 +8,20 @@ import type { Article, TagStat, SearchSuggestion } from "@/types";
 import { Globe, Tag as TagIcon, Newspaper, Search as SearchIcon, Calendar, X } from "lucide-react";
 import LoginPrompt from "@/components/LoginPrompt";
 import { useAuth } from "@/lib/auth";
+import { useUrlState, URL_STATE_SERIALIZERS } from "@/lib/useUrlState";
 
 type Credibility = "ALL" | "HIGH" | "MEDIUM" | "LOW";
+
+// Phase 2H (2026-05-23) — MH1 rollout. The most-shareable filters go into
+// the URL so a colleague can paste a search link and land on the same view.
+// Tags (array) and source (typeahead-driven) stay session-local for v1.
+const credibilitySerializer = {
+  encode: (v: Credibility) => (v === "ALL" ? null : v),
+  decode: (raw: string | null): Credibility => {
+    const valid: Credibility[] = ["ALL", "HIGH", "MEDIUM", "LOW"];
+    return (valid.find((k) => k === raw) ?? "ALL") as Credibility;
+  },
+};
 
 const CONTENT_CATEGORIES = [
   { value: "climate_science", label: "Climate Science" },
@@ -22,9 +34,18 @@ const CONTENT_CATEGORIES = [
 
 export default function SearchPage() {
   const { isLoggedIn } = useAuth();
-  const [q, setQ] = useState("");
-  const [country, setCountry] = useState<string | null>(null);
-  const [credibility, setCredibility] = useState<Credibility>("ALL");
+  // Phase 2H (2026-05-23) — URL-persistent state for the shareable filter set.
+  const [q, setQ] = useUrlState("q", "", URL_STATE_SERIALIZERS.string);
+  const [country, setCountry] = useUrlState<string | null>(
+    "country",
+    null,
+    URL_STATE_SERIALIZERS.nullableString,
+  );
+  const [credibility, setCredibility] = useUrlState<Credibility>(
+    "credibility",
+    "ALL",
+    credibilitySerializer,
+  );
   const [tags, setTags] = useState<string[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
   const [source, setSource] = useState<string | null>(null);
@@ -36,12 +57,16 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Date range filter
-  const [dateFrom, setDateFrom] = useState<string>("");
-  const [dateTo, setDateTo] = useState<string>("");
+  // Date range filter — URL-persistent (typing in date inputs commits on change).
+  const [dateFrom, setDateFrom] = useUrlState("from", "", URL_STATE_SERIALIZERS.string);
+  const [dateTo, setDateTo] = useUrlState("to", "", URL_STATE_SERIALIZERS.string);
 
-  // Content category filter
-  const [contentCategory, setContentCategory] = useState<string>("");
+  // Content category filter — URL-persistent.
+  const [contentCategory, setContentCategory] = useUrlState(
+    "category",
+    "",
+    URL_STATE_SERIALIZERS.string,
+  );
 
   // Debounce query input
   const [debouncedQ, setDebouncedQ] = useState(q);

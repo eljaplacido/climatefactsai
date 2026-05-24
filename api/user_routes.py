@@ -647,8 +647,29 @@ async def create_bookmark(
 ):
     """
     Bookmark an article.
+
+    Phase 1A (2026-05-23): gated by the saved_articles quota (3 lifetime on
+    Free). The UPSERT semantics matter — when the same article is bookmarked
+    twice it's a no-op, NOT a quota consumption, so we skip the quota check
+    when the row already exists.
     """
     db = get_postgres()
+
+    # Phase 1A — quota gate (saved_articles, lifetime cap on Free tier).
+    # Skip when this is an UPSERT (already bookmarked) — only NEW bookmarks
+    # count against the quota.
+    from api.quota_service import QuotaService
+    user_tier = str(current_user.get("subscription_tier", "freemium"))
+    existing = db.execute_query(
+        "SELECT 1 FROM user_bookmarks WHERE user_id = :uid AND article_id = :aid LIMIT 1",
+        {"uid": current_user["user_id"], "aid": article_id},
+    )
+    if not existing:
+        QuotaService.check_and_raise(
+            user_id=str(current_user["user_id"]),
+            tier=user_tier,
+            quota_key="saved_articles",
+        )
 
     try:
         db.execute_update(

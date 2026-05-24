@@ -11,6 +11,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
+import { VARIABLE_COLORS } from "@/lib/climateColors";
 
 interface ForecastDataPoint {
   date: string;
@@ -126,7 +127,7 @@ export default function ForecastChart({
               yAxisId="precip"
               dataKey="precipitation"
               name="Precipitation"
-              fill="#93c5fd"
+              fill={VARIABLE_COLORS.precipitation}
               radius={[3, 3, 0, 0]}
               barSize={20}
             />
@@ -135,10 +136,10 @@ export default function ForecastChart({
               type="monotone"
               dataKey="temperature"
               name="Temperature"
-              stroke="#ea580c"
+              stroke={VARIABLE_COLORS.temperature}
               strokeWidth={2}
-              dot={{ r: 3, fill: "#ea580c", strokeWidth: 0 }}
-              activeDot={{ r: 5, fill: "#ea580c", stroke: "#fff", strokeWidth: 2 }}
+              dot={{ r: 3, fill: VARIABLE_COLORS.temperature, strokeWidth: 0 }}
+              activeDot={{ r: 5, fill: VARIABLE_COLORS.temperature, stroke: "#fff", strokeWidth: 2 }}
             />
           </ComposedChart>
         </ResponsiveContainer>

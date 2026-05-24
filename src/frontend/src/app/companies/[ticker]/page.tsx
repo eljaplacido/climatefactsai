@@ -7,8 +7,28 @@ import {
   Building2, Loader2, CheckCircle, AlertTriangle, XCircle,
   HelpCircle, FileText, ExternalLink, ArrowLeft,
 } from "lucide-react";
+import { useUrlState } from "@/lib/useUrlState";
+import { type ViewMode } from "@/lib/plainLanguage";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+
+// Phase 7 B3 (2026-05-24) — disclosure-source → compliance-framework mapping.
+// Which regulatory disclosure regimes the row demonstrably speaks to. CSRD
+// applies whenever Scope 1+2 are disclosed; IFRS S2 whenever SBTi-validation
+// or net-zero target is recorded; TCFD whenever scope assurance is present.
+function frameworksForDisclosure(d: {
+  source?: string;
+  scope1_2_verified?: boolean;
+  sbti_validated?: boolean;
+  net_zero_target_year?: number;
+  assurance_level?: string;
+}): string[] {
+  const out: string[] = [];
+  if (d.source === "cdp" || d.source === "sbti") out.push("CSRD");
+  if (d.sbti_validated || d.net_zero_target_year) out.push("IFRS S2");
+  if (d.scope1_2_verified || d.assurance_level) out.push("TCFD");
+  return out;
+}
 
 interface CompanyDetail {
   company_id: string;
@@ -60,6 +80,20 @@ export default function CompanyDetailPage() {
   const [loading, setLoading] = useState(true);
   const [analyzeText, setAnalyzeText] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
+
+  // Phase 7 B3 (2026-05-24) — Business-decision-maker view toggle. Mirrors
+  // the Country Passport pattern: ?view=business persists in the URL so a
+  // CSO can share a "boardroom view" of a company's disclosure trail.
+  const viewSerializer = {
+    encode: (v: ViewMode) => (v === "business" ? "business" : null),
+    decode: (raw: string | null): ViewMode =>
+      raw === "business" ? "business" : "public",
+  };
+  const [viewMode, setViewMode] = useUrlState<ViewMode>(
+    "view",
+    "public",
+    viewSerializer,
+  );
 
   useEffect(() => {
     if (!ticker) return;
@@ -171,15 +205,85 @@ export default function CompanyDetailPage() {
             <span className="text-gray-600">
               {company.disclosure_count} disclosure{company.disclosure_count !== 1 ? "s" : ""}
             </span>
-            <span className={`font-medium ${company.sbti_validated ? "text-teal-700" : "text-amber-700"}`}>
-              SBTi: {company.sbti_validated ? "Validated" : "Not validated"}
-            </span>
+            {viewMode === "business" ? (
+              <span
+                className={`font-medium ${
+                  company.sbti_validated ? "text-teal-700" : "text-amber-700"
+                }`}
+                data-testid="company-sbti-business"
+              >
+                {company.sbti_validated
+                  ? "SBTi-validated target — ECGT-compliant"
+                  : "Not SBTi-validated — net-zero claims carry ECGT Article 4 audit risk"}
+              </span>
+            ) : (
+              <span
+                className={`font-medium ${
+                  company.sbti_validated ? "text-teal-700" : "text-amber-700"
+                }`}
+              >
+                SBTi: {company.sbti_validated ? "Validated" : "Not validated"}
+              </span>
+            )}
             {company.net_zero_target_year && (
               <span className="text-gray-600">
                 Net-zero target: {company.net_zero_target_year}
               </span>
             )}
           </div>
+
+          {/* Phase 7 B3 (2026-05-24) — Public ↔ Business view toggle. URL-
+              persistent via ?view=business so a CSO can share a board-framed
+              link. Business view stamps each disclosure with the compliance
+              regimes (CSRD / IFRS S2 / TCFD) it speaks to. */}
+          <div
+            className="mt-5 flex items-center gap-1 p-0.5 bg-gray-100 rounded-md w-fit"
+            role="radiogroup"
+            aria-label="View mode"
+            data-testid="company-view-mode-toggle"
+          >
+            <button
+              type="button"
+              role="radio"
+              aria-checked={viewMode === "public"}
+              onClick={() => setViewMode("public")}
+              className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                viewMode === "public"
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+              data-testid="company-view-public"
+            >
+              Public view
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={viewMode === "business"}
+              onClick={() => setViewMode("business")}
+              className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                viewMode === "business"
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+              data-testid="company-view-business"
+            >
+              Business view
+            </button>
+          </div>
+
+          {viewMode === "business" && (
+            <p
+              className="mt-3 text-xs text-gray-600 max-w-2xl"
+              data-testid="company-business-context"
+            >
+              Disclosure trail reframed for fiduciary review. Compliance chips
+              below each row show which regimes the data point speaks to
+              (CSRD physical-risk, IFRS S2 sustainability, TCFD assurance).
+              ECGT Article 4 takes effect 27 Sept 2026 — claims unsupported by
+              the disclosure ledger become a board liability after that date.
+            </p>
+          )}
         </header>
 
         <div className="grid lg:grid-cols-3 gap-8">
@@ -193,7 +297,9 @@ export default function CompanyDetailPage() {
                 <p className="text-sm text-gray-500">No disclosures ingested yet.</p>
               ) : (
                 <div className="space-y-3">
-                  {disclosures.map((d) => (
+                  {disclosures.map((d) => {
+                    const frameworks = frameworksForDisclosure(d);
+                    return (
                     <div key={d.disclosure_id} className="bg-white rounded-lg border border-gray-200 p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-semibold uppercase bg-teal-100 text-teal-700 px-2 py-0.5 rounded">
@@ -227,8 +333,45 @@ export default function CompanyDetailPage() {
                           {d.baseline_year && ` (baseline ${d.baseline_year})`}
                         </div>
                       )}
+                      {viewMode === "business" && (
+                        <div
+                          className="mt-3 pt-3 border-t border-gray-100 space-y-2"
+                          data-testid="disclosure-business-footer"
+                        >
+                          {frameworks.length > 0 && (
+                            <div
+                              className="flex flex-wrap items-center gap-1.5"
+                              data-testid="disclosure-compliance-chips"
+                            >
+                              <span className="text-[10px] uppercase tracking-wider text-gray-500">
+                                Disclosure regime:
+                              </span>
+                              {frameworks.map((fw) => (
+                                <span
+                                  key={fw}
+                                  className="text-[10px] font-medium px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded"
+                                >
+                                  {fw}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {d.offset_based_claims && (
+                            <div
+                              className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5"
+                              data-testid="disclosure-offset-warning"
+                            >
+                              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                              <span>
+                                <strong>ECGT Article 4 risk:</strong> {d.offset_based_claims}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </section>

@@ -300,6 +300,71 @@ class SourceProfileService:
         profiles.sort(key=lambda p: p.get("credibility_score") or 0, reverse=True)
         return profiles[: int(limit)]
 
+    def _attach_credibility_tiers(self, rows: list[dict]) -> list[dict]:
+        """Enrich profile rows with source_credibility_tiers data (migration 027).
+
+        Adds `tier`, `tier_prior_bonus`, and (when present) other tier signals
+        as best-effort fields. Older clusters without migration 027 just see
+        the tier fields absent from the response — the frontend treats them as
+        "not assessed" rather than rendering broken UI.
+
+        Called by `list_profiles` and the per-domain getter on 2026-05-23 as
+        part of §3.7 (Sources page hardcoded-list deletion + DB-backed tiers).
+        """
+        if not rows:
+            return rows
+
+        # Build a domain lookup. Profile rows use `source_domain`; tier rows
+        # are keyed by `domain`. Normalise both to lowercase for the join.
+        domains = sorted({
+            str(row.get("source_domain") or "").lower().lstrip("www.")
+            for row in rows
+            if row.get("source_domain")
+        })
+        if not domains:
+            return rows
+
+        try:
+            tier_rows = self.db.execute_query(
+                """
+                SELECT domain, prior_bonus, tier
+                FROM source_credibility_tiers
+                WHERE domain = ANY(:domains)
+                """,
+                {"domains": domains},
+            )
+        except Exception as exc:
+            # Migration 027 not applied or column shape changed — fail soft.
+            logger.debug(
+                "source_credibility_tiers join skipped (table missing or schema drift): %s",
+                exc,
+            )
+            return rows
+
+        tier_by_domain: dict[str, dict] = {}
+        for tr in tier_rows or []:
+            d = str(tr.get("domain") or "").lower().lstrip("www.")
+            if not d:
+                continue
+            tier_by_domain[d] = {
+                "tier": tr.get("tier"),
+                "tier_prior_bonus": tr.get("prior_bonus"),
+            }
+
+        enriched: list[dict] = []
+        for row in rows:
+            d = str(row.get("source_domain") or "").lower().lstrip("www.")
+            if d and d in tier_by_domain:
+                merged = dict(row)
+                merged.update(tier_by_domain[d])
+                enriched.append(merged)
+            else:
+                merged = dict(row)
+                merged.setdefault("tier", None)
+                merged.setdefault("tier_prior_bonus", None)
+                enriched.append(merged)
+        return enriched
+
     def list_profiles(
         self,
         limit: int = 50,
@@ -335,14 +400,16 @@ class SourceProfileService:
                 "Source profiles query failed due to schema mismatch; using article fallback",
                 error=str(exc),
             )
-            return self._fallback_profiles_from_articles(
-                limit=limit,
-                min_credibility=min_credibility,
-                source_type=source_type,
+            return self._attach_credibility_tiers(
+                self._fallback_profiles_from_articles(
+                    limit=limit,
+                    min_credibility=min_credibility,
+                    source_type=source_type,
+                )
             )
 
         if rows:
-            return rows
+            return self._attach_credibility_tiers(rows)
 
         # Best-effort backfill from articles when table exists but is empty.
         try:
@@ -350,14 +417,16 @@ class SourceProfileService:
             if seeded > 0:
                 rows = self.db.execute_query(query, params)
                 if rows:
-                    return rows
+                    return self._attach_credibility_tiers(rows)
         except Exception as exc:
             logger.warning("Source profile backfill attempt failed", error=str(exc))
 
-        return self._fallback_profiles_from_articles(
-            limit=limit,
-            min_credibility=min_credibility,
-            source_type=source_type,
+        return self._attach_credibility_tiers(
+            self._fallback_profiles_from_articles(
+                limit=limit,
+                min_credibility=min_credibility,
+                source_type=source_type,
+            )
         )
 
     def get_profile_by_domain(self, domain: str) -> Optional[dict]:

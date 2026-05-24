@@ -12,6 +12,7 @@ import MapAgenticChat from "@/components/map/MapAgenticChat";
 import MapTimeline from "@/components/map/MapTimeline";
 import MapCompareView from "@/components/map/MapCompareView";
 import { useViewContext } from "@/lib/view-context";
+import { useUrlState, URL_STATE_SERIALIZERS } from "@/lib/useUrlState";
 
 // Dynamic import of the Leaflet-based map (no SSR)
 const InteractiveClimateMap = dynamic(
@@ -52,27 +53,87 @@ const INITIAL_FILTERS: MapFilters = {
   keyword: "",
 };
 
+// Phase 2D (2026-05-23) — MH1 rollout per the competitive UX audit.
+// The shareable state on the map is: country (selectedCountry), layer
+// (activeLayer), compare mode + the two compared countries, plus the
+// most-useful filter (keyword). Other filters (dateFrom/dateTo, source
+// dropdown, categories Set) stay session-local for now — they encode
+// poorly into URL params and aren't typically what people share.
+const layerSerializer = {
+  encode: (v: ActiveLayer) => (v === "article_density" ? null : v),
+  decode: (raw: string | null): ActiveLayer => {
+    const known: ActiveLayer[] = [
+      "article_density",
+      "temperature_anomaly",
+      "climate_risk",
+      "source_diversity",
+    ];
+    return (known.find((k) => k === raw) ?? "article_density") as ActiveLayer;
+  },
+};
+
+const compareModeSerializer = {
+  encode: (v: boolean) => (v ? "1" : null),
+  decode: (raw: string | null): boolean => raw === "1" || raw === "true",
+};
+
 export default function MapPage() {
   // Core state
   const [countryStats, setCountryStats] = useState<CountryStatEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Map interaction state
-  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
-  const [activeLayer, setActiveLayer] = useState<ActiveLayer>("article_density");
+  // Map interaction state — Phase 2D: URL-persistent so `/map?country=DE`
+  // and `/map?layer=temperature_anomaly` work as deeplinks.
+  const [selectedCountry, setSelectedCountry] = useUrlState<string | null>(
+    "country",
+    null,
+    URL_STATE_SERIALIZERS.nullableString,
+  );
+  const [activeLayer, setActiveLayer] = useUrlState<ActiveLayer>(
+    "layer",
+    "article_density",
+    layerSerializer,
+  );
   const [highlightedCountries, setHighlightedCountries] = useState<string[]>([]);
 
-  // Filter state
+  // Filter state — most filters stay session-local; only `keyword` lands
+  // in the URL since it's the one users routinely want to share.
   const [filters, setFilters] = useState<MapFilters>(INITIAL_FILTERS);
+  const [urlKeyword, setUrlKeyword] = useUrlState(
+    "q",
+    "",
+    URL_STATE_SERIALIZERS.string,
+  );
   const [availableSources, setAvailableSources] = useState<AvailableSource[]>([]);
 
   // Timeline state — empty until we discover the latest month with data on mount
   const [timelineDate, setTimelineDate] = useState("");
 
-  // Compare mode
-  const [compareMode, setCompareMode] = useState(false);
-  const [compareCountryA, setCompareCountryA] = useState("");
-  const [compareCountryB, setCompareCountryB] = useState("");
+  // Compare mode — Phase 2D: URL-persistent so sharing a compare view
+  // (`/map?compare=1&compareA=DE&compareB=FR`) reproduces it.
+  const [compareMode, setCompareMode] = useUrlState(
+    "compare",
+    false,
+    compareModeSerializer,
+  );
+  const [compareCountryA, setCompareCountryA] = useUrlState(
+    "compareA",
+    "",
+    URL_STATE_SERIALIZERS.string,
+  );
+  const [compareCountryB, setCompareCountryB] = useUrlState(
+    "compareB",
+    "",
+    URL_STATE_SERIALIZERS.string,
+  );
+
+  // Mirror the URL keyword into the filters Set on mount + when URL changes.
+  useEffect(() => {
+    if (urlKeyword !== filters.keyword) {
+      setFilters((prev) => ({ ...prev, keyword: urlKeyword }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlKeyword]);
 
   // Publish current map state into shared view-context so the global chat
   // (ContextualAssistant) and the inline MapAgenticChat both know what the
@@ -193,11 +254,17 @@ export default function MapPage() {
   }
 
   function handleApplyFilters() {
+    // Phase 2D — push the keyword filter to the URL on Apply so the
+    // resulting view is shareable. Other filters stay session-local.
+    if (filters.keyword !== urlKeyword) {
+      setUrlKeyword(filters.keyword);
+    }
     fetchCountryStats();
   }
 
   function handleClearFilters() {
     setFilters(INITIAL_FILTERS);
+    setUrlKeyword("");
   }
 
   function handleHighlightCountries(codes: string[]) {

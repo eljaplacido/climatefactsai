@@ -29,15 +29,13 @@ interface AnalyticsSummaryChartProps {
   credibilityDistribution: CredibilityData[];
 }
 
-const CREDIBILITY_COLORS: Record<string, string> = {
-  HIGH: "#10b981",
-  MEDIUM: "#f59e0b",
-  LOW: "#ef4444",
-};
-
-function getCredibilityColor(level: string): string {
-  return CREDIBILITY_COLORS[level.toUpperCase()] || "#9ca3af";
-}
+// Phase 2F (2026-05-23) — credibility colours pulled from the central
+// climateColors palette so the same HIGH/MEDIUM/LOW colour shows on
+// every surface (text chips, map legend, charts, embeds).
+import {
+  getCredibilityColor,
+  ARTICLE_DENSITY_SEQUENTIAL,
+} from "@/lib/climateColors";
 
 export default function AnalyticsSummaryChart({
   articlesByRegion,
@@ -103,7 +101,7 @@ export default function AnalyticsSummaryChart({
                 <Bar
                   dataKey="count"
                   name="Articles"
-                  fill="#0d9488"
+                  fill={ARTICLE_DENSITY_SEQUENTIAL.medium}
                   radius={[0, 4, 4, 0]}
                   barSize={20}
                 />

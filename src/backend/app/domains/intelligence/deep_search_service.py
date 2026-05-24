@@ -109,16 +109,38 @@ class DeepSearchService:
                     "source_name": _domain_from_url(url),
                 })
 
-        # Synthesize answer
-        synthesis = await self._synthesize_answer(
-            query=query,
-            internal_articles=internal_results or [],
-            perplexity_answer=perplexity_results.get("answer", ""),
-            weather_context=weather_context,
-        )
-
         internal_count = len(internal_results or [])
         external_count = len(perplexity_results.get("citations", []))
+
+        # Phase 0 day 3 (2026-05-23, §3.3 fix). When evidence is thin we
+        # route to the dedicated low-evidence prompt that returns a
+        # sentence-grounded JSON envelope instead of free-form markdown.
+        # Threshold matches the compare-side `aggregate_weak` rule (< 3).
+        sentence_grounding: Optional[List[Dict[str, Any]]] = None
+        confidence_envelope: Optional[Dict[str, Any]] = None
+        low_evidence_refinements: Optional[List[str]] = None
+
+        if internal_count + external_count < 3:
+            low_eval = await self._synthesize_low_evidence_answer(
+                query=query,
+                internal_articles=internal_results or [],
+                perplexity_answer=perplexity_results.get("answer", ""),
+                weather_context=weather_context,
+            )
+            synthesis = low_eval.get("answer_markdown") or low_eval.get("raw_text") or ""
+            sentence_grounding = low_eval.get("sentence_grounding")
+            confidence_envelope = {
+                "confidence": low_eval.get("confidence") or "low",
+                "reason": low_eval.get("confidence_reason"),
+            } if low_eval.get("confidence") or low_eval.get("confidence_reason") else None
+            low_evidence_refinements = low_eval.get("suggested_refinements")
+        else:
+            synthesis = await self._synthesize_answer(
+                query=query,
+                internal_articles=internal_results or [],
+                perplexity_answer=perplexity_results.get("answer", ""),
+                weather_context=weather_context,
+            )
 
         # Hallucination grounding check (T4 — the detector was implemented
         # but never called on this path; the audit flagged the resulting
@@ -156,10 +178,18 @@ class DeepSearchService:
         # Phase 4 wave 1 (2026-05-16): prompts_used records the versioned
         # template that produced the synthesis so old answers stay
         # reproducible / auditable even after the prompt evolves.
+        # Phase 0 day 3 (2026-05-23): when we routed to the low-evidence
+        # prompt, record THAT version under prompts_used.synthesis so the
+        # audit trail reflects which variant actually ran.
         prompts_used: Dict[str, Any] = {}
         try:
             from app.domains.intelligence.prompts import get_prompt
-            synth_prompt = get_prompt("deep_search_synthesis")
+            synth_prompt_name = (
+                "deep_search_synthesis_low_evidence"
+                if sentence_grounding is not None
+                else "deep_search_synthesis"
+            )
+            synth_prompt = get_prompt(synth_prompt_name)
             prompts_used["synthesis"] = synth_prompt.as_audit_dict()
         except Exception as exc:
             logger.debug(f"Prompt registry lookup failed (non-fatal): {exc}")
@@ -318,9 +348,23 @@ class DeepSearchService:
                 _prov_exc,
             )
 
+        # Merge low-evidence refinements into the existing clarification list.
+        if low_evidence_refinements:
+            merged = list(clarification_needed or []) + list(low_evidence_refinements)
+            seen: set[str] = set()
+            clarification_needed = [
+                s for s in merged
+                if isinstance(s, str) and s and not (s in seen or seen.add(s))
+            ][:6]
+
         return {
             "query": query,
             "answer": synthesis,
+            # Phase 0 day 3 (2026-05-23, §3.3): per-sentence grounding
+            # tags + confidence envelope, present only when the
+            # low-evidence prompt ran. Clients render per-sentence pills.
+            "sentence_grounding": sentence_grounding,
+            "confidence_envelope": confidence_envelope,
             "citations": citations,
             "internal_articles_count": internal_count,
             "external_sources_count": external_count,
@@ -400,39 +444,199 @@ class DeepSearchService:
             result_b["query"] = query_b
             logger.warning(f"Compare side B failed: {raw_b}")
 
+        # Phase 0 (2026-05-23, §3.1): aggregate guidance + low-evidence fallback.
+        # Previously `compare` always invoked the LLM comparative synthesis even
+        # when both sides had 0 sources — producing the "no data available"
+        # comparison the user saw on Arctic-vs-Antarctic. Now we:
+        #   1. Roll the per-side coverage into an aggregate `guidance` block
+        #      with status precedence empty > weak > partial > ok
+        #   2. When BOTH sides are fully empty, skip the LLM comparative and
+        #      emit a deterministic explainer
+        #   3. When the aggregate is empty/weak, run a single unified
+        #      `_suggest_scope_refinements` call (cheap: bounded one LLM call)
+        #      and surface chips at the compare level
+        #   4. When exactly one side is empty, tag the structured comparative
+        #      with `low_confidence: true` so the UI can render an honesty pill
+        internal_a = int(result_a.get("internal_articles_count") or 0)
+        external_a = int(result_a.get("external_sources_count") or 0)
+        internal_b = int(result_b.get("internal_articles_count") or 0)
+        external_b = int(result_b.get("external_sources_count") or 0)
+        total_a = internal_a + external_a
+        total_b = internal_b + external_b
+        aggregate_total = total_a + total_b
+
+        both_sides_empty = (total_a == 0 and total_b == 0)
+        one_side_empty = (total_a == 0) ^ (total_b == 0)
+        aggregate_weak = aggregate_total < 4 and not both_sides_empty
+
         async def _run_bounded(coro):
             return await asyncio.wait_for(coro, timeout=synthesis_timeout)
-
-        comparative_raw, comparative_structured_raw = await asyncio.gather(
-            _run_bounded(self._generate_comparison(query_a, query_b, result_a, result_b)),
-            _run_bounded(self._generate_comparison_structured(query_a, query_b, result_a, result_b)),
-            return_exceptions=True,
-        )
 
         comparative_default = (
             f'Comparison between "{query_a}" and "{query_b}" could not be generated. '
             "Both individual analyses are available above."
         )
 
-        if isinstance(comparative_raw, Exception):
-            logger.warning(f"Comparison synthesis failed: {comparative_raw}")
-            comparative = comparative_default
-        else:
-            comparative = comparative_raw or comparative_default
+        # Branch 1 — both sides empty. Skip the LLM call entirely and emit a
+        # deterministic explainer + unified refinement chips. This is the
+        # path the Arctic-vs-Antarctic screenshot hit.
+        if both_sides_empty:
+            comparative = (
+                f'We could not find evidence in our verified corpus or external sources '
+                f'for either "{query_a}" or "{query_b}". A side-by-side comparison would '
+                f'be unreliable here — instead, try one of the refined queries below.'
+            )
+            try:
+                refinements_a, refinements_b = await asyncio.gather(
+                    _run_bounded(self._suggest_scope_refinements(query_a, country)),
+                    _run_bounded(self._suggest_scope_refinements(query_b, country)),
+                    return_exceptions=True,
+                )
+            except Exception:
+                refinements_a, refinements_b = None, None
 
-        if isinstance(comparative_structured_raw, Exception):
-            logger.warning(f"Structured comparison synthesis failed: {comparative_structured_raw}")
+            chips: List[str] = []
+            for ref_set in (refinements_a, refinements_b):
+                if isinstance(ref_set, list):
+                    chips.extend(s for s in ref_set if isinstance(s, str) and s)
+            # dedupe preserving order, cap at 6
+            seen: set[str] = set()
+            chips = [s for s in chips if not (s in seen or seen.add(s))][:6]
+
             comparative_structured = None
+            comparative_raw_result = comparative
+            comparative_structured_raw = None
         else:
-            comparative_structured = comparative_structured_raw
+            comparative_raw_result, comparative_structured_raw = await asyncio.gather(
+                _run_bounded(self._generate_comparison(query_a, query_b, result_a, result_b)),
+                _run_bounded(self._generate_comparison_structured(query_a, query_b, result_a, result_b)),
+                return_exceptions=True,
+            )
+
+            if isinstance(comparative_raw_result, Exception):
+                logger.warning(f"Comparison synthesis failed: {comparative_raw_result}")
+                comparative = comparative_default
+            else:
+                comparative = comparative_raw_result or comparative_default
+
+            if isinstance(comparative_structured_raw, Exception):
+                logger.warning(
+                    f"Structured comparison synthesis failed: {comparative_structured_raw}"
+                )
+                comparative_structured = None
+            else:
+                comparative_structured = comparative_structured_raw
+
+            # Tag the structured payload with a low_confidence flag when one
+            # side has no evidence — the UI uses this to render an explicit
+            # honesty pill ("Topic B has no sources — comparison reflects
+            # Topic A's findings against a gap").
+            if comparative_structured and one_side_empty:
+                if isinstance(comparative_structured, dict):
+                    comparative_structured = {
+                        **comparative_structured,
+                        "low_confidence": True,
+                        "low_confidence_reason": (
+                            f'Topic {"A" if total_a == 0 else "B"} returned 0 sources; '
+                            "the comparison reflects an asymmetric evidence base."
+                        ),
+                    }
+
+            # If aggregate evidence is weak (but not empty), still emit
+            # refinement chips at compare level so the user can sharpen scope.
+            chips = []
+            if aggregate_weak:
+                try:
+                    weak_refinements = await _run_bounded(
+                        self._suggest_scope_refinements(
+                            f"{query_a} vs {query_b}",
+                            country,
+                        )
+                    )
+                    if isinstance(weak_refinements, list):
+                        chips = [
+                            s for s in weak_refinements
+                            if isinstance(s, str) and s
+                        ][:5]
+                except Exception as ref_exc:
+                    logger.debug(
+                        f"Compare-level refinement suggestion failed: {ref_exc}"
+                    )
+
+        # Build the aggregate guidance block — same shape as single-search so
+        # the UI's amber-box renderer can reuse the existing component.
+        guidance: Optional[Dict[str, Any]] = None
+        if both_sides_empty:
+            guidance = {
+                "status": "empty",
+                "reason": "no_matching_evidence_either_side",
+                "message": (
+                    "Neither topic returned matching evidence from the verified "
+                    "corpus or external research. The comparative analysis below "
+                    "is a deterministic explainer — not a synthesised finding. "
+                    "Pick a refined query to get a substantive answer."
+                ),
+                "suggested_actions": [
+                    "Constrain by country and timeframe",
+                    "Use domain-specific terms (e.g. SPI, SPEI, sea-ice extent)",
+                    "Pick one of the refined queries below",
+                ],
+                "per_side": {
+                    "a": {"internal": internal_a, "external": external_a},
+                    "b": {"internal": internal_b, "external": external_b},
+                },
+            }
+        elif one_side_empty:
+            empty_label = "A" if total_a == 0 else "B"
+            empty_query = query_a if total_a == 0 else query_b
+            guidance = {
+                "status": "asymmetric",
+                "reason": "one_side_empty",
+                "message": (
+                    f'Topic {empty_label} ("{empty_query}") returned 0 sources, '
+                    "so the comparison is structurally asymmetric. Treat any "
+                    "contrast claim about that topic as low-confidence."
+                ),
+                "suggested_actions": [
+                    f"Refine Topic {empty_label} with country + timeframe",
+                    "Switch to single-topic Research mode for the empty side",
+                ],
+                "per_side": {
+                    "a": {"internal": internal_a, "external": external_a},
+                    "b": {"internal": internal_b, "external": external_b},
+                },
+            }
+        elif aggregate_weak:
+            guidance = {
+                "status": "weak",
+                "reason": "low_aggregate_coverage",
+                "message": (
+                    f"Combined evidence base is thin "
+                    f"({aggregate_total} sources across both topics). The "
+                    "comparison should be treated as low-confidence — sharpen "
+                    "scope before relying on conclusions."
+                ),
+                "suggested_actions": [
+                    "Add geographic and temporal constraints",
+                    "Pick a refined query below to re-run with sharper scope",
+                ],
+                "per_side": {
+                    "a": {"internal": internal_a, "external": external_a},
+                    "b": {"internal": internal_b, "external": external_b},
+                },
+            }
 
         return {
             "query_a": query_a,
             "query_b": query_b,
             "result_a": result_a,
             "result_b": result_b,
-            "comparative_analysis": comparative,
+            "comparative_analysis": comparative if not both_sides_empty else comparative_raw_result,
             "comparative_analysis_structured": comparative_structured,
+            # Top-level aggregate guidance + refinement chips (§3.1 fix).
+            "guidance": guidance,
+            "clarification_needed": chips or None,
+            "low_confidence": both_sides_empty or one_side_empty or aggregate_weak,
             "compared_at": datetime.utcnow().isoformat(),
         }
 
@@ -720,6 +924,177 @@ class DeepSearchService:
                 for e in evidence_list
             ],
         }
+
+    async def _synthesize_low_evidence_answer(
+        self,
+        query: str,
+        internal_articles: List[Dict],
+        perplexity_answer: str,
+        weather_context: Optional[Dict],
+    ) -> Dict[str, Any]:
+        """Synthesize a low-evidence answer with per-sentence grounding tags.
+
+        Routed to from `search()` when internal_count + external_count < 3.
+        The dedicated `deep_search_synthesis_low_evidence` prompt (v1.0,
+        added 2026-05-23) instructs the LLM to:
+          * generate an answer despite the evidence gap
+          * tag every sentence with HIGH/MEDIUM/LOW/NONE grounding
+          * wrap in a `confidence: low` envelope
+          * suggest 3-5 refined queries
+
+        Returns a dict with keys: answer_markdown, sentence_grounding[],
+        confidence, confidence_reason, suggested_refinements[]. On parse
+        failure (LLM emitted prose instead of JSON), falls back to a
+        synthetic envelope so the UI still surfaces *something*.
+        """
+        import json as _json
+        import re as _re
+
+        # Build context exactly the same way as the high-evidence path so
+        # the LLM gets identical input — only the prompt + parsing differ.
+        articles_context = ""
+        if internal_articles:
+            for i, art in enumerate(internal_articles[:5], 1):
+                cred = art.get("overall_credibility", "UNKNOWN")
+                rel = art.get("reliability_score")
+                rel_str = ""
+                if rel is not None:
+                    try:
+                        rel_float = float(rel)
+                        rel_pct = rel_float * 100.0 if rel_float <= 1.0 else rel_float
+                        rel_pct = max(0.0, min(100.0, rel_pct))
+                        rel_str = f", reliability: {rel_pct:.0f}%"
+                    except (TypeError, ValueError):
+                        rel_str = ""
+                articles_context += (
+                    f"\n{i}. [{cred}{rel_str}] \"{art.get('title', '')}\""
+                    f"\n   Source: {art.get('source_name', 'Unknown')}"
+                    f"\n   Excerpt: {(art.get('excerpt') or '')[:150]}\n"
+                )
+        if not articles_context:
+            articles_context = "(none)"
+
+        weather_section = ""
+        if weather_context and weather_context.get("data_points"):
+            weather_section = "\nWEATHER DATA:\n"
+            for dp in weather_context["data_points"]:
+                weather_section += f"- {dp['content']}\n"
+
+        from app.domains.intelligence.prompts import get_prompt
+        tmpl = get_prompt("deep_search_synthesis_low_evidence")
+        prompt = tmpl.format(
+            query=query,
+            internal_count=len(internal_articles or []),
+            external_count=1 if (perplexity_answer or "").strip() else 0,
+            articles_context=articles_context,
+            perplexity_answer=(perplexity_answer or "(none)"),
+            weather_section=weather_section,
+        )
+
+        raw_text: Optional[str] = None
+
+        # Try Claude first (mirrors the high-evidence path)
+        if self.anthropic_key:
+            try:
+                import anthropic
+                client = anthropic.Anthropic(api_key=self.anthropic_key, timeout=15.0)
+                message = client.messages.create(
+                    model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5"),
+                    max_tokens=tmpl.max_tokens or 1200,
+                    temperature=tmpl.temperature if tmpl.temperature is not None else 0.2,
+                    system=tmpl.system,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                if message.content:
+                    raw_text = message.content[0].text.strip()
+            except Exception as e:
+                logger.warning(f"Claude low-evidence synthesis failed: {e}")
+
+        # Fallback to DeepSeek
+        if raw_text is None:
+            deepseek_key = os.getenv("DEEPSEEK_API_KEY")
+            if deepseek_key:
+                try:
+                    from openai import OpenAI as OpenAIClient
+                    client = OpenAIClient(
+                        api_key=deepseek_key,
+                        base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+                        timeout=15.0,
+                    )
+                    response = client.chat.completions.create(
+                        model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+                        messages=[
+                            {"role": "system", "content": tmpl.system or "Return strict JSON."},
+                            {"role": "user", "content": prompt},
+                        ],
+                        max_tokens=tmpl.max_tokens or 1200,
+                        temperature=tmpl.temperature if tmpl.temperature is not None else 0.2,
+                    )
+                    raw_text = response.choices[0].message.content.strip()
+                except Exception as e:
+                    logger.warning(f"DeepSeek low-evidence synthesis failed: {e}")
+
+        # No LLM available — synthetic envelope so the UI still works
+        if raw_text is None:
+            return {
+                "answer_markdown": (
+                    f'We do not currently have verified evidence in our corpus or external '
+                    f'research layer for "{query}". The LLM synthesis layer is also '
+                    'offline — please try one of the refined queries below or wait for '
+                    'LLM availability to return.'
+                ),
+                "sentence_grounding": [
+                    {
+                        "text": f'We do not currently have verified evidence in our corpus or external research layer for "{query}".',
+                        "level": "HIGH",
+                        "reason": "platform-introspection",
+                    },
+                    {
+                        "text": "The LLM synthesis layer is also offline — please try one of the refined queries below or wait for LLM availability to return.",
+                        "level": "HIGH",
+                        "reason": "platform-introspection",
+                    },
+                ],
+                "confidence": "low",
+                "confidence_reason": "no_llm_available_and_no_retrieved_evidence",
+                "suggested_refinements": [],
+            }
+
+        # Parse the JSON envelope. LLMs sometimes wrap in code fences or
+        # add a stray prose preamble — strip generously before json.loads.
+        candidate = raw_text
+        # Strip ```json ... ``` fences
+        fence_match = _re.search(r"```(?:json)?\s*(\{.*?\})\s*```", candidate, _re.DOTALL)
+        if fence_match:
+            candidate = fence_match.group(1)
+        else:
+            # Find the first {...} block by greedy braces match
+            brace_match = _re.search(r"\{.*\}", candidate, _re.DOTALL)
+            if brace_match:
+                candidate = brace_match.group(0)
+
+        try:
+            parsed = _json.loads(candidate)
+            # Light shape validation
+            if not isinstance(parsed.get("answer_markdown"), str):
+                raise ValueError("answer_markdown missing or wrong type")
+            grounding = parsed.get("sentence_grounding")
+            if grounding is not None and not isinstance(grounding, list):
+                parsed["sentence_grounding"] = None
+            return parsed
+        except Exception as exc:
+            logger.warning(
+                "Low-evidence synthesis returned unparseable JSON; "
+                f"falling back to raw_text. detail={exc!r}"
+            )
+            return {
+                "answer_markdown": raw_text,
+                "sentence_grounding": None,
+                "confidence": "low",
+                "confidence_reason": "llm_response_unparseable",
+                "suggested_refinements": [],
+                "raw_text": raw_text,
+            }
 
     async def _synthesize_answer(
         self,

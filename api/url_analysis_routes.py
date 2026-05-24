@@ -637,11 +637,297 @@ class URLAnalysisDetail(BaseModel):
     completed_at: Optional[datetime] = None
     processing_time_ms: Optional[int] = None
     error_message: Optional[str] = None
+    # Structured failure surface (migration 031). Present when status == 'failed'
+    # AND the failure was classified. Legacy rows + legacy error paths have
+    # these as None and the frontend falls back to `error_message`.
+    failure_reason: Optional[str] = None
+    failure_detail: Optional[dict] = None
 
 
 # =============================================================================
 # URL CONTENT FETCHING SERVICE
 # =============================================================================
+
+# Structured failure reasons (migration 031). Each value MUST stay stable —
+# the frontend keys off it to pick an icon, explanation, and remediation hint.
+FAILURE_REASON_HTTP_FORBIDDEN = "http_forbidden"
+FAILURE_REASON_HTTP_NOT_FOUND = "http_not_found"
+FAILURE_REASON_HTTP_LEGAL_BLOCK = "http_legal_block"
+FAILURE_REASON_HTTP_4XX_OTHER = "http_4xx_other"
+FAILURE_REASON_HTTP_5XX = "http_5xx"
+FAILURE_REASON_TIMEOUT = "timeout"
+FAILURE_REASON_RESPONSE_TOO_LARGE = "response_too_large"
+FAILURE_REASON_EXTRACTION_TOO_SHORT = "extraction_too_short"
+FAILURE_REASON_PAYWALL_SUSPECTED = "paywall_suspected"
+FAILURE_REASON_JS_RENDERED_SPA = "js_rendered_spa"
+FAILURE_REASON_REDIRECT_BLOCKED = "redirect_blocked"
+FAILURE_REASON_NETWORK_ERROR = "network_error"
+FAILURE_REASON_VALIDATION_FAILED = "validation_failed"
+FAILURE_REASON_CLAIM_EXTRACTION_FAILED = "claim_extraction_failed"
+FAILURE_REASON_UNKNOWN = "unknown"
+
+
+# Per-reason copy + remediation. Kept here so the backend stays the single
+# source of truth for the failure surface; the frontend just renders the JSON.
+_FAILURE_COPY: dict = {
+    FAILURE_REASON_HTTP_FORBIDDEN: {
+        "title": "Source blocked our reader",
+        "message": (
+            "The site returned HTTP 403, which usually means automated access is "
+            "blocked (Cloudflare bot protection, anti-scraping rules, or robots.txt "
+            "deny). The article likely exists but we cannot fetch it server-side."
+        ),
+        "remediation": (
+            "Open the article in your browser, copy the visible text, and use the "
+            "Research → Paste text mode at /research to analyze it. Professional "
+            "tier will add a Playwright fallback for verified domains."
+        ),
+    },
+    FAILURE_REASON_HTTP_NOT_FOUND: {
+        "title": "Page not found",
+        "message": (
+            "The URL returned HTTP 404. The article may have moved, been deleted, "
+            "or the link contains a typo."
+        ),
+        "remediation": (
+            "Double-check the URL on the publisher's site. If the article was "
+            "redirected, copy the new URL and resubmit."
+        ),
+    },
+    FAILURE_REASON_HTTP_LEGAL_BLOCK: {
+        "title": "Content blocked for legal reasons",
+        "message": (
+            "The source returned HTTP 451 — content unavailable in this jurisdiction "
+            "for legal reasons (e.g. court-ordered takedown, GDPR / DMCA block)."
+        ),
+        "remediation": (
+            "Try an archived copy via web.archive.org, or paste the text directly "
+            "into /research if you have legitimate access."
+        ),
+    },
+    FAILURE_REASON_HTTP_4XX_OTHER: {
+        "title": "Source rejected our request",
+        "message": (
+            "The site returned a 4xx HTTP error. This usually indicates an "
+            "authentication requirement, a malformed URL, or a deliberate block."
+        ),
+        "remediation": (
+            "Verify the URL works in your browser. For login-walled content, "
+            "paste the article text into /research instead."
+        ),
+    },
+    FAILURE_REASON_HTTP_5XX: {
+        "title": "Source server failed",
+        "message": (
+            "The publisher's server returned a 5xx error. This is a problem on "
+            "their end, not ours — they may be down or rate-limiting."
+        ),
+        "remediation": "Wait a few minutes and try the same URL again.",
+    },
+    FAILURE_REASON_TIMEOUT: {
+        "title": "Source took too long to respond",
+        "message": (
+            "We waited 45 seconds for the page to load and it did not respond. "
+            "Either the site is slow today or it intentionally stalls non-browser "
+            "clients."
+        ),
+        "remediation": (
+            "Retry the URL; if it consistently times out, the site likely has "
+            "anti-scraping latency walls. Paste the text into /research."
+        ),
+    },
+    FAILURE_REASON_RESPONSE_TOO_LARGE: {
+        "title": "Article exceeds size limit",
+        "message": (
+            "The fetched page was larger than the configured ceiling. We cap "
+            "responses to keep extraction bounded; some PDFs or long-form reports "
+            "exceed it."
+        ),
+        "remediation": (
+            "Try the article's HTML version instead of a PDF, or submit a "
+            "shorter URL pointing to just the article (not the homepage)."
+        ),
+    },
+    FAILURE_REASON_EXTRACTION_TOO_SHORT: {
+        "title": "Couldn't find article body",
+        "message": (
+            "We fetched the page but couldn't extract more than ~50 characters of "
+            "readable text. The article body may be inside an image, video, or a "
+            "deeply non-standard HTML structure."
+        ),
+        "remediation": (
+            "Use /research → Paste text mode and paste the article body directly."
+        ),
+    },
+    FAILURE_REASON_PAYWALL_SUSPECTED: {
+        "title": "Paywall detected",
+        "message": (
+            "The page loaded but only returned a short stub with subscription / "
+            "premium-content keywords. The full article is gated behind a paywall."
+        ),
+        "remediation": (
+            "If you have a subscription, open the article in your browser and "
+            "paste the text into /research. Otherwise try an open-access summary "
+            "from the same publisher."
+        ),
+    },
+    FAILURE_REASON_JS_RENDERED_SPA: {
+        "title": "JavaScript-rendered page",
+        "message": (
+            "The site appears to render its article body via JavaScript after the "
+            "initial HTML loads. Our server-side fetcher only sees the empty shell. "
+            "We are planning a Playwright-rendered fallback for verified domains."
+        ),
+        "remediation": (
+            "For now, paste the article text into /research. If this site is "
+            "important to you, request Playwright support via /suggest-source."
+        ),
+    },
+    FAILURE_REASON_REDIRECT_BLOCKED: {
+        "title": "Redirect blocked for safety",
+        "message": (
+            "The URL tried to redirect to a private network address (DNS rebinding "
+            "or open-redirect attempt). We block these to prevent the platform "
+            "from being abused as an SSRF gadget."
+        ),
+        "remediation": (
+            "Verify the URL is the publisher's real article URL, not a shortener "
+            "or open-redirect link."
+        ),
+    },
+    FAILURE_REASON_NETWORK_ERROR: {
+        "title": "Network error reaching source",
+        "message": (
+            "We couldn't reach the source — DNS lookup failed, connection refused, "
+            "or the TLS handshake didn't complete."
+        ),
+        "remediation": (
+            "Check the URL is correct and reachable from a normal browser. "
+            "Retry in a few minutes."
+        ),
+    },
+    FAILURE_REASON_VALIDATION_FAILED: {
+        "title": "URL failed safety validation",
+        "message": (
+            "The URL pointed at a private IP, localhost, or an unsupported scheme. "
+            "We only accept public HTTPS URLs."
+        ),
+        "remediation": "Submit a public HTTPS URL.",
+    },
+    FAILURE_REASON_CLAIM_EXTRACTION_FAILED: {
+        "title": "Claim extraction failed",
+        "message": (
+            "We fetched and parsed the article, but the LLM-based claim extractor "
+            "encountered an error (provider outage, rate limit, or unparseable "
+            "response)."
+        ),
+        "remediation": "Click Re-analyze, or try again in a few minutes.",
+    },
+    FAILURE_REASON_UNKNOWN: {
+        "title": "Analysis failed",
+        "message": "An unexpected error occurred while analyzing this URL.",
+        "remediation": (
+            "Try again. If the problem persists, use the chat helper to share "
+            "details so we can debug it."
+        ),
+    },
+}
+
+
+class URLFetchException(Exception):
+    """
+    Typed fetch failure used by `fetch_url_content` so callers can persist
+    a structured `failure_reason` + `failure_detail` payload on `url_analyses`
+    (migration 031) instead of stuffing everything into the free-form
+    `error_message` column.
+
+    Backwards compat: this still walks like an Exception, so `except Exception`
+    paths upstream continue to work — but the dedicated handler in
+    `process_url_analysis_sync` reads `.reason` + `.detail()` and persists them.
+    """
+
+    def __init__(
+        self,
+        reason: str,
+        message: Optional[str] = None,
+        *,
+        status_code: Optional[int] = None,
+        extra: Optional[dict] = None,
+    ):
+        copy = _FAILURE_COPY.get(reason) or _FAILURE_COPY[FAILURE_REASON_UNKNOWN]
+        self.reason = reason
+        self.message = message or copy["message"]
+        self.title = copy["title"]
+        self.remediation = copy["remediation"]
+        self.status_code = status_code
+        self.extra = extra or {}
+        super().__init__(self.message)
+
+    def detail(self) -> dict:
+        """Serialise to the shape we persist in `url_analyses.failure_detail`."""
+        payload: dict = {
+            "reason": self.reason,
+            "title": self.title,
+            "message": self.message,
+            "remediation": self.remediation,
+        }
+        if self.status_code is not None:
+            payload["status_code"] = self.status_code
+        if self.extra:
+            payload["extra"] = self.extra
+        return payload
+
+
+# Heuristic paywall keywords. Conservative on purpose — false positives here
+# tell a real user "you have a paywall" when they don't, which is annoying.
+_PAYWALL_KEYWORDS = (
+    "subscribe to read",
+    "subscribe to continue",
+    "create a free account",
+    "become a member",
+    "subscriber-only",
+    "this content is for subscribers",
+    "to continue reading",
+    "premium content",
+    "members only",
+    "paywall",
+    "register to read",
+    "log in to read",
+)
+
+
+def _classify_extraction_failure(
+    html_content: str,
+    extracted_text: str,
+) -> str:
+    """
+    When extraction returned < 50 chars, decide whether it looks like a paywall,
+    a JS-rendered SPA, or just a malformed page.
+
+    Returns one of FAILURE_REASON_PAYWALL_SUSPECTED, FAILURE_REASON_JS_RENDERED_SPA,
+    or FAILURE_REASON_EXTRACTION_TOO_SHORT.
+    """
+    html_lower = (html_content or "").lower()
+
+    # Paywall heuristic — short body + paywall keywords in the surrounding HTML.
+    for kw in _PAYWALL_KEYWORDS:
+        if kw in html_lower:
+            return FAILURE_REASON_PAYWALL_SUSPECTED
+
+    # JS-rendered SPA heuristic — heavy script load relative to text content,
+    # plus telltale framework markers in the HTML shell.
+    script_count = html_lower.count("<script")
+    spa_markers = (
+        'id="__next"', 'id="root"', 'id="app"',
+        'data-reactroot', 'ng-app', 'data-v-',
+        '__nuxt', '__next_data__',
+    )
+    has_spa_marker = any(m in html_lower for m in spa_markers)
+    if script_count >= 5 and has_spa_marker and len(html_content) > 5_000:
+        return FAILURE_REASON_JS_RENDERED_SPA
+
+    return FAILURE_REASON_EXTRACTION_TOO_SHORT
+
 
 async def fetch_url_content(url: str) -> dict:
     """
@@ -649,6 +935,11 @@ async def fetch_url_content(url: str) -> dict:
 
     Handles JS-rendered sites (yle.fi, etc.) by extracting article content
     from semantic HTML tags (article, main, [role=main]).
+
+    Raises `URLFetchException` with a structured `reason` on failure so the
+    caller can persist `failure_reason` + `failure_detail` (migration 031).
+    Legacy `HTTPException` paths are preserved when this is invoked directly
+    from a request handler.
 
     Returns dict with:
     - title: Article title
@@ -699,22 +990,19 @@ async def fetch_url_content(url: str) -> dict:
                 except ValueError:
                     declared_length_int = None
                 if declared_length_int and declared_length_int > max_response_size:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=(
-                            f"Response too large ({declared_length_int} bytes). "
-                            f"Maximum allowed: {max_response_size} bytes."
-                        ),
+                    raise URLFetchException(
+                        FAILURE_REASON_RESPONSE_TOO_LARGE,
+                        extra={
+                            "declared_length": declared_length_int,
+                            "max_bytes": max_response_size,
+                        },
                     )
 
             content_length = len(response.content)
             if content_length > max_response_size:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        f"Response too large ({content_length} bytes). "
-                        f"Maximum allowed: {max_response_size} bytes."
-                    ),
+                raise URLFetchException(
+                    FAILURE_REASON_RESPONSE_TOO_LARGE,
+                    extra={"content_length": content_length, "max_bytes": max_response_size},
                 )
 
             html_content = response.text
@@ -809,13 +1097,16 @@ async def fetch_url_content(url: str) -> dict:
             article_text = re.sub(r' {2,}', ' ', article_text)
 
             if len(article_text.strip()) < 50:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "Could not extract enough text from this URL. "
-                        "The site may use JavaScript rendering, require authentication, "
-                        "or block automated access. Try a different URL."
-                    )
+                classified_reason = _classify_extraction_failure(
+                    html_content=html_content,
+                    extracted_text=article_text,
+                )
+                raise URLFetchException(
+                    classified_reason,
+                    extra={
+                        "extracted_chars": len(article_text.strip()),
+                        "html_bytes": len(html_content),
+                    },
                 )
 
             text = article_text[:max_extracted_text_chars]
@@ -831,30 +1122,46 @@ async def fetch_url_content(url: str) -> dict:
 
     except httpx.TimeoutException:
         logger.error(f"Timeout fetching URL: {url}")
-        raise HTTPException(
-            status_code=503,
-            detail="Timeout fetching URL. The server took too long to respond. Try again later."
-        )
+        raise URLFetchException(FAILURE_REASON_TIMEOUT)
     except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP error fetching URL {url}: {e.response.status_code}")
-        status_explanations = {
-            403: "Access denied — this site blocks automated access.",
-            404: "Page not found — check the URL is correct.",
-            451: "Content unavailable for legal reasons.",
-            500: "The target server encountered an internal error.",
-        }
-        detail = status_explanations.get(
-            e.response.status_code,
-            f"Failed to fetch URL: HTTP {e.response.status_code}"
-        )
-        raise HTTPException(status_code=400, detail=detail)
-    except HTTPException:
+        status = e.response.status_code
+        logger.error(f"HTTP error fetching URL {url}: {status}")
+        if status == 403:
+            reason = FAILURE_REASON_HTTP_FORBIDDEN
+        elif status == 404:
+            reason = FAILURE_REASON_HTTP_NOT_FOUND
+        elif status == 451:
+            reason = FAILURE_REASON_HTTP_LEGAL_BLOCK
+        elif 400 <= status < 500:
+            reason = FAILURE_REASON_HTTP_4XX_OTHER
+        else:
+            reason = FAILURE_REASON_HTTP_5XX
+        raise URLFetchException(reason, status_code=status)
+    except URLFetchException:
         raise
+    except HTTPException as e:
+        # `_safe_fetch` raises HTTPException(400) on redirect-blocked / DNS-rebind
+        # attempts. Surface that as the structured REDIRECT_BLOCKED reason so the
+        # frontend can show the SSRF-defence explainer rather than a raw 400.
+        if e.status_code == 400 and "edirect" in str(e.detail or ""):
+            raise URLFetchException(
+                FAILURE_REASON_REDIRECT_BLOCKED,
+                extra={"detail": str(e.detail)},
+            )
+        # Anything else: preserve the legacy HTTPException so the caller (if any)
+        # still sees a properly-coded API response.
+        raise
+    except (httpx.ConnectError, httpx.NetworkError, httpx.ReadError) as e:
+        logger.error(f"Network error fetching URL {url}: {e}")
+        raise URLFetchException(
+            FAILURE_REASON_NETWORK_ERROR,
+            extra={"error_class": type(e).__name__, "detail": str(e)[:200]},
+        )
     except Exception as e:
         logger.error(f"Error fetching URL {url}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=400,
-            detail=f"Failed to fetch URL content: {str(e)}"
+        raise URLFetchException(
+            FAILURE_REASON_UNKNOWN,
+            extra={"error_class": type(e).__name__, "detail": str(e)[:200]},
         )
 
 
@@ -1065,6 +1372,79 @@ async def _mirror_url_analysis_to_corpus(
 # BACKGROUND PROCESSING
 # =============================================================================
 
+def _persist_structured_failure(
+    db,
+    analysis_id: str,
+    start_time: datetime,
+    exc: "URLFetchException",
+) -> None:
+    """
+    Write a structured failure row to `url_analyses`.
+
+    Sets:
+    - status = 'failed'
+    - error_message (legacy free-form, kept for backward-compat readers)
+    - failure_reason  (migration 031 — enum-shaped string)
+    - failure_detail  (migration 031 — JSONB with title/message/remediation/extra)
+    - processing_time_ms
+
+    Best-effort: if the migration hasn't run yet (older clusters), falls
+    back to the legacy single-column write so the analysis still completes.
+    """
+    import json
+
+    elapsed_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+    detail_payload = exc.detail()
+    detail_json = json.dumps(detail_payload)
+
+    try:
+        db.execute_update(
+            """
+            UPDATE url_analyses
+            SET status = 'failed',
+                error_message = :error,
+                failure_reason = :reason,
+                failure_detail = CAST(:detail AS jsonb),
+                completed_at = NOW(),
+                processing_time_ms = :time_ms,
+                updated_at = NOW()
+            WHERE analysis_id = :analysis_id
+            """,
+            {
+                "error": exc.message,
+                "reason": exc.reason,
+                "detail": detail_json,
+                "time_ms": elapsed_ms,
+                "analysis_id": analysis_id,
+            },
+        )
+        return
+    except Exception as schema_err:
+        # Migration 031 not applied yet — fall back to the legacy single-column
+        # write so the row still moves to 'failed'. Frontend just sees the
+        # legacy error_message text in this case (no icon/remediation surface).
+        logger.warning(
+            f"Structured failure write fell back to legacy schema for {analysis_id}: {schema_err}"
+        )
+
+    db.execute_update(
+        """
+        UPDATE url_analyses
+        SET status = 'failed',
+            error_message = :error,
+            completed_at = NOW(),
+            processing_time_ms = :time_ms,
+            updated_at = NOW()
+        WHERE analysis_id = :analysis_id
+        """,
+        {
+            "error": exc.message,
+            "time_ms": elapsed_ms,
+            "analysis_id": analysis_id,
+        },
+    )
+
+
 async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
     """
     Synchronous processing of URL analysis (NO KAFKA).
@@ -1100,7 +1480,7 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
         # Step 2: Fetch content from URL
         try:
             content = await fetch_url_content(url)
-        except HTTPException as fetch_err:
+        except (URLFetchException, HTTPException) as fetch_err:
             # Repository landing pages (Theseus/URN/DSpace) often hold only
             # metadata and link out to the actual PDF. Auto-resolve and retry.
             parsed = urlparse(url)
@@ -1183,21 +1563,17 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
             error_msg = f"Claim extraction failed: {e.detail}"
             logger.error(error_msg)
 
-            db.execute_update(
-                """
-                UPDATE url_analyses
-                SET status = 'failed',
-                    error_message = :error,
-                    completed_at = NOW(),
-                    processing_time_ms = :time_ms,
-                    updated_at = NOW()
-                WHERE analysis_id = :analysis_id
-                """,
-                {
-                    "error": error_msg,
-                    "time_ms": int((datetime.utcnow() - start_time).total_seconds() * 1000),
-                    "analysis_id": analysis_id
-                }
+            claim_exc = URLFetchException(
+                FAILURE_REASON_CLAIM_EXTRACTION_FAILED,
+                message=error_msg,
+                status_code=getattr(e, "status_code", None),
+                extra={"detail": str(e.detail)},
+            )
+            _persist_structured_failure(
+                db=db,
+                analysis_id=analysis_id,
+                start_time=start_time,
+                exc=claim_exc,
             )
             return
 
@@ -1439,43 +1815,49 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
             overall_credibility=overall_credibility,
         )
 
+    except URLFetchException as e:
+        # Structured-failure path (migration 031). The frontend reads
+        # `failure_reason` + `failure_detail` to show a typed explanation
+        # instead of a free-form "Analysis failed" string.
+        logger.warning(
+            f"URL analysis {analysis_id} failed with structured reason: {e.reason}",
+            reason=e.reason,
+            status_code=e.status_code,
+        )
+        _persist_structured_failure(
+            db=db,
+            analysis_id=analysis_id,
+            start_time=start_time,
+            exc=e,
+        )
     except HTTPException as e:
-        # Already handled and logged
-        error_msg = e.detail
-        db.execute_update(
-            """
-            UPDATE url_analyses
-            SET status = 'failed',
-                error_message = :error,
-                completed_at = NOW(),
-                processing_time_ms = :time_ms,
-                updated_at = NOW()
-            WHERE analysis_id = :analysis_id
-            """,
-            {
-                "error": error_msg,
-                "time_ms": int((datetime.utcnow() - start_time).total_seconds() * 1000),
-                "analysis_id": analysis_id
-            }
+        # Legacy HTTPException path — wrap as unknown so the row still gets
+        # a structured failure_reason. The original detail is preserved in
+        # failure_detail.extra so we don't lose diagnostics.
+        wrapped = URLFetchException(
+            FAILURE_REASON_UNKNOWN,
+            message=str(e.detail or "Unknown error"),
+            status_code=getattr(e, "status_code", None),
+            extra={"http_exception_detail": str(e.detail)},
+        )
+        _persist_structured_failure(
+            db=db,
+            analysis_id=analysis_id,
+            start_time=start_time,
+            exc=wrapped,
         )
     except Exception as e:
         logger.error(f"Error processing URL analysis {analysis_id}: {e}", exc_info=True)
-
-        db.execute_update(
-            """
-            UPDATE url_analyses
-            SET status = 'failed',
-                error_message = :error,
-                completed_at = NOW(),
-                processing_time_ms = :time_ms,
-                updated_at = NOW()
-            WHERE analysis_id = :analysis_id
-            """,
-            {
-                "error": str(e),
-                "time_ms": int((datetime.utcnow() - start_time).total_seconds() * 1000),
-                "analysis_id": analysis_id
-            }
+        wrapped = URLFetchException(
+            FAILURE_REASON_UNKNOWN,
+            message=str(e)[:500],
+            extra={"error_class": type(e).__name__},
+        )
+        _persist_structured_failure(
+            db=db,
+            analysis_id=analysis_id,
+            start_time=start_time,
+            exc=wrapped,
         )
 
 
@@ -1496,8 +1878,20 @@ async def submit_url_analysis(
     Premium tiers get higher limits.
     """
     user_id = ANONYMOUS_UUID
+    user_tier = "anonymous"
     if current_user and isinstance(current_user, dict):
         user_id = str(current_user.get("user_id", ANONYMOUS_UUID))
+        user_tier = str(current_user.get("subscription_tier", "freemium"))
+
+    # Phase 1A (2026-05-23) — quota gate: enforce the 3/3/2 freemium ladder
+    # BEFORE doing the work. Raises HTTP 429 with structured envelope so the
+    # client can render the upgrade modal with exact remaining/reset info.
+    from api.quota_service import QuotaService
+    QuotaService.check_and_raise(
+        user_id=None if user_id == ANONYMOUS_UUID else user_id,
+        tier=user_tier,
+        quota_key="url_analysis",
+    )
 
     # Create analysis record
     db = get_postgres()
@@ -1579,35 +1973,74 @@ async def get_analysis_result(
     """
     db = get_postgres()
 
-    results = db.execute_query(
-        """
-        SELECT
-            user_id,
-            analysis_id,
-            submitted_url,
-            status,
-            title,
-            source_name,
-            source_domain,
-            extracted_text,
-            language_code,
-            published_date,
-            reliability_score,
-            overall_credibility,
-            extracted_claims,
-            fact_checks,
-            created_at,
-            processing_started_at,
-            completed_at,
-            processing_time_ms,
-            error_message
-        FROM url_analyses
-        WHERE analysis_id = :analysis_id
-        """,
-        {
-            "analysis_id": job_id,
-        }
-    )
+    # Phase 0 (2026-05-23): include failure_reason + failure_detail (migration 031)
+    # via best-effort fetch. Clusters that have not run the migration yet still
+    # work — the second SELECT (legacy column set) is the safe fallback.
+    try:
+        results = db.execute_query(
+            """
+            SELECT
+                user_id,
+                analysis_id,
+                submitted_url,
+                status,
+                title,
+                source_name,
+                source_domain,
+                extracted_text,
+                language_code,
+                published_date,
+                reliability_score,
+                overall_credibility,
+                extracted_claims,
+                fact_checks,
+                created_at,
+                processing_started_at,
+                completed_at,
+                processing_time_ms,
+                error_message,
+                failure_reason,
+                failure_detail
+            FROM url_analyses
+            WHERE analysis_id = :analysis_id
+            """,
+            {
+                "analysis_id": job_id,
+            }
+        )
+    except Exception as schema_err:
+        logger.warning(
+            f"Legacy url_analyses schema (no migration 031); falling back. {schema_err}"
+        )
+        results = db.execute_query(
+            """
+            SELECT
+                user_id,
+                analysis_id,
+                submitted_url,
+                status,
+                title,
+                source_name,
+                source_domain,
+                extracted_text,
+                language_code,
+                published_date,
+                reliability_score,
+                overall_credibility,
+                extracted_claims,
+                fact_checks,
+                created_at,
+                processing_started_at,
+                completed_at,
+                processing_time_ms,
+                error_message
+            FROM url_analyses
+            WHERE analysis_id = :analysis_id
+            """,
+            {
+                "analysis_id": job_id,
+            }
+        )
 
     if not results:
         raise HTTPException(
@@ -1672,6 +2105,20 @@ async def get_analysis_result(
             job_id, _calib_exc,
         )
 
+    # Structured failure (migration 031). failure_detail may be returned as
+    # a dict (psycopg2 JSONB) or as a JSON string depending on the driver;
+    # normalise to a dict for the response.
+    failure_reason = result.get("failure_reason")
+    failure_detail_raw = result.get("failure_detail")
+    failure_detail: Optional[dict] = None
+    if isinstance(failure_detail_raw, dict):
+        failure_detail = failure_detail_raw
+    elif isinstance(failure_detail_raw, str):
+        try:
+            failure_detail = json.loads(failure_detail_raw)
+        except Exception:
+            failure_detail = None
+
     return URLAnalysisDetail(
         analysis_id=str(result["analysis_id"]),
         submitted_url=result["submitted_url"],
@@ -1691,7 +2138,9 @@ async def get_analysis_result(
         processing_started_at=result.get("processing_started_at"),
         completed_at=result.get("completed_at"),
         processing_time_ms=result.get("processing_time_ms"),
-        error_message=result.get("error_message")
+        error_message=result.get("error_message"),
+        failure_reason=failure_reason,
+        failure_detail=failure_detail,
     )
 
 

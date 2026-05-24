@@ -87,6 +87,16 @@ jobs:
             tests/api/test_calibration.py \
             tests/api/test_calibration_store.py \
             tests/unit/api/test_rate_limiter.py \
+            tests/api/test_quota_service.py \
+            tests/api/test_quota_endpoint_integration.py \
+            tests/api/test_url_analysis_failures.py \
+            tests/api/test_agentic_skill_pin.py \
+            tests/api/test_aoi_service.py \
+            tests/api/test_aoi_poll_service.py \
+            tests/api/test_scheduler_aoi_poll.py \
+            tests/api/test_skills_registry.py \
+            tests/api/test_company_routes.py \
+            tests/unit/domains/test_source_profiles_credibility_tiers.py \
             --override-ini="addopts=" -p no:warnings -v
 
       - name: Run adversarial probes (Phase 6 red-team gate)

@@ -14,7 +14,12 @@ import {
 } from "lucide-react";
 import Markdown from "./Markdown";
 import AIProvenanceBadge from "./AIProvenanceBadge";
-import { dispatchChatAction, type ChatActionSpec } from "@/lib/chatActionDispatcher";
+import ChatActionConfirmModal from "./ChatActionConfirmModal";
+import {
+  dispatchChatAction,
+  ACTION_MODES,
+  type ChatActionSpec,
+} from "@/lib/chatActionDispatcher";
 
 interface Message {
   role: "user" | "assistant";
@@ -125,6 +130,51 @@ export default function AgenticAssistant({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Phase 1C (2026-05-23) — pending action awaiting user confirmation.
+  // The dispatcher fails closed on confirm-mode actions when no
+  // requestConfirmation hook is provided; this state + the resolver
+  // ref are how the modal proxies the user's choice back to it.
+  const [pendingAction, setPendingAction] = useState<ChatActionSpec | null>(null);
+  const confirmResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
+
+  const requestConfirmation = useCallback(
+    (action: ChatActionSpec): Promise<boolean> => {
+      return new Promise((resolve) => {
+        confirmResolverRef.current = resolve;
+        setPendingAction(action);
+      });
+    },
+    [],
+  );
+
+  const handleActionClick = useCallback(
+    async (action: ChatActionSpec) => {
+      const result = await dispatchChatAction(action, { requestConfirmation });
+      if (result.status === "error" && result.quotaExceeded) {
+        // Surface the quota-exceeded message inline. The user can also
+        // click the visible Upgrade CTA in /dashboard/subscription.
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: `${result.message} Visit /dashboard/subscription to upgrade.`,
+            mode: "quota_notice",
+          },
+        ]);
+      } else if (result.status === "error") {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: `Could not complete that action: ${result.message}`,
+            mode: "action_error",
+          },
+        ]);
+      }
+    },
+    [requestConfirmation],
+  );
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -487,18 +537,39 @@ export default function AgenticAssistant({
                         />
                       </div>
                       {msg.actions && msg.actions.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {msg.actions.map((a, i) => (
-                            <button
-                              key={i}
-                              type="button"
-                              onClick={() => dispatchChatAction(a)}
-                              className="px-2.5 py-1 bg-teal-600/20 hover:bg-teal-600/40 text-teal-300 text-xs rounded-full border border-teal-500/30 transition-colors cursor-pointer"
-                              aria-label={a.label}
-                            >
-                              {a.label}
-                            </button>
-                          ))}
+                        <div className="mt-2 flex flex-wrap gap-1.5" data-testid="chat-actions-row">
+                          {msg.actions.map((a, i) => {
+                            const requiresConfirm = ACTION_MODES[a.type] === "confirm";
+                            return (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={() => handleActionClick(a)}
+                                className={`px-2.5 py-1 text-xs rounded-full border transition-colors cursor-pointer ${
+                                  requiresConfirm
+                                    ? "bg-amber-600/20 hover:bg-amber-600/40 text-amber-200 border-amber-500/40"
+                                    : "bg-teal-600/20 hover:bg-teal-600/40 text-teal-300 border-teal-500/30"
+                                }`}
+                                aria-label={
+                                  requiresConfirm
+                                    ? `${a.label} (requires confirmation)`
+                                    : a.label
+                                }
+                                title={
+                                  requiresConfirm
+                                    ? "Will ask for confirmation before running"
+                                    : undefined
+                                }
+                                data-action-type={a.type}
+                                data-action-mode={ACTION_MODES[a.type]}
+                              >
+                                {a.label}
+                                {requiresConfirm && (
+                                  <span className="ml-1 opacity-70" aria-hidden="true">⚠</span>
+                                )}
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
                     </>
@@ -618,6 +689,24 @@ export default function AgenticAssistant({
           </div>
         </div>
       </div>
+
+      {/* Phase 1C (2026-05-23) — confirmation modal for destructive /
+          quota-consuming chat actions. Pending action → user choice via
+          this modal → dispatcher resolves and runs (or skips) the side
+          effect. AUTO-mode actions never open this. */}
+      <ChatActionConfirmModal
+        action={pendingAction}
+        onConfirm={() => {
+          confirmResolverRef.current?.(true);
+          confirmResolverRef.current = null;
+          setPendingAction(null);
+        }}
+        onCancel={() => {
+          confirmResolverRef.current?.(false);
+          confirmResolverRef.current = null;
+          setPendingAction(null);
+        }}
+      />
     </div>
   );
 }

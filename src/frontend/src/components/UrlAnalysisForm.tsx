@@ -2,10 +2,41 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '@/lib/api'
-import type { AnalyzeUrlResponse, Article, DecomposedConfidence } from '@/types'
+import type {
+  AnalyzeUrlResponse,
+  AnalyzeUrlFailureDetail,
+  AnalyzeUrlFailureReason,
+  Article,
+  DecomposedConfidence,
+} from '@/types'
 import CredibilityGauge from './CredibilityGauge'
 import Markdown from './Markdown'
+import AIProvenanceBadge from './AIProvenanceBadge'
+import QuotaCounter from './QuotaCounter'
+import UpgradeModal, { type UpgradeModalQuotaEnvelope } from './UpgradeModal'
+import { useQuota } from '@/lib/useQuota'
 import { useViewContext } from '@/lib/view-context'
+
+// Per-reason icon emoji. Plain emoji on purpose — `lucide-react` doesn't
+// have great visual differentiators for "paywall" vs "JS-SPA" vs
+// "robots-blocked", and the emoji communicates the failure class in <40ms.
+const REASON_ICON: Record<AnalyzeUrlFailureReason, string> = {
+  http_forbidden: '\u{1F6AB}',         // 🚫
+  http_not_found: '\u{1F50D}',         // 🔍
+  http_legal_block: '\u{2696}',        // ⚖
+  http_4xx_other: '\u{26A0}',          // ⚠
+  http_5xx: '\u{1F4A5}',               // 💥
+  timeout: '\u{23F1}',                 // ⏱
+  response_too_large: '\u{1F4E6}',     // 📦
+  extraction_too_short: '\u{1F4DD}',   // 📝
+  paywall_suspected: '\u{1F4B3}',      // 💳
+  js_rendered_spa: '\u{1F310}',        // 🌐
+  redirect_blocked: '\u{1F512}',       // 🔒
+  network_error: '\u{1F50C}',          // 🔌
+  validation_failed: '\u{1F6AB}',      // 🚫
+  claim_extraction_failed: '\u{1F916}', // 🤖
+  unknown: '\u{2753}',                 // ❓
+}
 
 export default function UrlAnalysisForm() {
   const [url, setUrl] = useState('')
@@ -15,10 +46,19 @@ export default function UrlAnalysisForm() {
   const [accessToken, setAccessToken] = useState<string | null>(null)
   const [status, setStatus] = useState<'idle' | 'processing' | 'completed' | 'failed'>('idle')
   const [error, setError] = useState<string | null>(null)
+  // Structured failure (§3.4 fix on 2026-05-23). When present, the rich
+  // failure block is rendered instead of the free-form `error` line.
+  const [failureDetail, setFailureDetail] = useState<AnalyzeUrlFailureDetail | null>(null)
   const [article, setArticle] = useState<Article | null>(null)
   const [estimatedTime, setEstimatedTime] = useState<number | null>(null)
   const [decomposedConfidence, setDecomposedConfidence] = useState<DecomposedConfidence | null>(null)
   const [insightSummary, setInsightSummary] = useState<string | null>(null)
+
+  // Phase 2A (2026-05-23) — quota envelope from a 429; refresh() ticks the
+  // counter immediately after a successful submission.
+  const { refresh: refreshQuota } = useQuota()
+  const [upgradeQuota, setUpgradeQuota] = useState<UpgradeModalQuotaEnvelope | null>(null)
+  const [upgradeMessage, setUpgradeMessage] = useState<string | null>(null)
 
   const { setView, clearKey } = useViewContext()
 
@@ -76,9 +116,11 @@ export default function UrlAnalysisForm() {
         setArticle(response.article || null)
         setDecomposedConfidence(response.decomposed_confidence || null)
         setInsightSummary(response.insight_summary || null)
+        setFailureDetail(null)
         setJobId(null)
       } else if (response.status === 'failed') {
-        setError(response.error || 'Analysis failed')
+        setError(response.error || response.failure_detail?.message || 'Analysis failed')
+        setFailureDetail(response.failure_detail || null)
         setJobId(null)
       }
     } catch (err: any) {
@@ -126,17 +168,34 @@ export default function UrlAnalysisForm() {
         setJobId(response.job_id)
         setAccessToken(response.access_token || null)
         setEstimatedTime(response.estimated_time || null)
+        // The url_analysis quota was consumed on the backend at submission
+        // time — tick the inline counter so the user sees their remaining
+        // quota update immediately.
+        refreshQuota()
       } else if (response.status === 'completed') {
         setArticle(response.article || null)
         setDecomposedConfidence(response.decomposed_confidence || null)
         setInsightSummary(response.insight_summary || null)
+        setFailureDetail(null)
         setStatus('completed')
+        refreshQuota()
       } else if (response.status === 'failed') {
-        setError(response.error || 'Analysis failed')
+        setError(response.error || response.failure_detail?.message || 'Analysis failed')
+        setFailureDetail(response.failure_detail || null)
         setStatus('failed')
       }
     } catch (err: any) {
       console.error('Error submitting URL:', err)
+
+      // Phase 2A — surface 429 via the UpgradeModal, not the inline error
+      // line. The backend returns { detail: { error, quota, message } }.
+      const detail = err?.response?.data?.detail
+      if (err?.response?.status === 429 && detail && typeof detail === 'object' && detail.quota) {
+        setUpgradeQuota(detail.quota as UpgradeModalQuotaEnvelope)
+        setUpgradeMessage(typeof detail.message === 'string' ? detail.message : null)
+        setStatus('idle')
+        return
+      }
 
       // Handle specific error cases
       if (err?.response?.status === 503) {
@@ -157,6 +216,7 @@ export default function UrlAnalysisForm() {
     setUrl('')
     setStatus('idle')
     setError(null)
+    setFailureDetail(null)
     setArticle(null)
     setJobId(null)
     setAccessToken(null)
@@ -199,6 +259,9 @@ export default function UrlAnalysisForm() {
               disabled={isSubmitting || status === 'processing'}
               className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
+            <div className="flex flex-col items-end gap-1">
+              <QuotaCounter quotaKey="url_analysis" hideWhenUnlimited />
+            </div>
             <button
               type="submit"
               disabled={isSubmitting || status === 'processing' || !url.trim()}
@@ -267,40 +330,129 @@ export default function UrlAnalysisForm() {
           </div>
         )}
 
-        {/* Error State */}
-        {status === 'failed' && error && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-            <div className="flex items-start gap-3">
-              <svg className="h-5 w-5 text-red-600 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              <div>
-                <p className="text-red-800 font-medium">Analysis Failed</p>
-                <p className="text-red-600 text-sm mt-1">{error}</p>
-                <button
-                  type="button"
-                  onClick={handleReset}
-                  className="mt-2 text-sm text-red-700 hover:text-red-800 underline"
+        {/* Error State — structured failure block (§3.4 fix on 2026-05-23).
+            When the backend classified the failure (failureDetail present),
+            we render the icon + title + message + remediation + a
+            type-specific deeplink. Otherwise we fall back to the legacy
+            free-form `error` line so older backends keep working. */}
+        {status === 'failed' && (failureDetail || error) && (
+          <div
+            className="p-4 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/50 rounded-lg"
+            role="alert"
+            aria-live="polite"
+            data-testid="url-analysis-failure"
+          >
+            {failureDetail ? (
+              <div className="flex items-start gap-3">
+                <span
+                  className="text-2xl leading-none flex-shrink-0"
+                  aria-hidden="true"
                 >
-                  Try again
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    openAssistant(
-                      `My URL analysis failed for ${url || 'a submitted URL'}. Help me troubleshoot input format and source accessibility.`
-                    )
-                  }
-                  className="mt-2 ml-3 text-sm text-red-700 hover:text-red-800 underline"
-                >
-                  Get help in chat
-                </button>
+                  {REASON_ICON[failureDetail.reason] || REASON_ICON.unknown}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p
+                      className="text-red-900 dark:text-red-100 font-semibold"
+                      data-testid="url-analysis-failure-title"
+                    >
+                      {failureDetail.title}
+                    </p>
+                    <span
+                      className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wider bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300 rounded"
+                      data-testid="url-analysis-failure-reason"
+                    >
+                      {failureDetail.reason}
+                    </span>
+                    {failureDetail.status_code !== undefined && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300 rounded">
+                        HTTP {failureDetail.status_code}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-red-800 dark:text-red-200 text-sm mt-1.5 leading-relaxed">
+                    {failureDetail.message}
+                  </p>
+                  <div className="mt-3 p-3 bg-white dark:bg-red-950/60 border border-red-100 dark:border-red-800/40 rounded">
+                    <p className="text-xs font-semibold text-red-800 dark:text-red-300 uppercase tracking-wide mb-1">
+                      What to try
+                    </p>
+                    <p className="text-sm text-red-700 dark:text-red-200 leading-relaxed">
+                      {failureDetail.remediation}
+                    </p>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-3 items-center">
+                    <button
+                      type="button"
+                      onClick={handleReset}
+                      className="text-sm font-medium text-red-700 dark:text-red-300 hover:text-red-900 dark:hover:text-red-100 underline"
+                    >
+                      Try a different URL
+                    </button>
+                    {(failureDetail.reason === 'paywall_suspected' ||
+                      failureDetail.reason === 'js_rendered_spa' ||
+                      failureDetail.reason === 'extraction_too_short' ||
+                      failureDetail.reason === 'http_legal_block') && (
+                      <a
+                        href="/research"
+                        className="text-sm font-medium text-red-700 dark:text-red-300 hover:text-red-900 dark:hover:text-red-100 underline"
+                        data-testid="url-analysis-failure-paste-deeplink"
+                      >
+                        Open /research → Paste text
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openAssistant(
+                          `My URL analysis failed (${failureDetail.reason}) for ${url || 'a submitted URL'}. The platform said: "${failureDetail.message}". Help me work around this.`
+                        )
+                      }
+                      className="text-sm font-medium text-red-700 dark:text-red-300 hover:text-red-900 dark:hover:text-red-100 underline"
+                    >
+                      Get help in chat
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-start gap-3">
+                <svg
+                  className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                  aria-hidden="true"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                <div>
+                  <p className="text-red-800 dark:text-red-100 font-medium">Analysis Failed</p>
+                  <p className="text-red-600 dark:text-red-300 text-sm mt-1">{error}</p>
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    className="mt-2 text-sm text-red-700 dark:text-red-300 hover:text-red-800 dark:hover:text-red-100 underline"
+                  >
+                    Try again
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openAssistant(
+                        `My URL analysis failed for ${url || 'a submitted URL'}. Help me troubleshoot input format and source accessibility.`
+                      )
+                    }
+                    className="mt-2 ml-3 text-sm text-red-700 dark:text-red-300 hover:text-red-800 dark:hover:text-red-100 underline"
+                  >
+                    Get help in chat
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -326,6 +478,24 @@ export default function UrlAnalysisForm() {
                       level={article.overall_credibility}
                       decomposedConfidence={decomposedConfidence ?? undefined}
                       size="md"
+                    />
+                  </div>
+
+                  {/* Phase 0 day 3 (2026-05-23) — EU AI Act Art. 50 disclosure
+                      for AI-produced URL credibility verdicts. */}
+                  <div className="mb-3">
+                    <AIProvenanceBadge
+                      provenance={{
+                        model: (article.provenance?.model_name as string) || "deepseek-chat",
+                        prompt_name: (article.provenance?.prompt_name as string) || "claim_extraction",
+                        prompt_version: (article.provenance?.prompt_version as string) || undefined,
+                        prompt_fingerprint: (article.provenance?.prompt_fingerprint as string) || undefined,
+                        retrieval_strategy: "user_submitted_url",
+                        timestamp: article.created_at || new Date().toISOString(),
+                        surface: "url_analysis",
+                        content_summary: `URL credibility analysis: ${article.title}`,
+                      }}
+                      variant="inline"
                     />
                   </div>
 
@@ -407,6 +577,17 @@ export default function UrlAnalysisForm() {
           </div>
         )}
       </form>
+
+      {/* Phase 2A (2026-05-23) — upgrade modal mounts at form root,
+          shown when 429 fires with the structured envelope. */}
+      <UpgradeModal
+        quota={upgradeQuota}
+        message={upgradeMessage}
+        onClose={() => {
+          setUpgradeQuota(null)
+          setUpgradeMessage(null)
+        }}
+      />
     </div>
   )
 }

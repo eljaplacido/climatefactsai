@@ -9,6 +9,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { TREND_LINE_COLORS } from "@/lib/climateColors";
 
 interface TrendDataPoint {
   date: string;
@@ -87,7 +88,7 @@ export default function TrendChart({
               type="monotone"
               dataKey="count"
               name="Articles"
-              stroke="#0d9488"
+              stroke={TREND_LINE_COLORS.topicA}
               strokeWidth={2}
               dot={{ r: 3, fill: "#0d9488", strokeWidth: 0 }}
               activeDot={{ r: 5, fill: "#0d9488", stroke: "#fff", strokeWidth: 2 }}

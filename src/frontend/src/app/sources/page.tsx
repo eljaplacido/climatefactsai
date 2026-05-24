@@ -152,34 +152,58 @@ export default function DataSourcesPage() {
           </div>
         )}
 
-        {/* Static reference section */}
+        {/* Methodology explainer (replaces the pre-2026-05-23 hardcoded
+            "Reference Scientific Sources" block, which showed 8 publishers
+            with no methodology, no scores, and no consistency with the rest
+            of the platform. Every source on this page is now scored against
+            the same rubric — source_credibility_tiers (migration 027) +
+            historical reliability — and the tier badge surfaces the prior
+            bonus directly on each card.) */}
         {!loading && (
           <div className="mt-16 border-t border-gray-200 pt-12">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Reference Scientific Sources</h2>
-            <p className="text-gray-600 mb-8">
-              These institutions are used as primary references for climate claim verification,
-              regardless of whether articles from them have been analyzed yet.
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">How sources are scored</h2>
+            <p className="text-gray-600 mb-4 max-w-3xl">
+              Every source above is graded against the same rubric. We combine four
+              independent signals into the 0&ndash;100 credibility score shown on each
+              card: tier classification, editorial standards, historical fact-check
+              performance, and methodology transparency.
             </p>
             <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
               {[
-                { name: 'NASA Climate', domain: 'climate.nasa.gov', type: 'Government' },
-                { name: 'NOAA', domain: 'noaa.gov', type: 'Government' },
-                { name: 'IPCC', domain: 'ipcc.ch', type: 'International' },
-                { name: 'EPA', domain: 'epa.gov', type: 'Government' },
-                { name: 'Nature Climate Change', domain: 'nature.com', type: 'Journal' },
-                { name: 'Science', domain: 'science.org', type: 'Journal' },
-                { name: 'Climate Feedback', domain: 'climatefeedback.org', type: 'Fact-check' },
-                { name: 'FactCheck.org', domain: 'factcheck.org', type: 'Fact-check' },
+                {
+                  title: 'Tier classification',
+                  body: 'Scimago JR quartile (Q1–Q4) for academic journals, IFCN verification for fact-checkers, government / IGO / NGO classification for institutional sources. Pulled from source_credibility_tiers.',
+                },
+                {
+                  title: 'Editorial standards',
+                  body: 'Rigorous / moderate / low rating based on the publisher’s public editorial policy, correction policy, and ownership disclosure. Unknown when not yet assessed.',
+                },
+                {
+                  title: 'Historical fact-check record',
+                  body: 'How the articles we’ve analyzed from this source have scored over time — verified claim rate, dispute rate, and false-claim rate.',
+                },
+                {
+                  title: 'Methodology transparency',
+                  body: 'Whether the source publishes its methodology, links to primary data, and discloses funding. High / moderate / low / unknown.',
+                },
               ].map((ref) => (
-                <div key={ref.domain} className="border border-gray-200 rounded-lg p-4 bg-white">
-                  <p className="font-medium text-gray-900 text-sm">{ref.name}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{ref.domain}</p>
-                  <span className="inline-block mt-2 px-2 py-0.5 bg-gray-100 text-gray-500 text-[10px] rounded-full">
-                    {ref.type}
-                  </span>
+                <div key={ref.title} className="border border-gray-200 rounded-lg p-4 bg-white">
+                  <p className="font-semibold text-gray-900 text-sm mb-1">{ref.title}</p>
+                  <p className="text-xs text-gray-600 leading-relaxed">{ref.body}</p>
                 </div>
               ))}
             </div>
+            <p className="text-xs text-gray-500 mt-6 max-w-3xl">
+              Source not yet listed? Submit it via{' '}
+              <Link href="/suggest-source" className="text-clilens-primary underline">
+                /suggest-source
+              </Link>
+              . Full methodology is at{' '}
+              <Link href="/methodology" className="text-clilens-primary underline">
+                /methodology
+              </Link>
+              .
+            </p>
           </div>
         )}
       </main>

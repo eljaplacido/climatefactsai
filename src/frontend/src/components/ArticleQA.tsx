@@ -5,6 +5,7 @@ import { MessageCircle, Send, Loader2, ChevronDown, ChevronUp, AlertCircle, Sear
 import type { ConversationEntry, ClaimDetail } from "@/types";
 import { api } from "@/lib/api";
 import Markdown from "./Markdown";
+import AIProvenanceBadge from "./AIProvenanceBadge";
 
 interface ArticleQAProps {
   articleId: string;
@@ -204,6 +205,25 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
 
       {isExpanded && (
         <div className="p-5 space-y-4">
+          {/* Phase 0 day 3 (2026-05-23) — EU AI Act Art. 50 disclosure for
+              article Q&A. Renders once per panel because the chat-bubble UI
+              already telegraphs each response as a system message; the
+              machine-readable JSON-LD ships in the badge. */}
+          {conversations.length > 0 && (
+            <AIProvenanceBadge
+              provenance={{
+                model: "claude-sonnet-4-6",
+                prompt_name: "article_qa",
+                retrieval_strategy: "hybrid_rag(article_corpus)",
+                timestamp: new Date().toISOString(),
+                surface: "article_qa",
+                surface_url: typeof window !== "undefined" ? window.location.href : undefined,
+                content_summary: `Q&A about article: ${articleTitle}`,
+              }}
+              variant="inline"
+            />
+          )}
+
           {/* Conversation history */}
           {conversations.length > 0 && (
             <div className="max-h-96 overflow-y-auto space-y-3 pr-1">

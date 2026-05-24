@@ -142,7 +142,18 @@ async def deep_search(
         user_tier = getattr(current_user, "subscription_tier", "freemium") or "freemium"
         user_id = getattr(current_user, "user_id", None)
 
-    # Check discovery query quota
+    # Phase 1A (2026-05-23) — freemium quota gate (2 deep_research / month
+    # on Free tier per the 3/3/2 decision). Runs BEFORE legacy per-day
+    # discovery_query check so the user gets the structured upgrade hint.
+    from api.quota_service import QuotaService
+    QuotaService.check_and_raise(
+        user_id=str(user_id) if user_id else None,
+        tier=user_tier,
+        quota_key="deep_research",
+    )
+
+    # Legacy per-day cap still applies on top (different concern: prevents
+    # a paid user from runaway spend even though their monthly quota is fine).
     if user_id:
         allowed, current, limit = UsageTracker.check_limit(
             str(user_id), user_tier, "discovery_query", "day"
@@ -174,11 +185,19 @@ async def deep_search(
             if isinstance(guidance, dict):
                 guidance_status = guidance.get("status")
 
-        # Log usage
+        # Log usage — both legacy and new quota counters.
         if user_id:
             UsageTracker.log_usage(
                 user_id=str(user_id),
                 usage_type="discovery_query",
+                resource_url=f"deep_search:{request.query[:100]}",
+            )
+            # Phase 1A: record the deep_research quota consumption so the
+            # monthly counter ticks. Best-effort — failure here doesn't fail
+            # the user request.
+            QuotaService.consume(
+                user_id=str(user_id),
+                quota_key="deep_research",
                 resource_url=f"deep_search:{request.query[:100]}",
             )
 
@@ -228,6 +247,15 @@ async def compare_topics(
         user_tier = getattr(current_user, "subscription_tier", "freemium") or "freemium"
         user_id = getattr(current_user, "user_id", None)
 
+    # Phase 1A (2026-05-23) — compare counts as its own quota key
+    # (separate from deep_research because it costs ~2x the LLM tokens).
+    from api.quota_service import QuotaService
+    QuotaService.check_and_raise(
+        user_id=str(user_id) if user_id else None,
+        tier=user_tier,
+        quota_key="compare",
+    )
+
     db = get_postgres()
 
     from app.domains.intelligence.deep_search_service import DeepSearchService
@@ -240,13 +268,18 @@ async def compare_topics(
             country=request.country,
         )
 
-        # Log usage (counts as 2 queries)
+        # Log usage (counts as 2 legacy queries + 1 quota consumption)
         if user_id:
             try:
                 UsageTracker.log_usage(str(user_id), "discovery_query", resource_url=f"compare:{request.query_a[:50]}")
                 UsageTracker.log_usage(str(user_id), "discovery_query", resource_url=f"compare:{request.query_b[:50]}")
             except Exception as usage_err:
                 logger.warning(f"Usage tracking failed for compare: {usage_err}")
+            QuotaService.consume(
+                user_id=str(user_id),
+                quota_key="compare",
+                resource_url=f"compare:{request.query_a[:50]} vs {request.query_b[:50]}",
+            )
 
         return CompareResponse(**result)
 

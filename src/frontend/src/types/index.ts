@@ -230,12 +230,46 @@ export interface SourceProfile {
   website_url?: string;
   first_seen_at?: string;
   last_updated_at?: string;
+  // Phase 0 day 2 (2026-05-23): tier signals from source_credibility_tiers
+  // (migration 027). Present when the join finds a match; absent for sources
+  // not yet tier-classified. Frontend renders these on SourceProfileCard.
+  tier?: string | null;
+  tier_prior_bonus?: number | null;
 }
 
 // --- URL Analysis ---
 
 export interface AnalyzeUrlRequest {
   url: string;
+}
+
+// Structured failure surface (migration 031, §3.4 fix on 2026-05-23).
+// When `status === 'failed'` and the backend classified the failure, the
+// response carries these instead of a free-form `error` string.
+export type AnalyzeUrlFailureReason =
+  | "http_forbidden"
+  | "http_not_found"
+  | "http_legal_block"
+  | "http_4xx_other"
+  | "http_5xx"
+  | "timeout"
+  | "response_too_large"
+  | "extraction_too_short"
+  | "paywall_suspected"
+  | "js_rendered_spa"
+  | "redirect_blocked"
+  | "network_error"
+  | "validation_failed"
+  | "claim_extraction_failed"
+  | "unknown";
+
+export interface AnalyzeUrlFailureDetail {
+  reason: AnalyzeUrlFailureReason;
+  title: string;
+  message: string;
+  remediation: string;
+  status_code?: number;
+  extra?: Record<string, unknown>;
 }
 
 export interface AnalyzeUrlResponse {
@@ -247,6 +281,9 @@ export interface AnalyzeUrlResponse {
   access_token?: string;
   article?: Article;
   error?: string;
+  // Structured failure (preferred over `error` when present).
+  failure_reason?: AnalyzeUrlFailureReason;
+  failure_detail?: AnalyzeUrlFailureDetail;
   decomposed_confidence?: DecomposedConfidence;
   reliability_breakdown?: ReliabilityBreakdown;
   insight_summary?: string;
@@ -434,9 +471,29 @@ export interface ComparativeAnalysisStructured {
   common_gaps: string[];
 }
 
+// Phase 0 day 3 (2026-05-23, §3.3) — per-sentence grounding tags returned
+// when the low-evidence prompt routes. Each sentence is graded HIGH /
+// MEDIUM / LOW / NONE so the UI can render an inline calibration pill on
+// every sentence of the answer.
+export type SentenceGroundingLevel = "HIGH" | "MEDIUM" | "LOW" | "NONE";
+
+export interface SentenceGrounding {
+  text: string;
+  level: SentenceGroundingLevel;
+  reason?: string;
+}
+
+export interface ConfidenceEnvelope {
+  confidence: "low" | "medium" | "high" | string;
+  reason?: string | null;
+}
+
 export interface DeepSearchResult {
   query: string;
   answer: string;
+  // Present only when the low-evidence prompt ran (internal+external<3).
+  sentence_grounding?: SentenceGrounding[] | null;
+  confidence_envelope?: ConfidenceEnvelope | null;
   citations: DeepSearchCitation[];
   internal_articles_count: number;
   external_sources_count: number;
@@ -447,13 +504,38 @@ export interface DeepSearchResult {
   searched_at: string;
 }
 
+// Aggregate guidance + per-side counters returned by the compare endpoint
+// (§3.1 fix on 2026-05-23). Same shape as the single-search `guidance`
+// payload so the frontend can reuse the amber-box renderer.
+export interface DeepSearchCompareGuidance {
+  status: "empty" | "asymmetric" | "weak" | "partial";
+  reason: string;
+  message: string;
+  suggested_actions?: string[];
+  per_side?: {
+    a: { internal: number; external: number };
+    b: { internal: number; external: number };
+  };
+}
+
 export interface CompareResult {
   query_a: string;
   query_b: string;
   result_a: DeepSearchResult;
   result_b: DeepSearchResult;
   comparative_analysis: string;
-  comparative_analysis_structured?: ComparativeAnalysisStructured;
+  comparative_analysis_structured?: ComparativeAnalysisStructured & {
+    low_confidence?: boolean;
+    low_confidence_reason?: string;
+  };
+  // Aggregate guidance block (§3.1 fix). Present when evidence is empty,
+  // asymmetric, or weak. UI surfaces this above the side-by-side block.
+  guidance?: DeepSearchCompareGuidance;
+  // Unified scope-refinement chips. Drawn from both queries when both sides
+  // are empty; from a single combined query when only the aggregate is weak.
+  clarification_needed?: string[] | null;
+  // True iff guidance.status is empty | asymmetric | weak.
+  low_confidence?: boolean;
   compared_at: string;
 }
 

@@ -1,5 +1,26 @@
 "use client";
 
+/**
+ * Chat action dispatcher — Phase 1C (2026-05-23).
+ *
+ * The platform's agentic chat endpoints can return an `actions[]` payload
+ * listing 0-3 suggested follow-up actions the user might take. This module
+ * is the single place that knows how to safely execute each action type.
+ *
+ * Safety model — every action is classified as either:
+ *   - AUTO: navigational, no server side-effect, no quota consumption.
+ *     Executes immediately on click.
+ *   - CONFIRM: consumes quota OR mutates server state. The dispatcher
+ *     calls the host-provided `requestConfirmation` callback BEFORE
+ *     executing. If the user declines, the action is recorded as
+ *     'declined' and the side effect is skipped entirely.
+ *
+ * Quota-aware: the host can pre-check quota via QuotaService and disable
+ * the action button in the UI; the backend still enforces 429 on the
+ * actual gated endpoint. The dispatcher surfaces quota errors via the
+ * returned Promise so the host can render the upgrade modal.
+ */
+
 export type ChatActionType =
   | "navigate"
   | "analyze_url"
@@ -9,7 +30,9 @@ export type ChatActionType =
   | "open_country"
   | "start_deep_search"
   | "bookmark_article"
-  | "start_calibration_label";
+  | "start_calibration_label"
+  | "open_company"
+  | "verify_corporate_claim";
 
 export interface ChatActionSpec {
   type: ChatActionType;
@@ -17,39 +40,112 @@ export interface ChatActionSpec {
   label: string;
 }
 
-const DISPATCHERS: Record<
+export type ActionMode = "auto" | "confirm";
+
+/**
+ * Auto vs. confirm classification. Add new action types here when extending.
+ *
+ * Confirm-list = consumes quota OR mutates server-side state OR sends
+ * messages on the user's behalf. Auto-list = pure navigation that the
+ * user can always undo with the browser back button.
+ */
+export const ACTION_MODES: Record<ChatActionType, ActionMode> = {
+  navigate: "auto",
+  apply_search_filters: "auto",
+  apply_map_filters: "auto",
+  open_methodology_section: "auto",
+  open_country: "auto",
+  start_deep_search: "auto", // navigates to /deep-search?q=... — user still clicks Search
+  open_company: "auto", // navigates to /companies/[ticker] — pure read
+  analyze_url: "confirm",     // consumes url_analysis quota the moment it lands
+  bookmark_article: "confirm", // consumes saved_articles quota + writes DB row
+  start_calibration_label: "confirm", // submits a calibration rating
+  verify_corporate_claim: "confirm", // POSTs a claim row + ECGT-sensitive verdict
+};
+
+/**
+ * Human-readable confirmation copy used by the host's confirmation modal.
+ * Keep these short and action-oriented — they're what the user reads at
+ * the decision moment.
+ */
+export const ACTION_CONFIRM_COPY: Record<
   ChatActionType,
-  (params: Record<string, any>) => void
+  { title: string; message: (params: any) => string; cta: string }
 > = {
+  navigate: { title: "", message: () => "", cta: "" },
+  apply_search_filters: { title: "", message: () => "", cta: "" },
+  apply_map_filters: { title: "", message: () => "", cta: "" },
+  open_methodology_section: { title: "", message: () => "", cta: "" },
+  open_country: { title: "", message: () => "", cta: "" },
+  start_deep_search: { title: "", message: () => "", cta: "" },
+  open_company: { title: "", message: () => "", cta: "" },
+  analyze_url: {
+    title: "Run URL analysis?",
+    message: (p) =>
+      `Analysing "${p.url}" will use one of your monthly URL-analysis quotas. Continue?`,
+    cta: "Analyse URL",
+  },
+  bookmark_article: {
+    title: "Save this article?",
+    message: () =>
+      "This will count against your saved-articles quota. You can remove it later from your Saved tab.",
+    cta: "Save article",
+  },
+  start_calibration_label: {
+    title: "Submit calibration rating?",
+    message: () =>
+      "Your rating will be recorded against this URL analysis for our calibration set.",
+    cta: "Open rating form",
+  },
+  verify_corporate_claim: {
+    title: "Verify corporate climate claim?",
+    message: (p) =>
+      `This will grade "${p.claim_text}" against ${p.ticker}'s public disclosure ledger (CDP / SBTi) and record the verdict on the company profile. Continue?`,
+    cta: "Verify claim",
+  },
+};
+
+export type DispatchResult =
+  | { status: "executed" }
+  | { status: "declined" }
+  | { status: "error"; message: string; quotaExceeded?: boolean };
+
+export interface DispatchOptions {
+  /**
+   * Host-provided confirmation hook. When the action's mode is 'confirm',
+   * the dispatcher awaits this. Resolve true to proceed, false to decline.
+   *
+   * If not provided, confirm-mode actions FAIL CLOSED — they return
+   * status: 'declined' rather than silently executing. This prevents a
+   * misconfigured host from accidentally bypassing the confirmation gate.
+   */
+  requestConfirmation?: (action: ChatActionSpec) => Promise<boolean>;
+}
+
+const NAV_DISPATCHERS: Record<ChatActionType, (params: Record<string, any>) => void> = {
   navigate: ({ path }: any) => {
     if (typeof path === "string" && path.startsWith("/")) {
-      window.location.assign(path as string);
+      window.location.assign(path);
     }
   },
   analyze_url: ({ url }: any) => {
     if (typeof url === "string") {
-      window.location.assign(`/analyze?url=${encodeURIComponent(url as string)}`);
+      window.location.assign(`/analyze?url=${encodeURIComponent(url)}`);
     }
   },
-  apply_search_filters: ({
-    q,
-    credibility,
-    country,
-    tags,
-    category,
-  }: any) => {
+  apply_search_filters: (p: any) => {
     const sp = new URLSearchParams();
-    if (q) sp.set("q", String(q));
-    if (credibility) sp.set("credibility", String(credibility));
-    if (country) sp.set("country", String(country));
-    if (tags) sp.set("tags", String(tags));
-    if (category) sp.set("category", String(category));
+    if (p.q) sp.set("q", String(p.q));
+    if (p.credibility) sp.set("credibility", String(p.credibility));
+    if (p.country) sp.set("country", String(p.country));
+    if (p.tags) sp.set("tags", String(p.tags));
+    if (p.category) sp.set("category", String(p.category));
     window.location.assign(`/search?${sp.toString()}`);
   },
-  apply_map_filters: ({ country, layer }: any) => {
+  apply_map_filters: (p: any) => {
     const sp = new URLSearchParams();
-    if (country) sp.set("country", String(country));
-    if (layer) sp.set("layer", String(layer));
+    if (p.country) sp.set("country", String(p.country));
+    if (p.layer) sp.set("layer", String(p.layer));
     window.location.assign(`/map?${sp.toString()}`);
   },
   open_methodology_section: ({ section }: any) => {
@@ -63,53 +159,197 @@ const DISPATCHERS: Record<
   },
   start_deep_search: ({ q }: any) => {
     if (typeof q === "string") {
-      window.location.assign(
-        `/deep-search?q=${encodeURIComponent(q as string)}`
-      );
+      // Uses the URL-persistent state hook on /deep-search to pre-fill
+      // the input (mode=search by default).
+      window.location.assign(`/deep-search?q=${encodeURIComponent(q)}`);
     }
   },
-  bookmark_article: ({ article_id }: any) => {
-    if (typeof article_id === "string") {
-      import("@/lib/api").then(({ api }) => {
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/api/bookmarks`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${localStorage.getItem("clilens_token") || ""}`,
-          },
-          body: JSON.stringify({
-            article_id,
-            folder: "from-chat",
-          }),
-        }).catch(() => {});
-      });
-    }
+  bookmark_article: () => {
+    // Handled below via async path — this nav-side stub is a no-op so
+    // the dispatcher map stays uniform.
   },
   start_calibration_label: ({ url_analysis_id }: any) => {
     if (typeof url_analysis_id === "string") {
       window.location.assign(
-        `/analyze?label=${encodeURIComponent(url_analysis_id as string)}`
+        `/analyze?label=${encodeURIComponent(url_analysis_id)}`,
       );
+    }
+  },
+  open_company: ({ ticker }: any) => {
+    if (typeof ticker === "string" && ticker.length > 0) {
+      window.location.assign(
+        `/companies/${encodeURIComponent(ticker.toUpperCase())}`,
+      );
+    }
+  },
+  verify_corporate_claim: () => {
+    // Handled via the async path below — POSTs the claim then navigates
+    // the user to the company detail page where the verdict surfaces.
+  },
+};
+
+/**
+ * Async-side handlers — run when the action needs an API round-trip.
+ * Returns a DispatchResult so the host can surface success/failure.
+ */
+const ASYNC_DISPATCHERS: Partial<
+  Record<ChatActionType, (params: Record<string, any>) => Promise<DispatchResult>>
+> = {
+  bookmark_article: async ({ article_id }: any) => {
+    if (typeof article_id !== "string") {
+      return { status: "error", message: "Missing article_id" };
+    }
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || "";
+      const resp = await fetch(
+        `${base}/api/user/bookmarks/${encodeURIComponent(article_id)}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${
+              typeof window !== "undefined"
+                ? localStorage.getItem("clilens_token") || ""
+                : ""
+            }`,
+          },
+          body: JSON.stringify({ folder: "from-chat" }),
+        },
+      );
+      if (resp.status === 429) {
+        const body = await resp.json().catch(() => ({}));
+        return {
+          status: "error",
+          message:
+            body?.detail?.message ||
+            "You've used all your saved-article quota. Upgrade for more.",
+          quotaExceeded: true,
+        };
+      }
+      if (!resp.ok) {
+        return { status: "error", message: `Bookmark failed (HTTP ${resp.status})` };
+      }
+      return { status: "executed" };
+    } catch (e: any) {
+      return { status: "error", message: e?.message || "Network error" };
+    }
+  },
+  // Phase 7 B3 (2026-05-24) — verify a corporate climate claim against the
+  // disclosure ledger. POSTs to /api/companies/{ticker}/analyze; on success,
+  // navigates the user to the company detail page where the verified claim
+  // appears in the right-hand sidebar.
+  verify_corporate_claim: async ({ ticker, claim_text }: any) => {
+    if (typeof ticker !== "string" || typeof claim_text !== "string") {
+      return { status: "error", message: "Missing ticker or claim_text" };
+    }
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || "";
+      const resp = await fetch(
+        `${base}/api/companies/${encodeURIComponent(ticker.toUpperCase())}/analyze`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ claim_text }),
+        },
+      );
+      if (resp.status === 404) {
+        return {
+          status: "error",
+          message: `Company ${ticker.toUpperCase()} is not in the disclosure ledger yet.`,
+        };
+      }
+      if (!resp.ok) {
+        return {
+          status: "error",
+          message: `Claim verification failed (HTTP ${resp.status})`,
+        };
+      }
+      if (typeof window !== "undefined") {
+        window.location.assign(
+          `/companies/${encodeURIComponent(ticker.toUpperCase())}`,
+        );
+      }
+      return { status: "executed" };
+    } catch (e: any) {
+      return { status: "error", message: e?.message || "Network error" };
     }
   },
 };
 
-export function dispatchChatAction(action: ChatActionSpec): void {
-  const handler = DISPATCHERS[action.type];
-  if (!handler) return;
-  handler(action.params);
-  recordActionClick(action);
+/**
+ * Execute a chat-emitted action with safety classification.
+ *
+ * - AUTO actions: run immediately.
+ * - CONFIRM actions: await host confirmation first; declined = no-op.
+ *
+ * Returns a DispatchResult that the host can use to surface inline
+ * success / upgrade-modal / error toast.
+ */
+export async function dispatchChatAction(
+  action: ChatActionSpec,
+  options: DispatchOptions = {},
+): Promise<DispatchResult> {
+  const mode = ACTION_MODES[action.type];
+  if (!mode) {
+    return { status: "error", message: `Unknown action type: ${action.type}` };
+  }
+
+  if (mode === "confirm") {
+    if (!options.requestConfirmation) {
+      // Fail closed when the host did not wire a confirmation hook.
+      // This is the safety property — a misconfigured host CANNOT silently
+      // execute destructive actions.
+      return { status: "declined" };
+    }
+    let confirmed = false;
+    try {
+      confirmed = await options.requestConfirmation(action);
+    } catch {
+      confirmed = false;
+    }
+    if (!confirmed) {
+      recordActionEvent(action, "declined");
+      return { status: "declined" };
+    }
+  }
+
+  // Async path (API round-trip) takes precedence over navigation path.
+  const asyncHandler = ASYNC_DISPATCHERS[action.type];
+  if (asyncHandler) {
+    const result = await asyncHandler(action.params);
+    recordActionEvent(action, result.status === "executed" ? "executed" : "error");
+    return result;
+  }
+
+  // Navigation path.
+  const navHandler = NAV_DISPATCHERS[action.type];
+  if (navHandler) {
+    navHandler(action.params);
+    recordActionEvent(action, "executed");
+    return { status: "executed" };
+  }
+
+  return { status: "error", message: `No handler registered for ${action.type}` };
 }
 
-async function recordActionClick(action: ChatActionSpec) {
+type ActionOutcome = "executed" | "declined" | "error";
+
+/**
+ * Best-effort telemetry. Records action clicks + outcomes for the action
+ * usage report on /methodology and to feed the future quota-aware UX.
+ */
+async function recordActionEvent(
+  action: ChatActionSpec,
+  outcome: ActionOutcome,
+): Promise<void> {
   try {
     await fetch(
       `${process.env.NEXT_PUBLIC_API_URL || ""}/api/chat/actions/click`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(action),
-      }
+        body: JSON.stringify({ ...action, outcome }),
+      },
     );
   } catch {
     // telemetry is best-effort

@@ -1,0 +1,711 @@
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name=ProgId content=Word.Document>
+<meta name=Generator content="Microsoft Word">
+<title>Climatefacts.ai &mdash; Improvement-Plan Synthesis &amp; Impact-Radius Analysis (2026-05-19)</title>
+<style>
+@page WordSection1 { size: 21cm 29.7cm; margin: 2cm; }
+div.WordSection1 { page: WordSection1; }
+body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color:#111; line-height: 1.42; }
+h1 { font-family: 'Calibri Light', Calibri, sans-serif; font-size: 26pt; color:#0E5C4A; margin:0 0 4pt 0; }
+h2 { font-family: 'Calibri Light', Calibri, sans-serif; font-size: 18pt; color:#0E5C4A; border-bottom: 1px solid #0E5C4A; padding-bottom:3pt; margin-top:22pt; }
+h3 { font-family: Calibri, sans-serif; font-size: 14pt; color:#1A6B57; margin-top:14pt; }
+h4 { font-family: Calibri, sans-serif; font-size: 12pt; color:#2A2A2A; margin-top:10pt; margin-bottom:4pt; }
+p  { margin: 4pt 0 6pt 0; }
+ul, ol { margin: 4pt 0 8pt 22pt; }
+li { margin-bottom: 2pt; }
+code { font-family: Consolas, 'Courier New', monospace; font-size: 10pt; background:#F2F2F2; padding:0 3px; }
+pre { font-family: Consolas, 'Courier New', monospace; font-size: 9.5pt; background:#F6F6F6; border:1px solid #DDD; padding:6pt 8pt; }
+table { border-collapse: collapse; width: 100%; margin: 6pt 0 12pt 0; font-size: 10pt; }
+th, td { border: 1px solid #B8B8B8; padding: 4pt 6pt; vertical-align: top; }
+th { background:#E8F1EE; color:#0E5C4A; text-align:left; }
+.callout { border-left: 4pt solid #0E5C4A; background:#F4FAF8; padding:8pt 12pt; margin: 8pt 0 12pt 0; }
+.warn { border-left: 4pt solid #C25450; background:#FBF3F2; padding:8pt 12pt; margin: 8pt 0 12pt 0; }
+.subtle { color:#555; font-size: 10pt; }
+.tag { display:inline-block; background:#E8F1EE; color:#0E5C4A; padding:1px 6px; border-radius:8px; font-size:9pt; margin-right:4px; }
+.kpi { font-weight:bold; color:#0E5C4A; }
+.done { color:#0A6F40; font-weight:bold; }
+.open { color:#9A4D00; font-weight:bold; }
+.deep { color:#7A1B1B; font-weight:bold; }
+hr { border:none; border-top: 1px dashed #BBB; margin: 14pt 0; }
+.cover .title { font-size: 30pt; color:#0E5C4A; font-weight: 600; }
+.cover .subtitle { font-size: 14pt; color:#444; margin-top:6pt; }
+.cover .meta { margin-top: 18pt; font-size: 11pt; color:#333; }
+.impact { font-size: 9.5pt; }
+.impact th { background:#EFF5F2; }
+.r-blast-low td:first-child { border-left: 3pt solid #5BB97A; }
+.r-blast-med td:first-child { border-left: 3pt solid #E0A23E; }
+.r-blast-high td:first-child { border-left: 3pt solid #C25450; }
+.dag { font-family: Consolas, monospace; font-size: 9.5pt; background:#F8F8F4; border:1px solid #E5E5C8; padding:8pt 10pt; white-space:pre; line-height:1.3; }
+</style>
+</head>
+<body>
+<div class=WordSection1>
+
+<!-- ============================== COVER ============================== -->
+<div class=cover>
+<div class=title>Improvement-Plan Synthesis &amp; Impact-Radius Analysis</div>
+<div class=subtitle>Cross-reading three external improvement plans against the live codebase &mdash; with file-level impact graphs ready for gitnexus visualisation</div>
+<div class=meta>
+<p><b>Date:</b> 19 May 2026<br>
+<b>Subject platform:</b> Climatefacts.ai (CISU Regen)<br>
+<b>Repo state:</b> branch <code>main</code> &mdash; HEAD <code>4699a70</code> &nbsp;|&nbsp; prior anchor <code>8d34329</code> (launch hardening) &nbsp;|&nbsp; rebrand <code>1b96d3a</code><br>
+<b>Inputs analysed:</b><br>
+&nbsp;&nbsp;&bull; <i>Climatefacts-Strategic-Analysis-2026-05-18.md</i> (5-tier strategic / regulatory framing)<br>
+&nbsp;&nbsp;&bull; <i>Climate Platform Analysis and Improvement Plan.md</i> (greenwashing-NLP and corporate-disclosure focus)<br>
+&nbsp;&nbsp;&bull; <i>Climate Data Platform: Strategic Analysis &amp; Roadmap to Best-in-Class (1).md</i> (FAIR + dMRV + blockchain provenance focus)</p>
+</div>
+</div>
+
+<hr>
+
+<!-- ============================== 1. WHAT CHANGED SINCE THE LAST REPORT ============================== -->
+<h2>1. What changed since the 2026-05-18 platform report</h2>
+
+<p>Before mapping the three improvement plans onto the codebase, the picture must be re-anchored: <b>two large commits landed</b>
+after the previous report was filed, and they have already closed many of the items the plans flag.</p>
+
+<table>
+<tr><th>Commit</th><th>Date</th><th>What landed</th></tr>
+<tr>
+  <td><code>8d34329</code></td>
+  <td>2026-05-18</td>
+  <td>Launch-hardening mega-commit. <b>RSS full-body extraction</b> (BeautifulSoup + timeout + summary fallback) shipped in <code>rss_adapter.py:_parse_feed</code>. <b><code>is_synthetic = FALSE</code> filter</b> applied to 60+ user-facing SELECTs across 13 route files. <b>Sustainability v2</b> with ND-GAIN wired in (weights 0.35 / 0.30 / 0.20 / 0.15). <b>Calibration <code>is_preview</code></b> tag when <code>n_labels &lt; 50</code>. <b>Hallucination-rates schema fix</b> (<code>articles.id</code> &rarr; <code>article_id</code>). <b>Scheduler fail-closed</b> + CSP header + <code>/terms</code> + <code>/privacy</code>. 196 country codes via Google News RSS (migration 026). 658 articles enriched.</td>
+</tr>
+<tr>
+  <td><code>4699a70</code></td>
+  <td>2026-05-19</td>
+  <td>Tier-1 analytical remediations. <b>Sustainability v2</b> now adds <b>UNFCCC NDC</b> as the 5th component (weights 0.30 / 0.25 / 0.20 / 0.15 / 0.10); <b>year_spread</b> confidence-band widening (mixed-year inputs now penalised). <b>Multi-LLM numeric grounding</b> via optional callable in <code>multi_llm_verifier.py</code>; <b><code>numbers_in_claim</code></b> and <b><code>numeric_grounded</code></b> fields on <code>CorroboratedClaim</code>; corroborated-but-ungrounded claims now lose 50% confidence. <b>spaCy NER hallucination</b> entity check (graceful fallback to regex). <b>UI/UX</b>: <code>/search</code> skeleton grid, <code>&lt;main&gt;</code> landmark on article detail, <code>aria-label</code> on icon-only buttons. 477 tests passing.</td>
+</tr>
+</table>
+
+<div class=callout>
+<b>Honest re-grading after these two commits.</b> Of the 11 Tier-A "credibility-floor" remediations in the strategic-analysis report, <span class="done">8 are now shipped</span> and the audited composite has moved from ~3.6 toward an estimated <span class="kpi">~4.0&ndash;4.15/5</span> (still well short of the 4.78 self-claim, but materially closer). The three reports were filed against the pre-launch code; this synthesis re-reads them against HEAD.
+</div>
+
+<!-- ============================== 2. CONSENSUS / DIVERGENCE ============================== -->
+<h2>2. Where the three reports agree &mdash; and where they don't</h2>
+
+<p>Each report comes from a distinct vantage point. Their overlap is the highest-confidence backlog; their divergence reveals which strategic bet the platform should choose deliberately.</p>
+
+<h3>2.1 Three-way consensus (high-confidence backlog)</h3>
+<table>
+<tr><th>Recommendation</th><th>Strategic (5-tier)</th><th>Greenwashing-NLP</th><th>FAIR / dMRV</th><th>Status in code (HEAD <code>4699a70</code>)</th></tr>
+<tr><td>Replace 8-publisher venue whitelist with DB-backed tiers</td><td>C2</td><td>&sect;5.3</td><td>Gap 1</td><td><span class="open">Still open</span> &mdash; <code>bayesian_credibility.py:48</code> hard-codes <code>KNOWN_VENUES</code></td></tr>
+<tr><td>Agentic chat actions / tool-use protocol</td><td>B2</td><td>&sect;7.1</td><td>(implicit, role-based dashboards)</td><td><span class="open">Still open</span> &mdash; no <code>actions</code> payload in <code>api/chat_routes.py</code> or <code>conversation_engine.py</code></td></tr>
+<tr><td>NER + numeric grounding for hallucination/verification</td><td>B4</td><td>&sect;3.3, 5.3</td><td>Gap 5</td><td><span class="done">Done</span> &mdash; <code>4699a70</code> shipped both (numeric_grounded + spaCy)</td></tr>
+<tr><td>Sustainability composite v2 (consume all 6 adapters)</td><td>B5</td><td>&sect;5.3</td><td>Gap 1</td><td><span class="done">Largely done</span> &mdash; 5 of 6 components live (IRENA still unused; needs population normaliser)</td></tr>
+<tr><td>Corporate-claim verification module (CDP / SBTi / NZT)</td><td>B3</td><td>&sect;1, 6, 7</td><td>Gap 7</td><td><span class="open">Not started</span> &mdash; zero matches for <code>company_climate</code> / <code>cdp</code> / <code>sbti</code> in <code>src/backend/</code></td></tr>
+<tr><td>Transparent uncertainty / confidence intervals in UI</td><td>5.2 (decomposed gauge)</td><td>&sect;3.2 (LLM scoring rigour)</td><td>Gap 5 + Tier 1 #3</td><td><span class="open">Partial</span> &mdash; <code>DecomposedConfidenceChart</code> exists but is unused; gauge still a single 0&ndash;100 dial</td></tr>
+<tr><td>Article-trail join: UUIDs &rarr; titles/URLs</td><td>5.3 (chat reasoning)</td><td>&sect;6.1</td><td>Tier 1 #1</td><td><span class="open">Open</span> &mdash; <code>/api/methodology/audit-trail/*</code> still returns opaque UUIDs</td></tr>
+<tr><td>Calibration: raise <code>min_labels</code>, surface <code>is_preview</code></td><td>A3</td><td>&sect;5.3</td><td>Tier 1 #3</td><td><span class="done">Done</span> &mdash; <code>STABLE_FIT_MIN=50</code> on <code>RefitResult.as_dict</code></td></tr>
+<tr><td>RSS full-body extraction</td><td>A1</td><td>&sect;5.3</td><td>(quality input pre-req)</td><td><span class="done">Done</span> &mdash; <code>rss_adapter.py:_parse_feed</code> fetches + extracts</td></tr>
+<tr><td>Frontend filter on <code>is_synthetic = FALSE</code></td><td>A2</td><td>&sect;5.3</td><td>(integrity pre-req)</td><td><span class="done">Done</span> &mdash; 60+ API SELECTs filter; user surfaces clean</td></tr>
+</table>
+
+<h3>2.2 Where the three diverge (the strategic choice)</h3>
+<table>
+<tr><th>Vector</th><th>Strategic (5-tier)</th><th>Greenwashing-NLP</th><th>FAIR / dMRV</th></tr>
+<tr><td><b>What the platform <i>is</i></b></td><td>Regulatory-aligned trust infrastructure for European ECGT / AI Act window</td><td>Algorithmic assurance engine grading public greenwashing</td><td>Universal trust layer / data commons with cryptographic provenance</td></tr>
+<tr><td><b>Largest moat to build</b></td><td>Corporate-claim verification + AI Act labelling</td><td>Adversarial multi-LLM verifier with auditor-persona prompts</td><td>Immutable audit ledger + FAIR metadata + federated mesh</td></tr>
+<tr><td><b>Differentiating signal</b></td><td>Published methodology standard (CFRS)</td><td>NLP detection of greenwashing patterns (vague modifiers, future-tense uncommitted targets)</td><td>Blockchain anchoring via Hyperledger / CAD Trust integration</td></tr>
+<tr><td><b>Defining UX move</b></td><td>Decomposed credibility gauge + persistent trust ribbon + reproduce-button</td><td>Active agentic chat that <i>shows its reasoning</i></td><td>Confidence-interval display + verification badges (&#10004; / &#10004;&#10004; / &#10004;&#10004;&#10004;) + change-provenance log</td></tr>
+<tr><td><b>Long-horizon expansion</b></td><td>SKUs: Claim Substantiation + CSRD Companion</td><td>Video pipeline for verified-fact dissemination</td><td>Nature/biodiversity, dMRV certification, federated mesh, role-based dashboards, Global South PWA</td></tr>
+</table>
+
+<div class=warn>
+<b>The three reports do not contradict each other &mdash; but they cannot all be the next sprint.</b>
+The strategic-analysis report is fastest to monetise (ECGT window is September 2026). The FAIR/dMRV report is the largest <i>category-defining</i> bet (universal trust layer). The greenwashing-NLP report is the most defensible <i>technical</i> moat (adversarial verifier). Pick the order deliberately; do not blend the headlines.
+</div>
+
+<!-- ============================== 3. RE-ANCHORED BACKLOG ============================== -->
+<h2>3. Re-anchored backlog (verified against HEAD <code>4699a70</code>)</h2>
+
+<p>The 16 recommendations below are the union of the three reports&rsquo; suggestions, filtered to what is <i>still actually open</i> after <code>8d34329</code> and <code>4699a70</code>. Each is tagged <span class="open">OPEN</span> or <span class="done">PARTIAL</span> with a short note. Detailed file-level impact follows in &sect;4.</p>
+
+<table>
+<tr><th>#</th><th>Recommendation</th><th>State</th><th>Sourced from</th></tr>
+<tr><td>1</td><td>Source-tier DB (Scimago + RetractionWatch + IFCN + MBFC)</td><td><span class="open">OPEN</span></td><td>All three</td></tr>
+<tr><td>2</td><td>Agentic chat <code>actions[]</code> protocol + dispatchers</td><td><span class="open">OPEN</span></td><td>Strategic B2, Greenwashing &sect;7.1</td></tr>
+<tr><td>3</td><td>Audit-trail UUID&harr;title denormalisation</td><td><span class="open">OPEN</span></td><td>All three (data lineage)</td></tr>
+<tr><td>4</td><td>AI Act Article-50 labelling layer (badges + JSON-LD)</td><td><span class="open">OPEN</span></td><td>Strategic B1</td></tr>
+<tr><td>5</td><td>Decomposed credibility gauge + persistent trust ribbon</td><td><span class="open">OPEN</span> (component exists, unused)</td><td>Strategic 5.1&ndash;5.2, FAIR Tier 1 #3</td></tr>
+<tr><td>6</td><td>Reproduce-this-result button + diff view</td><td><span class="open">OPEN</span></td><td>Strategic 5.7</td></tr>
+<tr><td>7</td><td>Per-country claim ledger view</td><td><span class="open">OPEN</span></td><td>Strategic 5.4</td></tr>
+<tr><td>8</td><td>Public methodology score &mdash; publish 4.78 vs 3.6 vs &ldquo;today&rdquo;</td><td><span class="open">OPEN</span></td><td>Strategic A4 / &sect;9</td></tr>
+<tr><td>9</td><td>Adversarial multi-LLM prompts (auditor persona)</td><td><span class="open">OPEN</span></td><td>Greenwashing &sect;3.3</td></tr>
+<tr><td>10</td><td>Corporate-claim MVP (CDP + SBTi + NZT) + <code>/companies/[ticker]</code></td><td><span class="open">OPEN</span></td><td>Strategic B3, Greenwashing &sect;1&ndash;3, FAIR Tier 2 #7</td></tr>
+<tr><td>11</td><td>Provenance for <i>negative</i> findings (what was looked for and not found)</td><td><span class="open">OPEN</span></td><td>Strategic 6.4</td></tr>
+<tr><td>12</td><td>Indicator confidence (Bayesian &sigma; per source)</td><td><span class="open">OPEN</span></td><td>Strategic 6.2, FAIR Tier 1 #3</td></tr>
+<tr><td>13</td><td>Learned drift thresholds (replace hard-coded 0.10 / 0.25 / 0.50)</td><td><span class="open">OPEN</span></td><td>Strategic 6.3</td></tr>
+<tr><td>14</td><td>Cross-language hallucination &mdash; per-language embeddings + claim clustering</td><td><span class="open">OPEN</span></td><td>Strategic C3</td></tr>
+<tr><td>15</td><td>Embed widget + QR fact-check cards (microcontent layer)</td><td><span class="open">OPEN</span></td><td>Strategic C5, FAIR &sect;V</td></tr>
+<tr><td>16</td><td>FAIR metadata + immutable audit ledger (Hyperledger / dMRV)</td><td><span class="open">OPEN</span></td><td>FAIR Tier 1 #1&ndash;2 + Tier 4 #16</td></tr>
+</table>
+
+<!-- ============================== 4. DEEP DIVE PER RECOMMENDATION ============================== -->
+<h2>4. Deep dive: implementation + impact radius</h2>
+
+<p>Each item below carries the same four-block structure: <b>what to do</b>, <b>impact graph</b> (the files / modules touched, ready to drop into gitnexus), <b>effects</b> (capability, grade-axis lift, regulatory fit), <b>risk + rollback</b>. Items are ordered by the recommended sequence in &sect;5.</p>
+
+<!-- =================== R1 SOURCE TIER DB =================== -->
+<h3>R1. Source-tier database (replace 8-publisher whitelist)</h3>
+<p><b>What.</b> Replace the hard-coded <code>KNOWN_VENUES</code> set in <code>bayesian_credibility.py:48</code> with a database-backed <code>source_credibility_tiers</code> table seeded from objective scientometric data. Tiered prior:
+Tier 1 = +30 (Scimago Q1 + IFCN-verified), Tier 2 = +15 (Q2 / mainstream press with correction policy), Tier 3 = +5 (Q3&ndash;Q4 / NGO with sourcing), Unknown = 0, Retraction-flagged = &minus;30.</p>
+
+<h4>Impact graph</h4>
+<table class=impact>
+<tr class=r-blast-med><td><b>Primary edit</b></td><td><code>src/backend/app/domains/intelligence/bayesian_credibility.py</code> (replace constant lookup with DB read; add LRU cache)</td></tr>
+<tr><td>Schema</td><td>New migration <code>027_source_credibility_tiers.sql</code> &rarr; <code>source_credibility_tiers(source_id, domain, doi_prefix, tier, evidence_url, last_audited_at, retracted_count)</code> + seed loader script</td></tr>
+<tr><td>New module</td><td><code>src/backend/app/domains/trust/source_tier_service.py</code> + <code>scripts/seed_source_tiers.py</code> (Scimago JR CSV import + RetractionWatch API integration)</td></tr>
+<tr><td>Callers (already there)</td><td><code>url_analysis_routes.py</code> (compute_research_prior), <code>article_enrichment_service.py</code>, <code>provenance.py</code> (records the resolved tier into <code>claim_provenance.raw_metadata.source_tier</code>)</td></tr>
+<tr><td>API surface</td><td><code>api/methodology_routes.py</code> &rarr; new <code>GET /api/methodology/source-tiers</code> + <code>GET /api/methodology/source-tier/by-domain?d=&hellip;</code> (transparency)</td></tr>
+<tr><td>Frontend</td><td><code>MethodologyDrawer.tsx</code> &mdash; new "Source tier" section; <code>SourceProfileCard.tsx</code> &mdash; badge; <code>ArticleCard.tsx</code> hover state</td></tr>
+<tr><td>Tests</td><td><code>tests/api/test_bayesian_credibility.py</code> (refit existing), new <code>tests/api/test_source_tier_service.py</code> + fixture CSV</td></tr>
+<tr><td>Ops</td><td>Add to nightly Celery beat: <code>refresh-retraction-flags</code> (RetractionWatch RSS poll)</td></tr>
+</table>
+
+<div class=dag>
+gitnexus query (when available):
+  graph trace --from bayesian_credibility.py:KNOWN_VENUES --depth 4
+expected fan-out: 6 backend modules, 3 routes, 1 migration, 2 frontend components, 4 tests
+risk class:       MEDIUM (low blast, but the prior enters every reliability score)
+</div>
+
+<h4>Effects</h4>
+<ul>
+  <li>Reliability axis lift: <b>3.5 &rarr; 4.5</b> (closes the audit's largest single gap).</li>
+  <li>Regulatory fit: directly satisfies ECGT &sect;Art 3 ("recognised certification schemes") and CSRD assurance-readiness.</li>
+  <li>Composite grade: <b>+0.15 to +0.20</b>.</li>
+</ul>
+
+<h4>Risk &amp; rollback</h4>
+<p>Risk: <b>medium</b>. The tier is multiplicative on every credibility score; a bad seed can shift the score distribution platform-wide. Rollback: env flag <code>CLILENS_USE_SOURCE_TIER_DB=false</code> falls back to the legacy whitelist. Ship behind the flag for one week of A/B before flipping.</p>
+
+<!-- =================== R2 AGENTIC ACTIONS =================== -->
+<h3>R2. Agentic chat <code>actions[]</code> protocol + client dispatchers</h3>
+<p><b>What.</b> Backend appends an optional <code>actions: [{type, params, label}]</code> array to every <code>/api/chat</code> and <code>/api/articles/{id}/ask</code> response. Each action is a user-confirmed click (the LLM never acts directly). Minimum nine types: <code>navigate</code>, <code>analyze_url</code>, <code>apply_search_filters</code>, <code>apply_map_filters</code>, <code>open_methodology_section</code>, <code>open_country</code>, <code>start_deep_search</code>, <code>bookmark_article</code>, <code>start_calibration_label</code>.</p>
+
+<h4>Impact graph</h4>
+<table class=impact>
+<tr class=r-blast-high><td><b>Primary edit</b></td><td><code>src/backend/app/domains/intelligence/conversation_engine.py</code> &mdash; emit structured <code>ChatActionSpec</code> alongside the answer; the LLM produces a thin JSON sidecar</td></tr>
+<tr><td>Schema</td><td>New table <code>chat_actions_log(action_id, session_id, message_id, action_type, params, was_clicked, clicked_at)</code> for telemetry + provenance</td></tr>
+<tr><td>API</td><td><code>api/chat_routes.py</code> &mdash; pass-through; <code>api/conversation_routes.py</code> &mdash; record click events</td></tr>
+<tr><td>Prompt registry</td><td><code>intelligence/prompts.py</code> &mdash; new <code>chat_synthesis_with_actions</code> prompt (versioned, fingerprinted); the LLM is taught the 9 action shapes inline</td></tr>
+<tr><td>Frontend dispatchers</td><td><code>src/frontend/src/components/AgenticAssistant.tsx</code> + new <code>chatActionDispatcher.ts</code> + 9 small adapters in <code>src/frontend/src/lib/chat-actions/{navigate,analyzeUrl,...}.ts</code></td></tr>
+<tr><td>Routes that need to be "deep-linkable"</td><td><code>/map?country=&hellip;</code>, <code>/search?credibility=&hellip;&amp;tag=&hellip;</code>, <code>/analyze?url=&hellip;</code>, <code>/deep-search?q=&hellip;</code>, <code>/methodology#sustainability</code></td></tr>
+<tr><td>Tests</td><td>9 new dispatcher tests + 1 contract test (prompt output validates against the schema with Zod / Pydantic)</td></tr>
+</table>
+
+<div class=dag>
+gitnexus query:
+  graph trace --from conversation_engine.py:converse --depth 5 --include frontend
+expected fan-out: 3 backend modules, 2 routes, 1 prompt, 12 frontend files, 11 tests
+risk class:       HIGH (LLM-driven UX state changes; needs the user-confirm-click guardrail)
+</div>
+
+<h4>Effects</h4>
+<ul>
+  <li>UX axis lift: largest single move identified in the UI/UX audit. Reduces friction for institutional researchers (the Professional / Enterprise tier).</li>
+  <li>Telemetry side-effect: <code>chat_actions_log</code> becomes a high-quality dataset of <i>which</i> answers users actually act on &mdash; an input to calibration labels.</li>
+  <li>Regulatory fit: when paired with R4 (AI Act badges), every dispatched action carries the model + prompt version into the URL state.</li>
+</ul>
+
+<h4>Risk &amp; rollback</h4>
+<p>Risk: <b>high</b>. An LLM that produces malformed action params can navigate users to bad states. Mitigations: (1) every action passes through a Zod schema validator <i>before</i> being shown as a chip, (2) chips show the action label, not raw JSON, (3) <code>actions[]</code> field is optional and feature-flagged off by default. Rollback: client ignores the field; the chat reverts to read-only.</p>
+
+<!-- =================== R3 AUDIT TRAIL JOIN =================== -->
+<h3>R3. Audit-trail UUID &harr; title denormalisation</h3>
+<p><b>What.</b> The <code>/api/methodology/audit-trail/{url-analysis|article|claim|deep-search}/{id}</code> endpoints currently return <code>source_article_ids</code> as an opaque JSONB array of UUIDs. An external auditor cannot follow the chain without N additional API calls. Join <code>articles</code> in the audit-trail SQL and return <code>[{article_id, title, url, source_name, source_tier, published_at}]</code>.</p>
+
+<h4>Impact graph</h4>
+<table class=impact>
+<tr class=r-blast-low><td><b>Primary edit</b></td><td><code>api/methodology_routes.py</code> &mdash; four audit-trail endpoints; one shared <code>_hydrate_source_articles(ids)</code> helper</td></tr>
+<tr><td>Performance</td><td>Single CTE with <code>WHERE article_id = ANY($1::uuid[])</code> &mdash; HNSW partial index already keys on <code>article_id</code></td></tr>
+<tr><td>Frontend</td><td><code>MethodologyDrawer.tsx</code> renders titles as clickable links; <code>HallucinationBlock</code> attaches per-source rate</td></tr>
+<tr><td>Tests</td><td>Refit <code>tests/api/test_methodology_routes.py</code> (already touched in <code>4699a70</code>)</td></tr>
+</table>
+
+<div class=dag>
+gitnexus query:
+  graph trace --from methodology_routes.py:get_audit_trail --depth 3
+expected fan-out: 1 backend module, 1 SQL change, 2 frontend components, 1 test file
+risk class:       LOW
+</div>
+
+<h4>Effects</h4>
+<ul>
+  <li>Transparency axis lift: 4.5 &rarr; 4.8 (closes the audit's "opaque UUIDs" gap).</li>
+  <li>Regulatory fit: CSRD assurance-readiness requires followable lineage; this is a one-line schema response away.</li>
+  <li>Composite grade: <b>+0.05 to +0.10</b>.</li>
+</ul>
+
+<h4>Risk &amp; rollback</h4>
+<p>Risk: <b>low</b>. The endpoint is read-only and additive; no schema migration. Rollback: response field <code>source_articles</code> can be an array of objects without breaking existing UUID-only consumers if the legacy <code>source_article_ids</code> array is kept alongside.</p>
+
+<!-- =================== R4 AI ACT LABELLING =================== -->
+<h3>R4. AI Act Article-50 labelling layer</h3>
+<p><b>What.</b> Add a persistent, machine-readable label to every AI-produced surface (chat answers, deep-search synthesis, URL-analysis verdicts, future videos). Three layers: visible badge ("AI-produced &middot; v2026.05 &middot; reproduce"), HTML attribute <code>data-ai-generated="true"</code>, JSON-LD payload at footer with <code>model</code>, <code>prompt_version</code>, <code>retrieval_strategy</code>, <code>timestamp</code>, <code>methodology_version</code>.</p>
+
+<h4>Impact graph</h4>
+<table class=impact>
+<tr class=r-blast-med><td><b>Primary edit</b></td><td>New component <code>src/frontend/src/components/AIProvenanceBadge.tsx</code> + <code>jsonLdAi.ts</code> serialiser</td></tr>
+<tr><td>Surfaces</td><td><code>ArticleDetailTabs.tsx</code>, <code>UrlAnalysisDetail</code>, <code>DeepSearchResult</code>, <code>AgenticAssistant</code> message bubble, <code>MethodologyDrawer</code></td></tr>
+<tr><td>Backend</td><td><code>provenance.py</code> already records everything needed; add helper <code>build_ai_provenance_payload(provenance_id)</code></td></tr>
+<tr><td>Public schema</td><td>New file <code>docs/standard/ai-provenance.schema.json</code> + page on <code>/methodology#ai-transparency-standard</code> publishing the schema</td></tr>
+<tr><td>Tests</td><td>Snapshot tests for badge + JSON-LD; one Cypress e2e test that asserts the badge is present on every AI surface</td></tr>
+</table>
+
+<div class=dag>
+gitnexus query:
+  graph fan-in --to provenance.py:build_payload --depth 2
+expected fan-out: 1 new component, 1 backend helper, 5 frontend surfaces, 1 spec doc
+risk class:       LOW-MEDIUM (additive)
+</div>
+
+<h4>Effects</h4>
+<ul>
+  <li>Regulatory fit: directly satisfies EU AI Act Article 50 (enforcement window August 2026). Most consumer-facing AI platforms will ship ugly retrofit banners; Climatefacts can ship this <i>elegantly</i> because it already has the data.</li>
+  <li>Marketing surface: published schema is positioned as the <b>Climatefacts AI Transparency Standard</b> &mdash; the first move toward C1 (CFRS publication).</li>
+  <li>Composite grade: regulatory-readiness 3.0 &rarr; 4.5.</li>
+</ul>
+
+<h4>Risk &amp; rollback</h4>
+<p>Risk: <b>low</b>. Visual change is intentional. Rollback: remove the component import; no data change.</p>
+
+<!-- =================== R5 DECOMPOSED GAUGE + TRUST RIBBON =================== -->
+<h3>R5. Decomposed credibility gauge + persistent trust ribbon</h3>
+<p><b>What.</b> A single 0&ndash;100 gauge collapses information that ECGT, CSRD and the EU AI Act all require to be reported separately. Replace the single gauge with the existing-but-unused <code>DecomposedConfidenceChart</code> as a four-bar view: <b>Reliability &middot; Agreement &middot; Grounding &middot; Calibration confidence</b>. Add a persistent trust ribbon on article and analysis surfaces with four click-expandable icons.</p>
+
+<h4>Impact graph</h4>
+<table class=impact>
+<tr class=r-blast-low><td><b>Primary edit</b></td><td><code>src/frontend/src/components/CredibilityGauge.tsx</code> (deprecate single-dial primitive; gate via <code>variant="decomposed"</code>)</td></tr>
+<tr><td>Already-existing component</td><td><code>DecomposedConfidenceChart.tsx</code> &mdash; in repo, no callers; this recommendation wires it in</td></tr>
+<tr><td>Surfaces</td><td><code>ArticleCard</code>, <code>ArticleDetailTabs</code>, <code>UrlAnalysisDetail</code>, <code>MapCountryPanel</code>, <code>SearchResultCard</code></td></tr>
+<tr><td>New component</td><td><code>TrustRibbon.tsx</code> (icon row; provenance / calibration / hallucination / methodology version) + four click-expanding panels</td></tr>
+<tr><td>API</td><td>No backend change &mdash; data already on every relevant response</td></tr>
+<tr><td>Tests</td><td>Vitest snapshots; accessibility tests for keyboard-navigable disclosure panels</td></tr>
+</table>
+
+<div class=dag>
+gitnexus query:
+  graph fan-in --to DecomposedConfidenceChart.tsx --depth 2
+expected: 0 current callers; this rec adds 5
+risk class: LOW
+</div>
+
+<h4>Effects</h4>
+<ul>
+  <li>UX axis lift: 4&times; information density on the same screen real estate.</li>
+  <li>Regulatory fit: each ECGT-required dimension visible without expansion (substantiation / independent verification / methodology / claim recency).</li>
+  <li>Composite grade: transparency 4.7 &rarr; 4.9.</li>
+</ul>
+
+<h4>Risk &amp; rollback</h4>
+<p>Risk: <b>low</b>. Frontend-only; behind a config flag <code>NEXT_PUBLIC_GAUGE_VARIANT=decomposed|single</code>.</p>
+
+<!-- =================== R6 REPRODUCE BUTTON =================== -->
+<h3>R6. Reproduce-this-result button</h3>
+<p><b>What.</b> For any URL analysis or deep-search session, expose a "Reproduce" button. Backend re-runs the analysis with the <i>same prompt version + same retrieval strategy</i> as recorded in <code>claim_provenance</code> and returns the diff (calibration shifted, new sources, new indicator data). The strongest possible demonstration that the platform is what it says it is.</p>
+
+<h4>Impact graph</h4>
+<table class=impact>
+<tr class=r-blast-med><td><b>Primary edit</b></td><td>New module <code>src/backend/app/domains/intelligence/reproducer.py</code> &mdash; reads a provenance row, replays via the pinned prompt version + retrieval strategy, returns a diff struct</td></tr>
+<tr><td>API</td><td>New endpoint <code>POST /api/methodology/reproduce/{provenance_id}</code> (admin or owner only) + <code>GET /api/methodology/reproduce/{job_id}</code> for the result</td></tr>
+<tr><td>Celery</td><td>New task <code>tasks/reproduce.py</code> &mdash; reproducing a deep-search can take seconds; runs async with WebSocket / SSE update channel</td></tr>
+<tr><td>Frontend</td><td>Button on <code>UrlAnalysisDetail</code> + <code>DeepSearchResult</code>; diff renderer <code>ReproductionDiff.tsx</code> (split-view of original vs replay)</td></tr>
+<tr><td>Tests</td><td>One golden-fixture analysis with a frozen prompt version that must reproduce byte-for-byte (the prompt is deterministic at temperature 0); one regression test that catches a methodology bump</td></tr>
+</table>
+
+<div class=dag>
+gitnexus query:
+  graph emit --from reproducer.py --include provenance,prompts,deep_search_service
+risk class: MEDIUM (consumes LLM tokens; rate-limit per user)
+</div>
+
+<h4>Effects</h4>
+<ul>
+  <li>Transparency axis lift: <b>4.9 &rarr; 5.0</b> &mdash; this is the audit feature regulators will eventually require.</li>
+  <li>Commercial: a documented reproducibility guarantee is a moat for the Enterprise tier.</li>
+  <li>Composite grade: <b>+0.05</b>.</li>
+</ul>
+
+<h4>Risk &amp; rollback</h4>
+<p>Risk: <b>medium</b>. LLM-tokens cost; per-user quota required. Rollback: remove the button; the endpoint can stay (no harm running on demand).</p>
+
+<!-- =================== R7 CLAIM LEDGER =================== -->
+<h3>R7. Per-country claim ledger</h3>
+<p><b>What.</b> Map drill-down today shows temperature anomalies + sustainability score + article count. Add a <b>journalistically valuable view</b>: chronological list of every climate-related claim made <i>by or about</i> that country in the last 12 months, with verdict, agreement score, and source. Turns the map from a comparison tool into a research tool.</p>
+
+<h4>Impact graph</h4>
+<table class=impact>
+<tr class=r-blast-low><td><b>Primary edit</b></td><td>New endpoint <code>GET /api/map/country/{cc}/claim-ledger?since=&hellip;</code> in <code>api/map_routes.py</code></td></tr>
+<tr><td>SQL</td><td>Query <code>claims</code> JOIN <code>articles</code> JOIN <code>claim_provenance</code> filtered by <code>country_code</code> + <code>created_at &gt;= now() - interval '12 months'</code> + <code>is_synthetic = FALSE</code></td></tr>
+<tr><td>Frontend</td><td><code>MapCountryPanel.tsx</code> &mdash; new "Claim ledger" tab; <code>ClaimLedgerTable.tsx</code> component (sortable, filterable by verdict)</td></tr>
+<tr><td>Performance</td><td>Add partial index <code>idx_claims_country_date ON claims(country_code, created_at DESC) WHERE is_synthetic = FALSE</code> (migration 028)</td></tr>
+<tr><td>Tests</td><td>Integration test fixture with 5 claims across 2 countries; UI snapshot</td></tr>
+</table>
+
+<h4>Effects</h4>
+<ul>
+  <li>UX axis lift: high. The platform's most journalistically valuable view becomes the map's default drill-down.</li>
+  <li>Distribution flywheel: this is the view that gets screenshotted in news pieces, which drives organic traffic.</li>
+</ul>
+
+<h4>Risk &amp; rollback</h4>
+<p>Risk: <b>low</b>. New endpoint + new tab. Rollback: remove the tab; no data change.</p>
+
+<!-- =================== R8 PUBLISH SELF-AUDIT =================== -->
+<h3>R8. Publish the 4.78 / 3.6 audit gap on <code>/methodology</code></h3>
+<p><b>What.</b> The strongest trust signal the platform can send is to publish <i>both</i> the self-claimed grade and the audited grade alongside the remediation roadmap. The act of showing the gap inverts every greenwashing pattern.</p>
+
+<h4>Impact graph</h4>
+<table class=impact>
+<tr class=r-blast-low><td><b>Primary edit</b></td><td><code>src/frontend/src/app/methodology/page.tsx</code> &mdash; new "Audited grade" section</td></tr>
+<tr><td>Optional API</td><td><code>GET /api/methodology/grade-history</code> returning an array of <code>(date, self_claim, audited, methodology_version, remediations)</code> from a static JSON or DB table</td></tr>
+<tr><td>Static asset</td><td><code>docs/audits/2026-05-18-*.md</code> (already in repo) &mdash; the report links to them as primary evidence</td></tr>
+</table>
+
+<h4>Effects</h4>
+<ul>
+  <li>Marketing surface: <b>zero-cost differentiation</b>. Competitors will not copy this.</li>
+  <li>Mission fit: directly embodies "Trust as a Service".</li>
+</ul>
+
+<h4>Risk &amp; rollback</h4>
+<p>Risk: <b>none operational, some perception</b>. The page is a content edit. Mitigate perception risk by framing as "Audit on rails &mdash; here's where we are, here's where we're going" rather than apologetically.</p>
+
+<!-- =================== R9 ADVERSARIAL VERIFIER =================== -->
+<h3>R9. Adversarial multi-LLM prompts (auditor persona)</h3>
+<p><b>What.</b> The Greenwashing-NLP report is correct that two LLMs running the <i>same</i> prompt collapse independence. <code>4699a70</code> added numeric grounding but did not address the prompt-shared-bias failure mode. Add a second prompt template <code>claim_extraction_auditor_persona</code> with adversarial framing: "You are a skeptical climate auditor. For each claim identify (i) vague modifiers, (ii) uncommitted future tense, (iii) baseline-decoupling, (iv) selective scope (1/2/3), (v) absence of validation body." The secondary LLM uses this prompt; agreement now measures cross-model + cross-frame robustness.</p>
+
+<h4>Impact graph</h4>
+<table class=impact>
+<tr class=r-blast-med><td><b>Primary edit</b></td><td><code>src/backend/app/domains/intelligence/prompts.py</code> &mdash; new <code>claim_extraction_auditor_persona</code> v1.0 + fingerprint</td></tr>
+<tr><td>Verifier</td><td><code>multi_llm_verifier.py</code> &mdash; add optional <code>secondary_prompt_name</code> param; record both prompts in <code>claim_provenance.raw_metadata.multi_llm_verification.{primary_prompt, secondary_prompt}</code></td></tr>
+<tr><td>Extractor</td><td><code>anthropic_claim_extractor.py</code> &mdash; accept prompt-name override</td></tr>
+<tr><td>Score</td><td>Greenwashing flags from the auditor persona become a new column <code>raw_metadata.greenwashing_flags</code>; surfaced on <code>UrlAnalysisDetail</code></td></tr>
+<tr><td>Tests</td><td>Five fixture claims that should match across both prompts; five that should diverge (vague-modifier, uncommitted-future, scope-omission, baseline-shifted, no-validation)</td></tr>
+</table>
+
+<div class=dag>
+gitnexus query:
+  graph trace --from multi_llm_verifier.py:verify_claims --depth 3
+existing fan-out: 4 backend modules, 1 prompt, 2 routes, 6 tests
+risk class: MEDIUM (changes the score distribution of multi-LLM agreement)
+</div>
+
+<h4>Effects</h4>
+<ul>
+  <li>Multi-LLM axis lift: 3.5 &rarr; 4.5.</li>
+  <li>Greenwashing detection: net-new capability &mdash; surfaces ECGT-prohibited claim patterns (vague modifiers etc.) directly in the audit trail.</li>
+  <li>Composite grade: <b>+0.10 to +0.15</b>.</li>
+</ul>
+
+<h4>Risk &amp; rollback</h4>
+<p>Risk: <b>medium</b>. Auditor-persona prompts are more likely to extract claims the primary missed &mdash; the verifier needs careful threshold tuning. Env flag <code>CLILENS_AUDITOR_PERSONA=on</code> for a one-week shadow period.</p>
+
+<!-- =================== R10 CORPORATE CLAIMS MVP =================== -->
+<h3>R10. Corporate-claim verification MVP &mdash; <code>/companies/[ticker]</code></h3>
+<p><b>What.</b> The single largest <i>strategic</i> gap. All three reports name this. The platform verifies <i>news</i>; 2026 regulation (ECGT, CSRD, IFRS S2) is overwhelmingly about verifying <i>corporate climate claims</i>. Minimum viable shape: a new entity type, three public datasets (CDP open + SBTi commitments + Net Zero Tracker), three verdict types (SBTi-validated net-zero target / scope 1+2+3 disclosure coverage / claim recency), a new route mirroring <code>/country/[cc]</code>, and an ECGT-aligned warning surface for offset-based "climate neutral" product claims.</p>
+
+<h4>Impact graph</h4>
+<table class=impact>
+<tr class=r-blast-high><td><b>Primary new domain</b></td><td>New folder <code>src/backend/app/domains/content/corporate/</code> with <code>schemas.py</code>, <code>repository.py</code>, <code>services.py</code>, three adapters <code>cdp_adapter.py</code>, <code>sbti_adapter.py</code>, <code>net_zero_tracker_adapter.py</code></td></tr>
+<tr><td>Schema</td><td>Migration <code>029_corporate_disclosures.sql</code> &mdash; <code>companies(company_id, ticker, name, country_code, sector_nace, &hellip;)</code>; <code>company_climate_disclosures(disclosure_id, company_id, source, year, scope1_tco2e, scope2_tco2e, scope3_tco2e, sbti_validated, target_year, base_year, &hellip;)</code>; <code>company_claims(claim_id, company_id, claim_text, claim_type, verdict, evidence_url, methodology_version, &hellip;)</code></td></tr>
+<tr><td>Reuse</td><td><code>indicators/base.py</code> ABC pattern; same idempotent upsert; same <code>indicator_sync_logs</code> audit table</td></tr>
+<tr><td>Intelligence</td><td>Extend <code>multi_llm_verifier.py</code> with corporate-claim mode; reuse R9 auditor-persona prompt; new prompt <code>corporate_claim_extraction</code> v1.0</td></tr>
+<tr><td>API</td><td>New router <code>api/company_routes.py</code> with <code>GET /api/companies</code>, <code>GET /api/companies/{ticker}</code>, <code>GET /api/companies/{ticker}/claims</code>, <code>POST /api/companies/{ticker}/analyze-claim</code></td></tr>
+<tr><td>Frontend</td><td>New routes <code>/companies/[ticker]/page.tsx</code> + <code>/companies/page.tsx</code> (index); mirror layout of <code>/map</code> country panel</td></tr>
+<tr><td>Methodology page</td><td>New section "Corporate-claim methodology" with the new prompts + adapters</td></tr>
+<tr><td>Scheduler</td><td>Three new Cloud Scheduler triggers: CDP monthly, SBTi monthly, NZT weekly</td></tr>
+<tr><td>Tests</td><td>3 adapter test files + integration test for the analyze-claim endpoint + end-to-end test for the ticker page</td></tr>
+</table>
+
+<div class=dag>
+gitnexus query:
+  graph emit --from corporate/ --include adapters,routes,frontend
+expected fan-out: ~15 new modules, 3 migrations, 4 routes, 2 frontend pages, 9 tests
+risk class: HIGH-BUILD (large surface), LOW-PRODUCTION (additive, no existing surfaces change)
+</div>
+
+<h4>Effects</h4>
+<ul>
+  <li>Strategic positioning: positions the platform for the September 2026 ECGT enforcement window &mdash; the only window of <i>regulatory tailwind</i> in the 2026 calendar.</li>
+  <li>Commercial: enables two new SKUs (Claim Substantiation, CSRD Companion).</li>
+  <li>Composite grade: corporate-claim coverage axis 1.0 &rarr; 4.0.</li>
+  <li>Effort: 2&ndash;3 weeks focused work with public datasets only &mdash; no new third-party APIs to negotiate.</li>
+</ul>
+
+<h4>Risk &amp; rollback</h4>
+<p>Risk: <b>medium</b>. Greenfield code paths; large surface but no existing-surface coupling. Rollback: the new routes can be hidden behind <code>NEXT_PUBLIC_ENABLE_COMPANIES=true</code>. The backend modules can be left in place; no other code path is altered.</p>
+
+<!-- =================== R11 NEGATIVE FINDINGS =================== -->
+<h3>R11. Provenance for <i>negative</i> findings</h3>
+<p><b>What.</b> Today <code>claim_provenance</code> records what was <i>produced</i>. There's no record of what was <i>looked for and not found.</i> For a truth platform, negative space is information. When the multi-LLM verifier rejects a claim, when the hallucination check fires, when an indicator was unavailable for a country, when no contradicting source was found &mdash; each should be a row of its own type.</p>
+
+<h4>Impact graph</h4>
+<table class=impact>
+<tr class=r-blast-med><td><b>Schema</b></td><td>Migration <code>030_negative_provenance.sql</code> &mdash; widen <code>claim_provenance.event_type</code> enum to include <code>claim_rejected</code>, <code>hallucination_flagged</code>, <code>indicator_missing</code>, <code>no_contradiction_found</code>, <code>numeric_grounding_failed</code></td></tr>
+<tr><td>Callers</td><td><code>multi_llm_verifier.py</code> (write a row when corroboration fails), <code>hallucination_detector.py</code> (when score &gt; threshold), <code>sustainability_score.py</code> (when an indicator is missing for a country), <code>deep_search_service.py</code> (when synthesis abstains)</td></tr>
+<tr><td>API</td><td>New filter on <code>/api/methodology/audit-trail/*</code>: <code>?include_negative=true</code></td></tr>
+<tr><td>Frontend</td><td><code>MethodologyDrawer</code> shows a "What we looked for and didn't find" section when negative rows exist</td></tr>
+</table>
+
+<h4>Effects</h4>
+<ul>
+  <li>Transparency: complete provenance graph &mdash; the audit trail now answers "is this absence of evidence informative?"</li>
+  <li>Calibration input: negative events become training signal for the calibration labels (rejected claims that were correct rejections improve the calibrated reliability score).</li>
+</ul>
+
+<h4>Risk &amp; rollback</h4>
+<p>Risk: <b>low</b>. Pure schema widening + writes. Reads degrade gracefully if the new column types are absent.</p>
+
+<!-- =================== R12 INDICATOR CONFIDENCE =================== -->
+<h3>R12. Indicator confidence &mdash; per-source &sigma;</h3>
+<p><b>What.</b> Each <code>country_indicators</code> row knows <i>when</i> it was ingested but not how confident the platform is in the upstream number itself. OWID per-capita emissions for Eritrea 2023 is plausibly &plusmn;30%; for Germany 2023 plausibly &plusmn;2%. The sustainability composite treats both as point estimates. Add an <code>uncertainty_sigma</code> column; propagate through the composite using standard error propagation.</p>
+
+<h4>Impact graph</h4>
+<table class=impact>
+<tr class=r-blast-med><td><b>Schema</b></td><td>Migration <code>031_indicator_uncertainty.sql</code> &mdash; <code>country_indicators.uncertainty_sigma NUMERIC</code>, <code>country_indicators.distribution_shape VARCHAR</code> (default normal)</td></tr>
+<tr><td>Adapters</td><td>Each of the six adapters now writes the upstream's stated uncertainty (Climate TRACE publishes a method-uncertainty per sector; OWID publishes 1&ndash;5 quality tiers; CAT has band-half-width; ND-GAIN provides confidence intervals)</td></tr>
+<tr><td>Composite</td><td><code>sustainability_score.py</code> &mdash; propagate uncertainty via <code>sigma_composite&sup2; = &sum;w&sub;i&sup2; * sigma&sub;i&sup2;</code>; this <i>replaces</i> the heuristic <code>confidence_band</code> with a defensible computed value</td></tr>
+<tr><td>API</td><td>Each indicator value now ships with <code>{value, uncertainty, distribution}</code></td></tr>
+<tr><td>UI</td><td>Decomposed gauge (R5) renders error bars on each bar &mdash; ties R5 and R12 together</td></tr>
+</table>
+
+<h4>Effects</h4>
+<ul>
+  <li>Sustainability axis lift: 3.3 &rarr; 4.3.</li>
+  <li>Equity correction: low-emitter countries with high-uncertainty data are no longer misleadingly shown as "scoring 30/100" with a tight band.</li>
+  <li>Composite grade: <b>+0.05 to +0.10</b>.</li>
+</ul>
+
+<h4>Risk &amp; rollback</h4>
+<p>Risk: <b>medium</b>. Re-grades every sustainability score in production. Rollback: leave the column nullable; the composite falls back to the v2 fixed bands when <code>uncertainty_sigma IS NULL</code>.</p>
+
+<!-- =================== R13 LEARNED DRIFT THRESHOLDS =================== -->
+<h3>R13. Learned drift thresholds</h3>
+<p><b>What.</b> KL drift thresholds (0.10 / 0.25 / 0.50 nats) are hard-coded in <code>drift_detection.py:134</code>. Collect 60 days of post-launch baseline data, fit a Gaussian to each drift signal's null distribution, set thresholds at 2&sigma; / 3&sigma; / 4&sigma;. Publish the learned thresholds with their fit windows on <code>/methodology</code>.</p>
+
+<h4>Impact graph</h4>
+<table class=impact>
+<tr class=r-blast-low><td><b>Primary edit</b></td><td><code>drift_detection.py</code> &mdash; new <code>fit_thresholds(signal, window_days)</code> + persist into a new table <code>drift_threshold_fits</code></td></tr>
+<tr><td>Celery</td><td>New task <code>tasks/drift_threshold_refit.py</code> &mdash; weekly</td></tr>
+<tr><td>API</td><td><code>/api/methodology/drift-thresholds</code> &mdash; surface the current fits + windows</td></tr>
+</table>
+
+<h4>Effects</h4>
+<ul>
+  <li>Drift axis lift: 4.0 &rarr; 4.7. Avoids the failure mode where a real drift event looks like baseline noise during a too-short baseline window.</li>
+  <li>Publishable as metrology evidence &mdash; the strongest data-quality signal a platform can put on its methodology page.</li>
+</ul>
+
+<h4>Risk &amp; rollback</h4>
+<p>Risk: <b>low</b>. Replaces three constants with a fit. Constants remain as fallback.</p>
+
+<!-- =================== R14 CROSS-LANG HALLUCINATION =================== -->
+<h3>R14. Cross-language hallucination &mdash; per-language embeddings + claim clustering</h3>
+<p><b>What.</b> The Strategic-analysis report's <i>original-research moat</i>. The hardest problem in climate misinformation in 2026 is multilingual narrative laundering &mdash; a denialist claim debunked in English keeps spreading in Portuguese, Polish, Indonesian. Three sub-projects:</p>
+<ul>
+  <li><b>Per-language embeddings:</b> replace OpenAI ada-002 (which blunts intra-language signal) with <code>bge-m3</code> or <code>multilingual-e5-large</code>. Re-embed historical articles.</li>
+  <li><b>Cross-language claim clustering:</b> a hash-key mapping the <i>same proposition</i> across languages, built from translated claim normalisation plus embedding-based clustering.</li>
+  <li><b>Narrative-tracking dashboard:</b> shows a debunked claim's lifecycle across languages.</li>
+</ul>
+
+<h4>Impact graph</h4>
+<table class=impact>
+<tr class=r-blast-high><td><b>Embedding model swap</b></td><td><code>src/backend/app/domains/content/embedding_service.py</code> &mdash; provider-agnostic interface; new HNSW index for the new dimensionality; migration <code>032_multilingual_embeddings.sql</code></td></tr>
+<tr><td>New domain</td><td><code>src/backend/app/domains/intelligence/narrative_clustering.py</code> &mdash; claim-cluster hash + cluster-membership table</td></tr>
+<tr><td>Schema</td><td>Migration <code>033_narrative_clusters.sql</code> &mdash; <code>narrative_clusters(cluster_id, canonical_text, language_count, member_count, first_seen_at)</code> + <code>claim_cluster_membership(claim_id, cluster_id, language_code, similarity)</code></td></tr>
+<tr><td>API</td><td>New endpoints <code>/api/narratives</code>, <code>/api/narratives/{cluster_id}</code> (lifecycle), <code>/api/narratives/{cluster_id}/timeline</code></td></tr>
+<tr><td>Frontend</td><td>New route <code>/narratives</code> &mdash; explorer of cross-language narrative clusters</td></tr>
+<tr><td>Backfill</td><td>One-off Celery job to re-embed historical articles (~5 hours on the local corpus); cluster build (~1 hour)</td></tr>
+</table>
+
+<div class=dag>
+gitnexus query:
+  graph emit --from narrative_clustering.py --include embeddings,migrations,routes
+expected fan-out: ~8 new modules, 2 migrations, 3 routes, 1 frontend route, 6 tests
+risk class: HIGH-BUILD (most ambitious item; original research)
+</div>
+
+<h4>Effects</h4>
+<ul>
+  <li>Category position: this is the moat. No other platform has it.</li>
+  <li>Multilingual integrity axis: 3.0 &rarr; 4.7.</li>
+  <li>Mission fit: directly delivers "anyone, anywhere, in any language" with a structural capability no competitor will match in &lt;12 months.</li>
+</ul>
+
+<h4>Risk &amp; rollback</h4>
+<p>Risk: <b>high</b>. Embedding model swap re-indexes the corpus; the cluster identity stays language-agnostic which is structurally new. Rollback: keep both embedding indexes for one quarter; route <code>/narratives</code> hidden behind a flag.</p>
+
+<!-- =================== R15 MICROCONTENT =================== -->
+<h3>R15. Embed widget + QR fact-check cards</h3>
+<p><b>What.</b> The light version of the deferred Phase-9 video pipeline. Auto-generate one-claim fact-check cards (1080&times;1080 + 1080&times;1920) from any URL-analysis result, with verdict + two-source citation + methodology link + QR code back to the full audit trail. Plus an <code>&lt;iframe&gt;</code> embed widget for newsrooms; plus a Slack/Teams app.</p>
+
+<h4>Impact graph</h4>
+<table class=impact>
+<tr class=r-blast-low><td><b>New module</b></td><td><code>api/factcard_routes.py</code> &mdash; reuse <code>og_image_routes.py</code>'s Pillow / Resvg pattern; add square + vertical variants + QR code</td></tr>
+<tr><td>Reuse</td><td><code>api/og_image_routes.py</code> (already generates social cards); <code>infographic_generator.py</code></td></tr>
+<tr><td>Embed widget</td><td><code>src/frontend/src/app/embed/[analysis_id]/page.tsx</code> &mdash; minimal iframe-friendly layout; explicit <code>&lt;iframe&gt;</code> sandbox advice in the share modal</td></tr>
+<tr><td>QR</td><td><code>qrcode</code> library; URL pattern <code>https://climatefacts.ai/a/{short_id}?utm=fact-card</code></td></tr>
+<tr><td>Slack/Teams app</td><td>New service <code>src/backend/services/slack_integration_service/</code> &mdash; uses existing <code>/api/url-analysis</code></td></tr>
+</table>
+
+<h4>Effects</h4>
+<ul>
+  <li>Distribution: each shared card is a viral surface that links back to the platform.</li>
+  <li>80% of the impact of the video pipeline at 20% of the engineering and zero of the social-platform-API risk.</li>
+</ul>
+
+<h4>Risk &amp; rollback</h4>
+<p>Risk: <b>low</b>. Additive routes; nothing else changes.</p>
+
+<!-- =================== R16 FAIR + IMMUTABLE LEDGER =================== -->
+<h3>R16. FAIR metadata + immutable audit ledger</h3>
+<p><b>What.</b> The FAIR/dMRV report's Tier-1 anchor. Two sub-components:</p>
+<ul>
+  <li><b>FAIR metadata layer:</b> persistent identifier per dataset (DOI-style), rich metadata aligned to F1&ndash;F4 / A1 / I1&ndash;I3 / R1, registered with <code>data.europa.eu</code> / <code>re3data.org</code>. A FAIR-compliance score published per dataset.</li>
+  <li><b>Immutable ledger:</b> anchor critical datasets &mdash; emissions inventories, carbon credits, NDC reports &mdash; to a Hyperledger Fabric consortium chain (sovereignty-friendly; no public chain for compliance reasons). Each anchoring event records data hash + timestamp + submitting entity + methodology applied. Users can verify any displayed value has not been altered post-publication.</li>
+</ul>
+
+<h4>Impact graph</h4>
+<table class=impact>
+<tr class=r-blast-high><td><b>FAIR module</b></td><td>New <code>src/backend/app/domains/trust/fair_metadata.py</code> + per-dataset YAML manifests under <code>infrastructure/fair/datasets/</code></td></tr>
+<tr><td>Ledger module</td><td>New <code>src/backend/services/ledger_service/</code> &mdash; Hyperledger Fabric SDK + Merkle-tree anchoring + verification CLI</td></tr>
+<tr><td>Schema</td><td>Migration <code>034_ledger_anchors.sql</code> &mdash; <code>ledger_anchors(anchor_id, dataset_id, data_hash_sha256, merkle_root, fabric_txid, anchored_at, methodology_version)</code></td></tr>
+<tr><td>API</td><td><code>/api/methodology/fair</code> (compliance scores), <code>/api/methodology/anchor/{id}</code> (proof retrieval), <code>/api/methodology/verify?dataset_id=&hellip;</code></td></tr>
+<tr><td>Frontend</td><td>Verification badge tier 3 (&#10004;&#10004;&#10004; cryptographically anchored) on every relevant surface</td></tr>
+<tr><td>Ops</td><td>Hyperledger network &mdash; either consortium with partners (preferred) or single-org local for MVP; CAD Trust integration as fallback if Article-6.2 ITMOs become relevant</td></tr>
+</table>
+
+<div class=dag>
+gitnexus query:
+  graph emit --from ledger_service/ --include all
+expected fan-out: ~12 new modules, 2 migrations, 4 routes, 1 service folder, 8 tests, 1 ops doc
+risk class: HIGH-BUILD + HIGH-OPS (most operationally complex item; needs partner co-signature)
+</div>
+
+<h4>Effects</h4>
+<ul>
+  <li>Category position: this <i>defines</i> the "universal trust layer" the FAIR/dMRV report describes. Sets the platform up to be the <b>infrastructure</b> on which others build, not a product that competes with them.</li>
+  <li>Regulatory fit: directly aligned with UNFCCC Climate Data Hub (Feb 2026), CAD Trust (carbon-credit anti-double-counting), Gold Standard dMRV pilot (running to October 2026).</li>
+  <li>Commercial: the white-label / Enterprise SKU now has a defensible <i>technical</i> moat, not just a brand one.</li>
+</ul>
+
+<h4>Risk &amp; rollback</h4>
+<p>Risk: <b>high</b>. Most operationally complex item in the backlog. <b>Sequence late</b> &mdash; only after R10 (corporate claims) creates a population of high-stakes claims worth anchoring. Rollback: ledger writes are write-through; reads can fall back to DB-only audit trail with no functional loss.</p>
+
+<!-- ============================== 5. SEQUENCED 12-WEEK PLAN ============================== -->
+<h2>5. Sequenced 12-week plan</h2>
+
+<table>
+<tr><th>Week</th><th>Recommendations</th><th>Rationale</th></tr>
+<tr><td>1</td><td>R3 (audit-trail join) + R8 (publish self-audit on /methodology) + R5 (decomposed gauge wired in &mdash; the component already exists)</td><td>Three low-risk, high-trust-signal moves that take advantage of the post-launch composite (~4.0/5) climbing to 4.2 with two days of focused front-end work.</td></tr>
+<tr><td>2</td><td>R4 (AI Act labelling layer) + R1 (source-tier DB, behind flag)</td><td>R4 cashes the EU AI Act August window; R1 closes the audit's largest single gap. Both shippable in parallel.</td></tr>
+<tr><td>3&ndash;4</td><td>R2 (agentic chat actions)</td><td>Biggest UX uplift; nine action types ship together; ground in <code>chat_actions_log</code> for telemetry.</td></tr>
+<tr><td>5</td><td>R9 (adversarial auditor-persona prompts) + R11 (negative-finding provenance)</td><td>Strengthens the multi-LLM verifier; opens the audit trail's negative space &mdash; both prerequisites for R10.</td></tr>
+<tr><td>6&ndash;8</td><td>R10 (corporate-claim MVP &mdash; CDP + SBTi + NZT + <code>/companies/[ticker]</code>)</td><td>The single highest-leverage strategic bet. Three weeks because three adapters + schema + frontend page + scheduler triggers. <b>Ships before September 2026 ECGT enforcement.</b></td></tr>
+<tr><td>9</td><td>R7 (per-country claim ledger) + R6 (reproduce button) + R15 (embed widget + QR fact-cards)</td><td>Three distribution / journalistic-utility moves that complement the corporate-claim MVP: ledger view for countries, reproduce button for any past analysis, shareable cards for every verdict.</td></tr>
+<tr><td>10</td><td>R12 (indicator confidence sigma) + R13 (learned drift thresholds)</td><td>Two metrology upgrades that complete the sustainability composite's honesty story and the drift detection's per-deployment tuning.</td></tr>
+<tr><td>11&ndash;12</td><td>R14 (cross-language hallucination &mdash; the moat)</td><td>Starts the longest-build item while corporate-claim MVP is in production stabilisation. Per-language embeddings + claim clustering takes a full quarter to finish but the foundation lands here.</td></tr>
+</table>
+
+<p>What is <i>not</i> in this 12-week plan but stays in the long-horizon list:</p>
+<ul>
+  <li><b>R16 (FAIR + immutable ledger).</b> Sequence Q3 2026, once corporate claims create a population of high-stakes claims worth anchoring.</li>
+  <li><b>Nature / TNFD module</b> (FAIR Tier 2 #5). October 2026 ISSB exposure draft is the trigger.</li>
+  <li><b>Scope-3 supply-chain module</b> (Greenwashing &sect;5 + FAIR Tier 2 #7). After corporate-claim MVP proves out.</li>
+  <li><b>Scenario engine + financial translation</b> (FAIR Tier 3 #10). Pairs with the Insurance / Risk Enterprise SKU.</li>
+  <li><b>Mobile PWA</b> + WCAG 2.2 AA hardening. Quarterly cadence.</li>
+  <li><b>S5 httpOnly cookies</b>, <b>D1 migration schism</b>, <b>D2 url_analyses UUID FK</b> &mdash; the three large security/data-layer chunks that should fit into a quiet week each.</li>
+</ul>
+
+<!-- ============================== 6. GITNEXUS PLAYBOOK ============================== -->
+<h2>6. Gitnexus playbook &mdash; how to read this report inside the tool</h2>
+
+<p>The 16 impact-graph blocks above are written in the same shape gitnexus expects: a primary edit, a set of fan-out files by category (schema / API / frontend / tests / ops), and an explicit risk class. When the gitnexus CLI / MCP is online, the following queries reproduce each block as a live, click-through graph.</p>
+
+<h3>6.1 Query primitives</h3>
+<pre>
+# Trace from a symbol outward (e.g. who depends on bayesian_credibility.KNOWN_VENUES?)
+gitnexus graph trace --from path/to/file.py:symbol --depth N
+
+# Fan-in: who currently calls this function?
+gitnexus graph fan-in --to path/to/file.py:symbol --depth N
+
+# Emit: dump the dependency cone of a folder
+gitnexus graph emit --from path/to/folder --include backend,frontend,tests
+
+# Impact-radius: simulate edit + propagate breaks
+gitnexus impact simulate --edit path/to/file.py:symbol --propagation tests,types,callers
+
+# Diff a planned change against the current graph
+gitnexus diff plan --plan docs/reports/Climatefacts-Improvement-Synthesis-2026-05-19.doc#R10
+</pre>
+
+<h3>6.2 Suggested ordered runs against this report</h3>
+<table>
+<tr><th>Recommendation</th><th>Gitnexus query (to verify impact radius)</th></tr>
+<tr><td>R1</td><td><code>gitnexus graph fan-in --to src/backend/app/domains/intelligence/bayesian_credibility.py:KNOWN_VENUES --depth 4</code></td></tr>
+<tr><td>R2</td><td><code>gitnexus graph trace --from src/backend/app/domains/intelligence/conversation_engine.py --include frontend --depth 5</code></td></tr>
+<tr><td>R3</td><td><code>gitnexus graph trace --from api/methodology_routes.py:get_audit_trail --depth 3</code></td></tr>
+<tr><td>R4</td><td><code>gitnexus impact simulate --edit src/backend/app/domains/intelligence/provenance.py --propagation frontend,types</code></td></tr>
+<tr><td>R5</td><td><code>gitnexus graph fan-in --to src/frontend/src/components/DecomposedConfidenceChart.tsx --depth 2</code></td></tr>
+<tr><td>R9</td><td><code>gitnexus graph trace --from src/backend/app/domains/intelligence/multi_llm_verifier.py:verify_claims --depth 3</code></td></tr>
+<tr><td>R10</td><td><code>gitnexus graph emit --from src/backend/app/domains/content/indicators/ --pattern-as corporate</code> (use the indicator-adapter pattern as the template; emit the equivalent corporate cone)</td></tr>
+<tr><td>R14</td><td><code>gitnexus impact simulate --edit src/backend/app/domains/content/embedding_service.py:DIM --propagation migrations,adapters,api,frontend</code></td></tr>
+<tr><td>R16</td><td><code>gitnexus graph emit --from src/backend/services/ --pattern ledger_service</code></td></tr>
+</table>
+
+<h3>6.3 Risk-class colour mapping in the gitnexus UI</h3>
+<table>
+<tr><th>Class</th><th>Heuristic</th><th>UI colour</th></tr>
+<tr><td>LOW</td><td>Additive; no schema; &le;5 files touched</td><td>Green</td></tr>
+<tr><td>MEDIUM</td><td>Schema migration OR &gt;5 files OR feature flag required</td><td>Amber</td></tr>
+<tr><td>HIGH</td><td>Re-indexes data, changes score distribution, or requires partner co-signature</td><td>Red</td></tr>
+</table>
+
+<p>The recommendations are colour-tagged in &sect;4 with the same convention (green/amber/red left border on the impact-graph table) so the report and the gitnexus UI converge.</p>
+
+<!-- ============================== 7. EFFECTS SUMMARY ============================== -->
+<h2>7. Effects summary &mdash; if the full 12-week plan ships</h2>
+
+<table>
+<tr><th>Axis</th><th>Today (HEAD <code>4699a70</code>)</th><th>Post Week 12</th><th>Driver(s)</th></tr>
+<tr><td>Reliability</td><td>~4.1</td><td>4.7</td><td>R1 + R10</td></tr>
+<tr><td>Transparency</td><td>~4.7</td><td>4.95</td><td>R3 + R4 + R6 + R8 + R11</td></tr>
+<tr><td>Traceability</td><td>~4.5</td><td>4.85</td><td>R3 + R11 + R16 (foundation)</td></tr>
+<tr><td>Calibration</td><td>~3.5 (math right, labels &lt;50)</td><td>4.0&ndash;4.3</td><td>R2 telemetry feeding calibration_labels + ops labelling</td></tr>
+<tr><td>Hallucination</td><td>~4.0 (post NER + numeric grounding)</td><td>4.6</td><td>R9 + R11 + R14 (foundation)</td></tr>
+<tr><td>Drift detection</td><td>~4.0</td><td>4.7</td><td>R13</td></tr>
+<tr><td>Sustainability</td><td>~4.0 (v2 + NDC + year_spread)</td><td>4.6</td><td>R12</td></tr>
+<tr><td>Corporate-claim coverage</td><td>1.0</td><td>4.0</td><td>R10</td></tr>
+<tr><td>Multilingual integrity</td><td>3.0</td><td>3.8 (foundation)</td><td>R14 (full lift requires Q3)</td></tr>
+<tr><td>Regulatory readiness (ECGT + Art 50)</td><td>3.5</td><td>5.0</td><td>R4 + R10</td></tr>
+<tr><td>Source-tier rigour</td><td>1.5</td><td>4.0</td><td>R1</td></tr>
+<tr><td>Distribution / category position</td><td>2.0</td><td>3.5</td><td>R7 + R15 + R8</td></tr>
+<tr><td><b>Honest composite</b></td><td><b>~4.0 / 5</b></td><td><b>~4.6 / 5</b></td><td>+0.6 in 12 weeks</td></tr>
+</table>
+
+<p class=subtle>Note: numbers above are point-estimates against the rubric used in <code>docs/audits/2026-05-18-analytical-audit.md</code>. They are not commensurate with the self-claimed 4.78 because the rubric is stricter and includes corporate-claim coverage and category position, which the original self-grading did not.</p>
+
+<!-- ============================== 8. SINGLE MOST IMPORTANT THING ============================== -->
+<h2>8. The single most important thing</h2>
+
+<p>If only one move is taken from this synthesis, take this one: <b>ship Week 1 (R3 + R5 + R8) immediately</b>, and on the same day publish the audit gap on <code>/methodology</code>. The act of doing this is the most powerful evidence the platform exists for. It is the inverse of every greenwashing pattern. It is the embodiment of "Trust as a Service". It costs nothing but courage. Every other recommendation in this report compounds from that act.</p>
+
+<p>The second-most-important move is to sequence R10 (corporate-claim MVP) into the September 2026 ECGT enforcement window. Climatefacts.ai is structurally a verification engine for environmental claims; the European market has been handed regulation that <i>requires</i> exactly such an engine. The three external reports agree on this. The window is short. The work is doable in three focused weeks because every public dataset (CDP open, SBTi commitments, Net Zero Tracker) is already public, free, and well-shaped for the existing adapter framework.</p>
+
+<p>Everything else can wait.</p>
+
+<hr>
+<p class=subtle><b>Document end.</b> Compiled 2026-05-19 from branch <code>main</code> @ <code>4699a70</code>. Companion to <code>docs/reports/Climatefacts-Platform-Report-2026-05-18.doc</code> and the three improvement plans under <code>docs/improvementplans/</code>.</p>
+
+</div>
+</body>
+</html>

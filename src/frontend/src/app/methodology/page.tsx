@@ -520,6 +520,53 @@ export default function MethodologyPage() {
           </ul>
         </Section>
 
+        {/* Phase 7 B3 (2026-05-24) — Corporate-claim verification surface. */}
+        <Section
+          icon={<ShieldCheck className="w-5 h-5 text-teal-600" />}
+          title="Corporate climate claim verification"
+          intro="The /companies surface verifies corporate climate claims against the public disclosure ledger (CDP / SBTi / Net Zero Tracker). Verdicts are deterministic and unit-tested — no LLM is in the verdict path."
+        >
+          <div id="corporate-verification" className="space-y-3 text-sm text-gray-700">
+            <p>
+              Each claim is routed through a rule set pinned by{" "}
+              <code className="bg-gray-100 px-1 py-0.5 rounded font-mono text-xs">
+                tests/api/test_company_routes.py
+              </code>
+              . The taxonomy is fixed:
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-xs">
+              <li>
+                <strong>flagged</strong> — offset-based "climate neutral"
+                phrasings (ECGT Article 4 prohibition, effective 27 Sept 2026)
+              </li>
+              <li>
+                <strong>verified</strong> — net-zero claims supported by SBTi
+                validation in the company's disclosure context
+              </li>
+              <li>
+                <strong>disputed</strong> — net-zero claims without SBTi
+                evidence (fail-safe default: absent confirmation → disputed)
+              </li>
+              <li>
+                <strong>partially_true</strong> — emissions-reduction claims
+                that require cross-referencing the Scope 1/2/3 rows on the
+                company's profile
+              </li>
+              <li>
+                <strong>unverified</strong> — claims that don't match a
+                routing rule (fallback bucket)
+              </li>
+            </ul>
+            <p className="text-xs text-gray-600 italic">
+              Seed data covers ~17 well-known public companies across tech,
+              consumer goods, industrials, and oil & gas — illustrative of
+              both SBTi-validated and unvalidated cohorts. Once the CDP / SBTi
+              / NZT adapters run, fresher data idempotently overwrites the
+              seed rows.
+            </p>
+          </div>
+        </Section>
+
         <footer className="text-xs text-gray-500 pt-6 border-t border-gray-200">
           Methodology snapshot generated live from{" "}
           <code className="bg-gray-100 px-1.5 py-0.5 rounded font-mono">GET /api/methodology</code>{" "}

@@ -12,6 +12,7 @@ import {
   Legend,
 } from "recharts";
 import type { CompareResult, ComparativeAnalysisStructured } from "@/types";
+import { TREND_LINE_COLORS } from "@/lib/climateColors";
 
 interface Props {
   data: CompareResult;
@@ -81,8 +82,8 @@ export default function CompareCharts({ data }: Props) {
               itemStyle={{ fontSize: 11 }}
             />
             <Legend wrapperStyle={{ fontSize: 11, color: "#cbd5e1" }} />
-            <Bar dataKey="A" name={truncate(data.query_a)} fill="#14b8a6" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="B" name={truncate(data.query_b)} fill="#a78bfa" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="A" name={truncate(data.query_a)} fill={TREND_LINE_COLORS.topicA} radius={[3, 3, 0, 0]} />
+            <Bar dataKey="B" name={truncate(data.query_b)} fill={TREND_LINE_COLORS.topicB} radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

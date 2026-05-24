@@ -172,13 +172,18 @@ def _analyze_claim(claim_text: str, context: str) -> tuple:
         )
 
     if any(m in text_lower for m in net_zero_markers):
-        not_validated = "sbti validated: no" in context.lower()
+        # Fail-safe verification (2026-05-24): only POSITIVE SBTi confirmation
+        # in context → "verified". Anything else (absent context, explicit
+        # "No", or context without SBTi mention) → "disputed". Default-trust
+        # is wrong for a fact-checking surface — boards rely on conservative
+        # defaults.
+        is_validated = "sbti validated: yes" in context.lower()
         return (
             "net_zero_target",
-            "disputed" if not_validated else "verified",
-            "Net-zero claim not SBTi-validated" if not_validated else None,
-            "https://sciencebasedtargets.org/companies-taking-action"
-            if not_validated else None,
+            "verified" if is_validated else "disputed",
+            None if is_validated else "Net-zero claim not SBTi-validated",
+            None if is_validated
+            else "https://sciencebasedtargets.org/companies-taking-action",
         )
 
     if any(m in text_lower for m in reduction_markers):

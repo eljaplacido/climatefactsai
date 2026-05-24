@@ -242,13 +242,26 @@ export default function MapCountryPanel({
               <p className="text-xs text-slate-400">{countryCode}</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-slate-500 hover:text-slate-200 transition-colors p-1 rounded-md hover:bg-slate-700"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            {/* Phase 2B (2026-05-23) — link from the map sidebar into the
+                full Country Climate Passport. The sidebar shows a quick
+                snapshot; the passport opens the modular tabbed deep view. */}
+            <Link
+              href={`/country/${countryCode}`}
+              className="text-[11px] text-teal-400 hover:text-teal-300 px-2 py-1 rounded-md hover:bg-teal-900/30 transition-colors whitespace-nowrap"
+              data-testid="open-country-passport"
+            >
+              Open passport →
+            </Link>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-slate-500 hover:text-slate-200 transition-colors p-1 rounded-md hover:bg-slate-700"
+              aria-label="Close country panel"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}

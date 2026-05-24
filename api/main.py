@@ -226,6 +226,18 @@ app.include_router(auth_router)
 from api.url_analysis_routes import router as url_analysis_router
 app.include_router(url_analysis_router)
 
+# Phase 1A (2026-05-23) — quota dashboard endpoint (3/3/2 freemium).
+from api.quota_routes import router as quota_router
+app.include_router(quota_router)
+
+# Phase 3 (2026-05-23) — MH5 AOI alert subscriptions (Basic+ tier).
+from api.aoi_routes import router as aoi_router
+app.include_router(aoi_router)
+
+# Phase 4C (2026-05-24) — agentic skills registry introspection endpoint.
+from api.skills_routes import router as skills_router
+app.include_router(skills_router)
+
 # Admin pipeline routes
 from api.admin_pipeline_routes import router as admin_pipeline_router
 app.include_router(admin_pipeline_router)
