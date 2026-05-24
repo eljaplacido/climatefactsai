@@ -1,0 +1,81 @@
+# =============================================================================
+# Cloud Build: one-shot migration runner
+# =============================================================================
+# Applies all SQL migrations under infrastructure/database/migrations/versions/
+# against the Cloud SQL instance. Idempotent — uses scripts/run_migrations.py
+# which tracks applied versions in schema_migrations_applied.
+#
+# Trigger manually:
+#   gcloud builds submit --config=infrastructure/gcp/cloudbuild-migrate.yaml \
+#     --project=climatenews-495412 --region=europe-west4 .
+#
+# Or wire it as a periodic Cloud Scheduler job pointing at a Cloud Build
+# trigger.
+# =============================================================================
+
+substitutions:
+  _PROJECT_ID: climatenews-495412
+  _REGION: europe-west4
+  _INSTANCE: climatenews-postgres
+  _DB_NAME: climatenews
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  # ---------------------------------------------------------------------------
+  # Step 1: Run migrations via cloud-sql-proxy + python+psycopg2
+  # ---------------------------------------------------------------------------
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: "run-migrations"
+    entrypoint: "bash"
+    secretEnv: ["DATABASE_URL_RAW"]
+    args:
+      - "-c"
+      - |
+        set -e
+
+        # Install Python + psycopg2 (slim image lacks both)
+        apt-get update -qq
+        apt-get install -y -qq python3 python3-pip libpq-dev gcc
+        # Debian 13 enforces PEP 668 — use --break-system-packages to install
+        # into the system Python. Safe here because the container is ephemeral.
+        pip3 install --quiet --break-system-packages "psycopg2-binary>=2.9"
+
+        # Download Cloud SQL Auth Proxy v2
+        curl -sSL -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.11.4/cloud-sql-proxy.linux.amd64
+        chmod +x cloud-sql-proxy
+
+        # Start proxy in background; map instance to localhost:5432
+        ./cloud-sql-proxy --port 5432 ${_PROJECT_ID}:${_REGION}:${_INSTANCE} &
+        PROXY_PID=$$!
+
+        # Give proxy a moment to bind
+        sleep 5
+
+        # Reshape DATABASE_URL to point at localhost (the proxy)
+        # The raw secret stores `postgresql+psycopg2://USER:PASS@/DB?host=/cloudsql/...`
+        # Extract user/pass and rebuild as `postgresql://USER:PASS@127.0.0.1:5432/DB`
+        # python is more robust than sed/awk for URL parsing.
+        DATABASE_URL=$$(python3 -c "
+        import os, urllib.parse as up
+        raw = os.environ['DATABASE_URL_RAW']
+        # Drop sqlalchemy driver suffix
+        raw = raw.replace('postgresql+psycopg2://', 'postgresql://', 1)
+        p = up.urlparse(raw)
+        # Database name = first path segment
+        db = p.path.lstrip('/').split('?')[0] or '${_DB_NAME}'
+        print(f'postgresql://{p.username}:{p.password}@127.0.0.1:5432/{db}')
+        ")
+
+        export DATABASE_URL
+        echo \"Running migrations against Cloud SQL via proxy...\"
+        python3 scripts/run_migrations.py
+
+        # Clean shutdown of proxy
+        kill $$PROXY_PID || true
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/${_PROJECT_ID}/secrets/database-url/versions/latest
+      env: "DATABASE_URL_RAW"

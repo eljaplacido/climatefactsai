@@ -13,9 +13,7 @@ const listeners = new Set<Listener>();
 
 export function generateRequestId(): string {
   try {
-    // Browser + modern Node
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const c: any = globalThis.crypto;
+    const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
     if (c?.randomUUID) return c.randomUUID();
   } catch {
     // ignore
