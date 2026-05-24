@@ -60,6 +60,11 @@ steps:
         print(f'postgresql://{p.username}:{p.password}@127.0.0.1:5432/{db}')
         ")
         export DATABASE_URL
+        # First-run floor (older migrations already applied to this DB but
+        # weren't tracked) + idempotency tolerance for duplicate inserts
+        # from old non-idempotent migrations.
+        export MIGRATIONS_FROM="009"
+        export MIGRATIONS_TOLERATE_ERRORS="true"
         python3 scripts/run_migrations.py
         kill $$PROXY_PID || true
 
