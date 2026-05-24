@@ -52,7 +52,17 @@ duplicates AS (
      AND COALESCE(r.country_code, '__null__') = COALESCE(k.country_code, '__null__')
     WHERE r.rn > 1
 )
--- 1) Reassign disclosures
+-- 1) Drop duplicate disclosures first — when both canonical and the
+-- duplicate-being-merged have a disclosure for the same
+-- (source, reporting_year), keeping the canonical's row.
+-- Then reassign the remaining (non-conflicting) disclosure rows.
+DELETE FROM company_climate_disclosures cd
+USING duplicates d, company_climate_disclosures canonical
+WHERE cd.company_id = d.drop_id
+  AND canonical.company_id = d.keep_id
+  AND cd.source = canonical.source
+  AND cd.reporting_year = canonical.reporting_year;
+
 UPDATE company_climate_disclosures cd
 SET company_id = d.keep_id
 FROM duplicates d
