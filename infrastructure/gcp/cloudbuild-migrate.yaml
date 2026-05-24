@@ -69,7 +69,15 @@ steps:
         ")
 
         export DATABASE_URL
-        echo \"Running migrations against Cloud SQL via proxy...\"
+        # First-run floor: older migrations (≤028) are already applied to
+        # this Cloud SQL instance from earlier sessions. Start from 029 so
+        # the corporate + AOI + drift + projections tables get created if
+        # missing; the auto-bootstrap inside run_migrations.py marks any
+        # CREATE-TABLE migration whose target table already exists as
+        # already-applied without re-running.
+        export MIGRATIONS_FROM="009"
+        export MIGRATIONS_TOLERATE_ERRORS="true"
+        echo "Running migrations from version $$MIGRATIONS_FROM against Cloud SQL via proxy..."
         python3 scripts/run_migrations.py
 
         # Clean shutdown of proxy

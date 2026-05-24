@@ -8,6 +8,11 @@
 -- scoring is applied per individual publisher when the article is parsed.
 --
 -- Idempotent: ON CONFLICT DO NOTHING respects existing rows.
+-- Phase 8 (2026-05-24) fix: pre-add source_type column for cloud DBs that
+-- were created from migration 012 only (which didn't include it).
+
+ALTER TABLE rss_feed_registry
+    ADD COLUMN IF NOT EXISTS source_type VARCHAR(50) DEFAULT 'news_outlet';
 
 INSERT INTO rss_feed_registry (feed_name, feed_url, source_domain, country_code, region, reliability_tier, is_active, is_system_feed, source_type)
   VALUES ('Google News Climate - Algeria', 'https://news.google.com/rss/search?q=climate+OR+sustainability+OR+%22green+transition%22&hl=ar&gl=DZ&ceid=DZ:ar', 'news.google.com', 'DZ', 'africa', 'public', TRUE, TRUE, 'news_outlet')

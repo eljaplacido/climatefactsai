@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+// Phase 8 (2026-05-24) — disable static prerender; useSearchParams below
+// can't be statically rendered.
+export const dynamic = "force-dynamic";
+
+import { Suspense, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 import { MapPin, ArrowLeft, Loader2 } from "lucide-react";
 import type { ActiveLayer, CountryStatEntry } from "@/components/map/InteractiveClimateMap";
 import MapLayerControl from "@/components/map/MapLayerControl";
@@ -15,7 +19,7 @@ import { useViewContext } from "@/lib/view-context";
 import { useUrlState, URL_STATE_SERIALIZERS } from "@/lib/useUrlState";
 
 // Dynamic import of the Leaflet-based map (no SSR)
-const InteractiveClimateMap = dynamic(
+const InteractiveClimateMap = nextDynamic(
   () => import("@/components/map/InteractiveClimateMap"),
   {
     ssr: false,
@@ -78,6 +82,14 @@ const compareModeSerializer = {
 };
 
 export default function MapPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-gray-500">Loading map…</div>}>
+      <MapPageInner />
+    </Suspense>
+  );
+}
+
+function MapPageInner() {
   // Core state
   const [countryStats, setCountryStats] = useState<CountryStatEntry[]>([]);
   const [loading, setLoading] = useState(true);

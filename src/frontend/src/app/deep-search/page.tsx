@@ -1,6 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+// Phase 8 (2026-05-24) — disable static prerender; useSearchParams below
+// can't be statically rendered.
+export const dynamic = "force-dynamic";
+
+import { Suspense, useState, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import CountrySelector from "@/components/CountrySelector";
 import type { DeepSearchResult, CompareResult } from "@/types";
@@ -60,6 +64,14 @@ const modeSerializer = {
 };
 
 export default function DeepSearchPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-gray-500">Loading deep search…</div>}>
+      <DeepSearchPageInner />
+    </Suspense>
+  );
+}
+
+function DeepSearchPageInner() {
   const [mode, setMode] = useUrlState<Mode>("mode", "search", modeSerializer);
   const [query, setQuery] = useUrlState("q", "", URL_STATE_SERIALIZERS.string);
   const [queryA, setQueryA] = useUrlState("qa", "", URL_STATE_SERIALIZERS.string);

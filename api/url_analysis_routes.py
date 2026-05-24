@@ -1707,6 +1707,26 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
                     async def _secondary_call(t, n):
                         return await secondary.decompose_claims(t, n)
 
+                    # Phase 8 B4 (2026-05-24) — numeric grounding closure.
+                    # Wraps the new check_numeric_grounding pure function so
+                    # the verifier can downgrade confidence on claims whose
+                    # numeric tokens don't appear in the source text. Catches
+                    # "both LLMs hallucinated the same number" failure mode.
+                    from app.domains.intelligence.numeric_grounding import (
+                        check_numeric_grounding,
+                    )
+
+                    _evidence_text = text[:8000]
+
+                    def _ng_check(claim_text: str, _numbers: list) -> Optional[bool]:
+                        try:
+                            res = check_numeric_grounding(
+                                claim_text, _evidence_text, tolerance=0.02,
+                            )
+                            return res.grounded
+                        except Exception:
+                            return None
+
                     verification = await verify_claims(
                         text=text[:4000],
                         max_claims=max(claims_count, 1),
@@ -1714,6 +1734,7 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
                         primary_model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
                         secondary_extractor=_secondary_call,
                         secondary_model=secondary.model,
+                        numeric_grounding_check=_ng_check,
                     )
                     multi_llm_meta = {
                         "enabled": True,

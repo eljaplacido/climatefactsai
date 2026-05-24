@@ -68,6 +68,59 @@ def _dsn_from_env() -> str:
     return raw.replace("postgresql+psycopg2://", "postgresql://", 1)
 
 
+def _bootstrap_tracker(conn, files) -> int:
+    """Mark migrations as pre-applied when their target tables already exist.
+
+    This handles the bootstrap case: a long-lived DB that had migrations
+    applied OUTSIDE this script (manually, via earlier tooling, or from a
+    prior session). On first run of run_migrations.py against such a DB,
+    we don't want to re-run those migrations — most aren't fully idempotent.
+
+    Detection heuristic: for each migration, parse out the first
+    `CREATE TABLE IF NOT EXISTS <name>` it declares. If the table is
+    already present in the live DB, mark the migration as applied without
+    running it. Migrations without a CREATE TABLE clause are skipped from
+    bootstrap (they get applied normally next pass).
+    """
+    import re as _re
+
+    create_table_re = _re.compile(
+        r"create\s+table\s+(?:if\s+not\s+exists\s+)?([a-z_][a-z_0-9]*)",
+        _re.IGNORECASE,
+    )
+
+    bootstrapped = 0
+    with conn.cursor() as cur:
+        for path in files:
+            version = _version_of(path.name)
+            cur.execute(
+                "SELECT 1 FROM schema_migrations_applied WHERE version = %s",
+                (version,),
+            )
+            if cur.fetchone():
+                continue
+            sql = path.read_text(encoding="utf-8")
+            m = create_table_re.search(sql)
+            if not m:
+                continue
+            table = m.group(1)
+            cur.execute(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_name = %s",
+                (table,),
+            )
+            if cur.fetchone():
+                cur.execute(
+                    "INSERT INTO schema_migrations_applied "
+                    "(version, filename, sha256) VALUES (%s, %s, %s) "
+                    "ON CONFLICT (version) DO NOTHING",
+                    (version, path.name, _file_sha256(path)),
+                )
+                bootstrapped += 1
+    conn.commit()
+    return bootstrapped
+
+
 def main() -> int:
     dsn = _dsn_from_env()
     if not MIGRATIONS_DIR.exists():
@@ -79,6 +132,14 @@ def main() -> int:
         print(f"No migration files in {MIGRATIONS_DIR}")
         return 0
 
+    # Optional MIGRATIONS_FROM env var: hard floor on which versions to apply.
+    # Useful for one-shot bootstrap when older migrations are known-applied
+    # but their target tables can't be auto-detected.
+    floor = os.environ.get("MIGRATIONS_FROM")
+    if floor:
+        files = [p for p in files if _version_of(p.name) >= floor]
+        print(f"MIGRATIONS_FROM={floor} — restricted to {len(files)} file(s)")
+
     print(f"Found {len(files)} migration file(s) in {MIGRATIONS_DIR}")
     print(f"Connecting to {dsn.split('@')[-1].split('?')[0]} ...")
 
@@ -88,12 +149,38 @@ def main() -> int:
         with conn, conn.cursor() as cur:
             cur.execute(TRACKER_DDL)
 
+        # Bootstrap detection: mark migrations whose target tables already
+        # exist as applied without re-running them.
+        bootstrapped = _bootstrap_tracker(conn, files)
+        if bootstrapped:
+            print(
+                f"Bootstrap: detected {bootstrapped} migration(s) whose target "
+                f"tables already exist — marked applied without re-running."
+            )
+
         with conn.cursor() as cur:
             cur.execute("SELECT version, sha256 FROM schema_migrations_applied")
             applied = {v: s for v, s in cur.fetchall()}
 
+        # If MIGRATIONS_TOLERATE_ERRORS=true, idempotency failures (duplicate
+        # table / column / unique violation) are treated as "already applied"
+        # — we mark the migration applied and continue. Useful for first-run
+        # bootstrap when a DB has data from a pre-tracker world.
+        tolerate = os.environ.get("MIGRATIONS_TOLERATE_ERRORS", "").lower() in (
+            "1", "true", "yes",
+        )
+        TOLERATED_CODES = {
+            "42P07",  # duplicate_table
+            "42701",  # duplicate_column
+            "42710",  # duplicate_object (index, etc.)
+            "23505",  # unique_violation
+            "42P06",  # duplicate_schema
+            "42723",  # duplicate_function
+        }
+
         applied_count = 0
         skipped_count = 0
+        tolerated_count = 0
         for path in files:
             version = _version_of(path.name)
             sha = _file_sha256(path)
@@ -107,18 +194,40 @@ def main() -> int:
                 continue
             sql = path.read_text(encoding="utf-8")
             print(f"  > applying {path.name} (version {version}) ...")
-            with conn, conn.cursor() as cur:
-                cur.execute(sql)
-                cur.execute(
-                    "INSERT INTO schema_migrations_applied "
-                    "(version, filename, sha256) VALUES (%s, %s, %s)",
-                    (version, path.name, sha),
-                )
-            print(f"    OK")
-            applied_count += 1
+            try:
+                with conn, conn.cursor() as cur:
+                    cur.execute(sql)
+                    cur.execute(
+                        "INSERT INTO schema_migrations_applied "
+                        "(version, filename, sha256) VALUES (%s, %s, %s)",
+                        (version, path.name, sha),
+                    )
+                print(f"    OK")
+                applied_count += 1
+            except psycopg2.Error as exc:
+                pgcode = getattr(exc, "pgcode", None)
+                if tolerate and pgcode in TOLERATED_CODES:
+                    print(
+                        f"    TOLERATED ({pgcode}: {type(exc).__name__}) — "
+                        f"marking as already-applied"
+                    )
+                    # Rollback the failed tx, mark the migration applied
+                    conn.rollback()
+                    with conn, conn.cursor() as cur:
+                        cur.execute(
+                            "INSERT INTO schema_migrations_applied "
+                            "(version, filename, sha256) VALUES (%s, %s, %s) "
+                            "ON CONFLICT (version) DO NOTHING",
+                            (version, path.name, sha),
+                        )
+                    tolerated_count += 1
+                else:
+                    print(f"    FAILED: {pgcode}: {exc}")
+                    raise
 
         print(
-            f"\nDone — {applied_count} migration(s) applied, "
+            f"\nDone — {applied_count} applied, "
+            f"{tolerated_count} tolerated, "
             f"{skipped_count} already up to date."
         )
     finally:

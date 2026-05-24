@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+// Phase 8 (2026-05-24) — disable static prerender + wrap useSearchParams
+// in <Suspense>. Next.js 14 requires this when the route reads URL search
+// params, which our useUrlState hook does internally.
+export const dynamic = "force-dynamic";
+
+import { Suspense, useEffect, useMemo, useState } from "react";
 import ArticleCard from "@/components/ArticleCard";
 import CountrySelector from "@/components/CountrySelector";
 import { api } from "@/lib/api";
@@ -33,6 +38,16 @@ const CONTENT_CATEGORIES = [
 ] as const;
 
 export default function SearchPage() {
+  // Suspense wrapper required by Next.js 14 because the inner component
+  // calls useSearchParams via useUrlState.
+  return (
+    <Suspense fallback={<div className="p-8 text-gray-500">Loading search…</div>}>
+      <SearchPageInner />
+    </Suspense>
+  );
+}
+
+function SearchPageInner() {
   const { isLoggedIn } = useAuth();
   // Phase 2H (2026-05-23) — URL-persistent state for the shareable filter set.
   const [q, setQ] = useUrlState("q", "", URL_STATE_SERIALIZERS.string);

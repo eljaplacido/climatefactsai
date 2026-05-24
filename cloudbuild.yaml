@@ -26,10 +26,49 @@ options:
 
 steps:
   # -------------------------------------------------------------------------
+  # Step 0: Run migrations (Phase 8 2026-05-24)
+  #
+  # Applies infrastructure/database/migrations/versions/*.sql to the
+  # Cloud SQL instance via cloud-sql-proxy. Idempotent — tracker table
+  # plus heuristic bootstrap means rerunning is safe. Runs FIRST so the
+  # new code is never deployed against an out-of-date schema.
+  # -------------------------------------------------------------------------
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: "run-migrations"
+    entrypoint: "bash"
+    secretEnv: ["DATABASE_URL_RAW"]
+    args:
+      - "-c"
+      - |
+        set -e
+        apt-get update -qq
+        apt-get install -y -qq python3 python3-pip libpq-dev gcc
+        pip3 install --quiet --break-system-packages "psycopg2-binary>=2.9"
+        curl -sSL -o cloud-sql-proxy \
+          https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.11.4/cloud-sql-proxy.linux.amd64
+        chmod +x cloud-sql-proxy
+        ./cloud-sql-proxy --port 5432 \
+          ${_PROJECT_ID}:${_REGION}:climatenews-postgres &
+        PROXY_PID=$$!
+        sleep 5
+        DATABASE_URL=$$(python3 -c "
+        import os, urllib.parse as up
+        raw = os.environ['DATABASE_URL_RAW']
+        raw = raw.replace('postgresql+psycopg2://', 'postgresql://', 1)
+        p = up.urlparse(raw)
+        db = p.path.lstrip('/').split('?')[0] or 'climatenews'
+        print(f'postgresql://{p.username}:{p.password}@127.0.0.1:5432/{db}')
+        ")
+        export DATABASE_URL
+        python3 scripts/run_migrations.py
+        kill $$PROXY_PID || true
+
+  # -------------------------------------------------------------------------
   # Step 1: Build API image
   # -------------------------------------------------------------------------
   - name: "gcr.io/cloud-builders/docker"
     id: "build-api"
+    waitFor: ["run-migrations"]
     args:
       - "build"
       - "--platform=linux/amd64"
@@ -77,6 +116,8 @@ steps:
       - "--set-secrets=DEEPSEEK_API_KEY=deepseek-api-key:latest"
       - "--set-secrets=NOAA_API_TOKEN=noaa-api-token:latest"
       - "--set-secrets=NASA_API_KEY=nasa-api-key:latest"
+      # Phase 8 (2026-05-24) — gates POST /api/companies/admin/sync/{source}
+      - "--set-secrets=CORPORATE_SYNC_TOKEN=corporate-sync-token:latest"
       - "--set-env-vars=ENVIRONMENT=production"
       - "--set-env-vars=LOG_LEVEL=INFO"
       - "--set-env-vars=API_HOST=0.0.0.0"
@@ -206,6 +247,11 @@ steps:
         done
     waitFor:
       - "deploy-frontend"
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/${_PROJECT_ID}/secrets/database-url/versions/latest
+      env: "DATABASE_URL_RAW"
 
 images:
   - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/api:${_TAG}"
