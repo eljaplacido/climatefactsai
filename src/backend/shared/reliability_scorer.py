@@ -83,6 +83,16 @@ class ReliabilityScorer:
     THRESHOLD_HIGH = 80
     THRESHOLD_MEDIUM = 50
 
+    # Slice 4 (2026-05-25, Honest-Gap-Audit v2 item 4) — claim-density
+    # honesty. An article with 1/1 verified claim used to score the same
+    # as 8/8 verified claims because the formula weighted RATIO, not
+    # DEPTH. We now scale the claims_component by min(1, total_claims /
+    # CLAIMS_FOR_FULL_CREDIT) so thinly-claimed articles cannot reach
+    # the headline credibility number that articles with deep coverage
+    # earn — and we cap them at MEDIUM via _determine_credibility_level.
+    LIMITED_EVIDENCE_THRESHOLD = 3   # < this many claims => "Limited evidence"
+    CLAIMS_FOR_FULL_CREDIT = 6       # this many or more => density_factor = 1.0
+
     @classmethod
     def calculate_reliability_score(
         cls,
@@ -134,7 +144,17 @@ class ReliabilityScorer:
             # Clamp to 0-100
             claims_score = max(0.0, min(100.0, claims_score))
 
-            claims_component = claims_score * cls.WEIGHT_VERIFIED_CLAIMS
+            # Slice 4 — claim-density factor. With CLAIMS_FOR_FULL_CREDIT=6:
+            #   1 claim  -> 0.17  (article gets ~17% of the claims weight)
+            #   3 claims -> 0.50
+            #   6+ claims -> 1.00 (full claims weight)
+            # An article with 1/1 verified used to add 30 raw points to
+            # the headline number; it now adds ~5. Combined with the
+            # HIGH-cap in _determine_credibility_level it produces an
+            # honest "Limited evidence — Medium credibility" label
+            # instead of the misleading "90% credibility, 1 claim".
+            density_factor = min(1.0, total_claims / float(cls.CLAIMS_FOR_FULL_CREDIT))
+            claims_component = claims_score * cls.WEIGHT_VERIFIED_CLAIMS * density_factor
         else:
             # No claims found - use neutral score
             claims_component = 60.0 * cls.WEIGHT_VERIFIED_CLAIMS
@@ -160,10 +180,18 @@ class ReliabilityScorer:
         credibility_level = cls._determine_credibility_level(
             reliability_score=reliability_score,
             has_false_claims=(false_claims > 0),
-            has_misleading_claims=(misleading_claims > 0)
+            has_misleading_claims=(misleading_claims > 0),
+            total_claims=total_claims,
         )
 
         return reliability_score, credibility_level
+
+    @classmethod
+    def is_limited_evidence(cls, total_claims: int) -> bool:
+        """True when the article has too few verified claims to support
+        a HIGH-credibility label, regardless of source quality. Drives
+        the 'Limited evidence' badge in the article UI."""
+        return total_claims < cls.LIMITED_EVIDENCE_THRESHOLD
 
     @classmethod
     def _normalize_score(cls, score: float) -> float:
@@ -192,7 +220,8 @@ class ReliabilityScorer:
         cls,
         reliability_score: int,
         has_false_claims: bool = False,
-        has_misleading_claims: bool = False
+        has_misleading_claims: bool = False,
+        total_claims: int = 0,
     ) -> str:
         """Determine credibility level category with claim-based overrides.
 
@@ -231,6 +260,16 @@ class ReliabilityScorer:
                 return CredibilityLevel.MEDIUM
             else:
                 return CredibilityLevel.LOW
+
+        # Slice 4 — limited-evidence cap. An article without enough
+        # claims to make HIGH defensible is held at MEDIUM regardless of
+        # source credibility. Pairs with the density-factor penalty so
+        # the headline number and the label move together.
+        if (
+            reliability_score >= cls.THRESHOLD_HIGH
+            and 0 < total_claims < cls.LIMITED_EVIDENCE_THRESHOLD
+        ):
+            return CredibilityLevel.MEDIUM
 
         # Standard categorization
         if reliability_score >= cls.THRESHOLD_HIGH:

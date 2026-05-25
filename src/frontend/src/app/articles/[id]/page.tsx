@@ -189,6 +189,22 @@ export default async function ArticlePage({ params }: { params: { id: string } }
           {/* Stats row */}
           <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-600">
             <span>{article.claim_count} claims assessed</span>
+            {/* Slice 4 (2026-05-25) — Limited Evidence badge fires when
+                claim count is below the LIMITED_EVIDENCE_THRESHOLD in
+                shared/reliability_scorer.py (currently 3). Visibly
+                signals to readers that the credibility chip is based
+                on thin claim coverage, even if the article passes
+                source-credibility heuristics. */}
+            {article.claim_count > 0 && article.claim_count < 3 && (
+              <span
+                className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs rounded-full bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700"
+                title="Fewer than 3 verified claims — credibility label is provisional"
+                data-testid="limited-evidence-badge"
+              >
+                <AlertTriangle className="h-3 w-3" />
+                Limited evidence
+              </span>
+            )}
             {article.claim_count > 0 && (
               <>
                 {/* Check if claims have error justifications (verification incomplete) */}
