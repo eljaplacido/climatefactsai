@@ -25,15 +25,16 @@ ALTER TABLE articles
     ADD COLUMN IF NOT EXISTS source_url_status     VARCHAR(16),
     ADD COLUMN IF NOT EXISTS source_url_checked_at TIMESTAMPTZ;
 
--- Partial index for the periodic-check selector — "give me the N
--- articles that need re-checking" runs `WHERE source_url_checked_at
--- IS NULL OR source_url_checked_at < NOW() - INTERVAL '7 days'
--- ORDER BY source_url_checked_at NULLS FIRST LIMIT N`. The partial
--- index keeps already-fresh rows out of the index so scans stay fast.
+-- Index for the periodic-check selector — "give me the N articles
+-- that need re-checking" runs ORDER BY source_url_checked_at NULLS
+-- FIRST LIMIT N. We can't use a time-based partial predicate
+-- (NOW() isn't IMMUTABLE, Postgres rejects 42P17), so the predicate
+-- only filters on source_url being set — the query layer handles
+-- the "stale > 7d" filter at SELECT time. The btree still gives
+-- O(log N) for the NULLS-FIRST ordering, which is what we need.
 CREATE INDEX IF NOT EXISTS idx_articles_link_check_due
     ON articles (source_url_checked_at NULLS FIRST)
-    WHERE source_url_status IS NULL
-       OR source_url_checked_at < NOW() - INTERVAL '7 days';
+    WHERE source_url IS NOT NULL;
 
 COMMENT ON COLUMN articles.source_url_status IS
 'Result of the most recent HEAD probe of source_url. NULL = never checked. '
