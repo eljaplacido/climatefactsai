@@ -34,7 +34,7 @@ ALTER TABLE articles
 -- O(log N) for the NULLS-FIRST ordering, which is what we need.
 CREATE INDEX IF NOT EXISTS idx_articles_link_check_due
     ON articles (source_url_checked_at NULLS FIRST)
-    WHERE source_url IS NOT NULL;
+    WHERE url IS NOT NULL;
 
 COMMENT ON COLUMN articles.source_url_status IS
 'Result of the most recent HEAD probe of source_url. NULL = never checked. '

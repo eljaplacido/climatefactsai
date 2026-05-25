@@ -294,9 +294,11 @@ async def trigger_claim_extraction(
     require_admin(current_user)
     db = get_postgres()
 
-    # Get articles needing claim extraction
+    # Get articles needing claim extraction. `url` column included so
+    # Slice 4b's full_text_fetch pre-pass can scrape source content
+    # when excerpt is too short for the claim extractor.
     query = """
-        SELECT article_id, title, excerpt, extracted_text
+        SELECT article_id, title, excerpt, extracted_text, url
         FROM articles
         WHERE (claims_status IS NULL OR claims_status = 'pending' OR claims_status = 'failed')
           AND (excerpt IS NOT NULL OR extracted_text IS NOT NULL)
@@ -333,10 +335,11 @@ async def trigger_claim_extraction(
         # content to chew on. Converts most "1 claim" articles into
         # 4-8 claim coverage downstream. Failures are silent — the
         # downstream extractor still runs against the short text.
-        if len(article_text) < 300 and article.get("source_url"):
+        # Note: articles.url is the source link column (init.sql:73).
+        if len(article_text) < 300 and article.get("url"):
             try:
                 from shared.full_text_fetch import fetch_full_text
-                fetched = await fetch_full_text(article["source_url"])
+                fetched = await fetch_full_text(article["url"])
                 if fetched and len(fetched) > len(article_text):
                     db = get_postgres()
                     db.execute_update(

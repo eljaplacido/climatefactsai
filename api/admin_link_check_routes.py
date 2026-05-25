@@ -100,9 +100,9 @@ async def run_link_check(
     db = get_postgres()
 
     rows = db.execute_query(
-        """SELECT article_id, source_url
+        """SELECT article_id, url
            FROM articles
-           WHERE source_url IS NOT NULL
+           WHERE url IS NOT NULL
              AND (source_url_status IS NULL
                   OR source_url_checked_at < NOW() - INTERVAL '7 days')
            ORDER BY source_url_checked_at NULLS FIRST
@@ -129,7 +129,7 @@ async def run_link_check(
             return article_id, status
 
     pairs = await asyncio.gather(
-        *(_bounded(str(r["article_id"]), r["source_url"]) for r in rows),
+        *(_bounded(str(r["article_id"]), r["url"]) for r in rows),
         return_exceptions=False,
     )
 
@@ -169,7 +169,7 @@ async def link_check_summary(
               COUNT(*) FILTER (WHERE source_url_checked_at IS NOT NULL
                                AND source_url_checked_at < NOW() - INTERVAL '7 days') AS stale
            FROM articles
-           WHERE source_url IS NOT NULL"""
+           WHERE url IS NOT NULL"""
     )
     r = rows[0] if rows else {}
     return {
