@@ -8,9 +8,22 @@ import { AuthProvider } from '@/lib/auth'
 import { I18nProvider } from '@/lib/i18n-context'
 import { ViewContextProvider } from '@/lib/view-context'
 
+// Slice 5b (2026-05-25) — metadataBase makes per-page generateMetadata
+// relative URLs (og:image, twitter:image, canonical) resolve to absolute
+// for social-network crawlers. NEXT_PUBLIC_SITE_URL overrides for non-prod.
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  'https://climatenews-frontend-srzwxdzmaq-ez.a.run.app'
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: 'Climatefacts.ai - Fact-Checked Climate News',
   description: 'AI-powered climate news verification and fact-checking platform',
+  openGraph: {
+    siteName: 'Climatefacts.ai',
+    type: 'website',
+  },
+  twitter: { card: 'summary_large_image', site: '@climatefactsai' },
 }
 
 export default function RootLayout({

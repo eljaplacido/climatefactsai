@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import type { ArticleDetail, ContentCategory } from "@/types";
 import CredibilityGauge from "@/components/CredibilityGauge";
 import ClaimCard from "@/components/ClaimCard";
@@ -80,17 +81,52 @@ function estimateReadingTime(text: string): number {
   return Math.max(1, Math.ceil(words / 200));
 }
 
-export async function generateMetadata({ params }: { params: { id: string } }) {
+// Slice 5b (2026-05-25) — full OG + Twitter card metadata so social
+// crawlers (Twitter, LinkedIn, Facebook, Slack) render rich previews
+// with the article's OG image, summary, and canonical URL. Prior
+// version emitted only basic title + description, no image, no Twitter
+// card — links looked generic and engagement was suppressed. OG image
+// at /api/og-image/{id} already exists in api/og_image_routes.py.
+const API_URL_FOR_OG =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: { id: string };
+}): Promise<Metadata> {
   const article = await getArticle(params.id);
-  if (!article) return { title: "Article Not Found" };
+  if (!article) {
+    return {
+      title: "Article not found",
+      robots: { index: false, follow: false },
+    };
+  }
+  const title = article.title || "Climate article";
+  const description =
+    article.executive_brief ||
+    article.excerpt ||
+    "Verified climate news on Climatefacts.ai";
+  const ogImage = `${API_URL_FOR_OG}/api/og-image/${params.id}`;
+  const canonical = `/articles/${params.id}`;
   return {
-    title: `${article.title} — Climatefacts.ai Analysis`,
-    description: article.executive_brief || article.excerpt || article.title,
+    title: `${title} · Climatefacts.ai`,
+    description,
+    alternates: { canonical },
     openGraph: {
-      title: article.title,
-      description: article.executive_brief || article.excerpt || "",
+      title,
+      description,
+      url: canonical,
       type: "article",
+      images: [{ url: ogImage, width: 1200, height: 630, alt: title }],
+      publishedTime: article.published_date || undefined,
       siteName: "Climatefacts.ai",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [ogImage],
     },
   };
 }
