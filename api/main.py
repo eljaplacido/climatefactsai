@@ -393,6 +393,10 @@ logger.info("Loaded Chat, Saved Query, Green Transition, Methodology, and Drift 
 from api.company_routes import router as company_router
 app.include_router(company_router)
 
+# Phase 10 (2026-05-25) — LLM routing admin endpoints
+from api.llm_admin_routes import router as llm_admin_router
+app.include_router(llm_admin_router)
+
 logger.info("Loaded Company router")
 
 
