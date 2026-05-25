@@ -60,12 +60,14 @@ COMMENT ON TABLE saved_items IS
 
 -- Mirror the existing user_bookmarks rows into saved_items so users
 -- don't lose any saved articles when the frontend migrates.
+-- user_bookmarks columns (per migration 009): bookmark_id, user_id,
+-- article_id, note (singular), created_at. No folder column exists.
 INSERT INTO saved_items (
     saved_id, user_id, item_type, item_id, label, notes, folder, created_at
 )
 SELECT uuid_generate_v4(), b.user_id, 'article', b.article_id,
        (SELECT title FROM articles a WHERE a.article_id = b.article_id),
-       b.notes, COALESCE(b.folder, 'default'), b.bookmarked_at
+       b.note, 'default', b.created_at
 FROM user_bookmarks b
 WHERE NOT EXISTS (
     SELECT 1 FROM saved_items s
