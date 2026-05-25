@@ -41,8 +41,13 @@ export interface UseSaveArgs {
   type: SavedItemType;
   /** UUID for FK-able types (article, analysis, claim, company). */
   id?: string | null;
-  /** Free-text ref for non-UUID types (search URL, country code, JSON payload). */
-  ref?: string | null;
+  /**
+   * Free-text ref for non-UUID types (search URL, country code, JSON payload).
+   * Named `itemRef` rather than `ref` so it can be JSX-passed to wrapper
+   * components like <SaveButton itemRef="DE" /> without colliding with
+   * React's reserved string-ref prop.
+   */
+  itemRef?: string | null;
   /** Optional metadata sent on save. */
   label?: string;
   notes?: string;
@@ -70,7 +75,7 @@ export interface UseSaveReturn {
  *   const { saved, busy, toggle } = useSave({ type: "search", ref: searchUrl });
  */
 export function useSave(args: UseSaveArgs): UseSaveReturn {
-  const { type, id, ref, label, notes, folder, payload } = args;
+  const { type, id, itemRef: ref, label, notes, folder, payload } = args;
   const cacheRef = id ?? ref ?? "";
   const [saved, setSaved] = useState<boolean>(() => getCachedSaved(type, cacheRef));
   const [savedId, setSavedId] = useState<string | null>(null);

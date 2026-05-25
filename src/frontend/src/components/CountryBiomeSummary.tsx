@@ -130,7 +130,7 @@ export default function CountryBiomeSummary({
         {data.biome_summary}
       </p>
 
-      {data.climate_effects.length > 0 && (
+      {(data.climate_effects ?? []).length > 0 && (
         <div data-testid="biome-effects">
           <div className="flex items-center gap-1.5 mb-2">
             <AlertTriangle className="w-4 h-4 text-amber-600" />
@@ -139,7 +139,7 @@ export default function CountryBiomeSummary({
             </h4>
           </div>
           <ul className="space-y-1.5 text-sm text-gray-800 dark:text-slate-200">
-            {data.climate_effects.map((effect, i) => (
+            {(data.climate_effects ?? []).map((effect, i) => (
               <li key={i} className="flex gap-2">
                 <span className="text-amber-600 mt-1.5 flex-shrink-0">•</span>
                 <span className="leading-snug">{effect}</span>
@@ -149,13 +149,13 @@ export default function CountryBiomeSummary({
         </div>
       )}
 
-      {data.key_facts.length > 0 && (
+      {(data.key_facts ?? []).length > 0 && (
         <div data-testid="biome-key-facts">
           <h4 className="text-xs uppercase tracking-wider text-gray-700 dark:text-slate-300 font-semibold mb-2">
             Key facts
           </h4>
           <ul className="space-y-1 text-sm text-gray-700 dark:text-slate-300">
-            {data.key_facts.map((fact, i) => (
+            {(data.key_facts ?? []).map((fact, i) => (
               <li key={i} className="flex gap-2">
                 <span className="text-teal-600 mt-1.5 flex-shrink-0">›</span>
                 <span className="leading-snug">{fact}</span>
@@ -165,7 +165,7 @@ export default function CountryBiomeSummary({
         </div>
       )}
 
-      {data.drill_down_suggestions.length > 0 && (
+      {(data.drill_down_suggestions ?? []).length > 0 && (
         <div
           className="pt-3 border-t border-gray-100 dark:border-slate-800"
           data-testid="biome-drilldown"
@@ -177,7 +177,7 @@ export default function CountryBiomeSummary({
             </h4>
           </div>
           <div className="flex flex-wrap gap-2">
-            {data.drill_down_suggestions.map((q, i) => (
+            {(data.drill_down_suggestions ?? []).map((q, i) => (
               <button
                 key={i}
                 type="button"

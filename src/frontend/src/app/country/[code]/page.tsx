@@ -289,7 +289,7 @@ export default function CountryPassportPage() {
                   /api/user/saved (item_type=country). */}
               <SaveButton
                 type="country"
-                ref={code}
+                itemRef={code}
                 label={detail.country_name}
                 variant="chip"
               />

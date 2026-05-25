@@ -30,7 +30,7 @@ function Harness(props: {
   const { saved, busy, error, toggle } = useSave({
     type: props.type,
     id: props.id,
-    ref: props.itemRef,
+    itemRef: props.itemRef,
     label: props.label,
   });
   return (
