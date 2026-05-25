@@ -401,6 +401,10 @@ app.include_router(llm_admin_router)
 from api.saved_items_routes import router as saved_items_router
 app.include_router(saved_items_router)
 
+# Slice 5a (2026-05-25) — link-rot detection admin endpoint (token-gated).
+from api.admin_link_check_routes import router as admin_link_check_router
+app.include_router(admin_link_check_router)
+
 logger.info("Loaded Company router")
 
 
