@@ -41,6 +41,46 @@ class AnalyzeClaimResponse(BaseModel):
     methodology_version: str = "corporate_v1.0"
 
 
+# Deferred audit item #12 (Slice "report-analysis", 2026-05-25).
+# ESG officers need to drop a sustainability-report URL and get
+# end-to-end claim extraction + verification rather than pasting
+# claim-by-claim into /analyze. Reuses the Slice 4b full_text_fetch
+# helper + the existing ClaimExtractor (DeepSeek, research_report
+# content-type) + the in-file _analyze_claim heuristic.
+
+class AnalyzeReportRequest(BaseModel):
+    report_url: Optional[str] = Field(
+        None,
+        description="Public URL of a sustainability report (HTML or PDF link page)",
+    )
+    report_text: Optional[str] = Field(
+        None,
+        min_length=200,
+        max_length=200000,
+        description="Pasted report text — alternative to report_url",
+    )
+    max_claims: int = Field(default=20, ge=1, le=50)
+
+
+class AnalyzedReportClaim(BaseModel):
+    claim_id: str
+    claim_text: str
+    claim_type: str
+    verdict: str
+    flag_reason: Optional[str] = None
+    evidence: Optional[str] = None
+
+
+class AnalyzeReportResponse(BaseModel):
+    company_id: str
+    report_url: Optional[str] = None
+    text_length: int
+    extracted_claims_count: int
+    claims: List[AnalyzedReportClaim]
+    verdict_summary: Dict[str, int]
+    methodology_version: str = "corporate_report_v1.0"
+
+
 @router.get("")
 async def list_companies(
     limit: int = Query(50, ge=1, le=200),
@@ -140,6 +180,129 @@ async def analyze_company_claim(ticker: str, request: AnalyzeClaimRequest):
         evidence=evidence,
         flag_reason=flag_reason,
         methodology_version="corporate_v1.0",
+    )
+
+
+@router.post("/{ticker}/analyze-report", response_model=AnalyzeReportResponse)
+async def analyze_company_report(ticker: str, request: AnalyzeReportRequest):
+    """End-to-end analysis of a corporate sustainability report.
+
+    Pipeline:
+      1. Resolve company (404 if unknown ticker/UUID).
+      2. Acquire report text — either from `report_url` (via
+         Slice 4b fetch_full_text) or directly from `report_text`.
+      3. Run ClaimExtractor with content_type='research_report' to
+         pull up to max_claims atomic claims.
+      4. For each claim, run _analyze_claim against the company's
+         disclosure context — same heuristic as POST /analyze.
+      5. Persist every result via upsert_company_claim and return
+         the structured response with verdict counts.
+
+    Exactly one of report_url or report_text must be provided.
+    Closes audit item 12 (corporate sustainability report analysis).
+    """
+    from app.domains.content.corporate.repository import (
+        get_company,
+        get_company_disclosures,
+        upsert_company_claim,
+    )
+    from app.domains.content.corporate.schemas import CompanyClaim
+
+    if (request.report_url is None) == (request.report_text is None):
+        raise HTTPException(
+            status_code=400,
+            detail="Exactly one of report_url or report_text must be provided",
+        )
+
+    db = get_postgres()
+    profile = get_company(db, ticker)
+    if profile is None:
+        raise HTTPException(status_code=404, detail=f"Company not found: {ticker}")
+
+    # 2. Acquire text.
+    if request.report_text:
+        text = request.report_text
+        report_url = None
+    else:
+        from shared.full_text_fetch import fetch_full_text
+        text = await fetch_full_text(request.report_url, timeout=20.0)
+        report_url = request.report_url
+        if not text:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Could not fetch usable text from {request.report_url}. "
+                    "Check the URL serves HTML (not a paywalled PDF), is reachable, "
+                    "and contains more than 200 chars of body text. As a fallback, "
+                    "paste the report body into the report_text field directly."
+                ),
+            )
+
+    # 3. Claim extraction (DeepSeek with research-report tuning).
+    try:
+        from app.domains.intelligence.services import ClaimExtractor
+        extractor = ClaimExtractor()
+        atomic_claims = await extractor.decompose_claims(
+            text=text,
+            max_claims=request.max_claims,
+            content_type="research_report",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"analyze-report: ClaimExtractor failed: {exc}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Claim extraction failed: {type(exc).__name__}",
+        )
+
+    # 4 + 5. Per-claim verdicts + persist.
+    disclosures = get_company_disclosures(db, profile.company_id)
+    disclosure_context = _format_disclosure_context(profile, disclosures)
+
+    results: List[AnalyzedReportClaim] = []
+    verdict_counts: Dict[str, int] = {}
+    for atomic in atomic_claims:
+        claim_text = getattr(atomic, "text", None) or getattr(atomic, "claim", str(atomic))
+        if not isinstance(claim_text, str) or len(claim_text.strip()) < 10:
+            continue
+        claim_type, verdict, flag_reason, evidence = _analyze_claim(
+            claim_text, disclosure_context
+        )
+        record = CompanyClaim(
+            company_id=profile.company_id,
+            claim_text=claim_text,
+            claim_type=claim_type,
+            verdict=verdict,
+            flag_reason=flag_reason,
+            evidence_url=evidence,
+            methodology_version="corporate_report_v1.0",
+        )
+        claim_id = upsert_company_claim(db, record)
+        results.append(
+            AnalyzedReportClaim(
+                claim_id=claim_id,
+                claim_text=claim_text,
+                claim_type=claim_type,
+                verdict=verdict,
+                flag_reason=flag_reason,
+                evidence=evidence,
+            )
+        )
+        verdict_counts[verdict] = verdict_counts.get(verdict, 0) + 1
+
+    logger.info(
+        f"analyze-report: {profile.name} ({ticker}) — "
+        f"{len(results)} claims analysed from {len(text)}-char text"
+    )
+
+    return AnalyzeReportResponse(
+        company_id=profile.company_id,
+        report_url=report_url,
+        text_length=len(text),
+        extracted_claims_count=len(results),
+        claims=results,
+        verdict_summary=verdict_counts,
     )
 
 
