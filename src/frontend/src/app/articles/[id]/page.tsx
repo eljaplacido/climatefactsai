@@ -12,6 +12,7 @@ import EvidenceTimeline from "@/components/EvidenceTimeline";
 import dynamic from "next/dynamic";
 import ShareButton from "@/components/ShareButton";
 import BookmarkButton from "@/components/BookmarkButton";
+import ArticleExportButtons from "@/components/ArticleExportButtons";
 import ReanalyzeButton from "@/components/ReanalyzeButton";
 import ArgumentationGraph from "@/components/ArgumentationGraph";
 import Link from "next/link";
@@ -216,23 +217,10 @@ export default async function ArticlePage({ params }: { params: { id: string } }
               title={article.title}
               excerpt={article.executive_brief || article.excerpt}
             />
-            {/* Export buttons (Standard+ tier) */}
-            <a
-              href={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400"}/api/export/article/${article.article_id}?format=csv`}
-              className="inline-flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-clilens-primary border border-gray-200 rounded hover:border-clilens-primary transition"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              CSV
-            </a>
-            <a
-              href={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400"}/api/export/article/${article.article_id}?format=pdf`}
-              className="inline-flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-clilens-primary border border-gray-200 rounded hover:border-clilens-primary transition"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              PDF
-            </a>
+            {/* Export buttons (Professional+) — POST + blob download via
+                axios client so the Authorization header lands; the prior
+                <a href> GET was hitting routes that don't exist. */}
+            <ArticleExportButtons articleId={article.article_id} />
           </div>
 
           {/* Claims by category pills */}

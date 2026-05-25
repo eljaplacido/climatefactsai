@@ -325,6 +325,59 @@ async def export_article_pdf(
         raise HTTPException(status_code=500, detail="Failed to generate PDF")
 
 
+@router.post("/article/{article_id}/csv")
+async def export_article_csv(
+    article_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Export a single article's metadata as CSV (Professional+ only).
+
+    One-row CSV with the same columns as search-results CSV, useful for
+    researcher / journalist note-taking and reference management.
+    """
+    if not check_premium_feature(current_user, "export"):
+        raise HTTPException(
+            status_code=403,
+            detail="CSV export requires Professional or Enterprise subscription",
+        )
+
+    db = get_postgres()
+    rows = db.execute_query(
+        """
+        SELECT article_id, title, source_name, published_at, country_code,
+               overall_credibility, reliability_score, source_url
+        FROM articles
+        WHERE article_id = :article_id AND is_synthetic = FALSE
+        """,
+        {"article_id": article_id},
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    csv_text = create_search_results_csv([dict(rows[0])])
+
+    db.execute_update(
+        """
+        INSERT INTO user_usage (
+            usage_id, user_id, usage_type, resource_id, metadata, created_at
+        ) VALUES (:usage_id, :user_id, 'export_csv', :resource_id, :metadata, NOW())
+        """,
+        {
+            "usage_id": str(uuid4()),
+            "user_id": current_user["user_id"],
+            "resource_id": article_id,
+            "metadata": json.dumps({"article_id": article_id, "scope": "single"}),
+        },
+    )
+
+    filename = f"clilens_article_{article_id[:8]}.csv"
+    return Response(
+        content=csv_text,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 @router.post("/search/csv")
 async def export_search_csv(
     country: Optional[str] = Query(None),

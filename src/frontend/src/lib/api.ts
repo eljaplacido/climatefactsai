@@ -432,6 +432,27 @@ export const api = {
     const response = await apiClient.get("/api/analytics/pipeline");
     return response.data;
   },
+
+  // POST + blob — backend routes are POST-only and JWT-gated; the original
+  // <a href="...?format=pdf"> wiring never worked. apiClient already attaches
+  // the Authorization header from localStorage; caller handles download.
+  async exportArticlePdf(articleId: string): Promise<Blob> {
+    const response = await apiClient.post(
+      `/api/export/article/${articleId}/pdf`,
+      null,
+      { responseType: "blob" }
+    );
+    return response.data as Blob;
+  },
+
+  async exportArticleCsv(articleId: string): Promise<Blob> {
+    const response = await apiClient.post(
+      `/api/export/article/${articleId}/csv`,
+      null,
+      { responseType: "blob" }
+    );
+    return response.data as Blob;
+  },
 };
 
 export default api;
