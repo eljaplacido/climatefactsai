@@ -414,6 +414,12 @@ from api.research_feed_routes import (
 app.include_router(research_feed_router)
 app.include_router(research_feed_admin_router)
 
+# Deferred #14 (2026-05-25) — scenario explorer (linear interpolation
+# between IPCC AR6 SSP projections; transparent disclaimer that this
+# is interpolation, not simulation).
+from api.scenario_routes import router as scenario_router
+app.include_router(scenario_router)
+
 logger.info("Loaded Company router")
 
 
