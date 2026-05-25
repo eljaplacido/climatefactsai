@@ -322,9 +322,36 @@ async def trigger_claim_extraction(
     # Process in background
     total_claims = 0
     errors = []
+    full_text_fetches = 0
 
     for article in articles:
         article_text = article.get("extracted_text") or article.get("excerpt") or ""
+
+        # Slice 4b (2026-05-25) — full_text_fetch pre-pass. If we only
+        # have an RSS excerpt (typically <300 chars), scrape the source
+        # URL and persist the body so the claim extractor has actual
+        # content to chew on. Converts most "1 claim" articles into
+        # 4-8 claim coverage downstream. Failures are silent — the
+        # downstream extractor still runs against the short text.
+        if len(article_text) < 300 and article.get("source_url"):
+            try:
+                from shared.full_text_fetch import fetch_full_text
+                fetched = await fetch_full_text(article["source_url"])
+                if fetched and len(fetched) > len(article_text):
+                    db = get_postgres()
+                    db.execute_update(
+                        "UPDATE articles SET extracted_text = :t, "
+                        "updated_at = NOW() WHERE article_id = :id",
+                        {"t": fetched, "id": article["article_id"]},
+                    )
+                    article_text = fetched
+                    full_text_fetches += 1
+            except Exception as exc:
+                logger.debug(
+                    f"full_text_fetch pre-pass failed for "
+                    f"{article['article_id']}: {exc}"
+                )
+
         if len(article_text) < 50:
             continue
 
@@ -339,9 +366,16 @@ async def trigger_claim_extraction(
         except Exception as e:
             errors.append(f"{article['title']}: {str(e)}")
 
+    if full_text_fetches:
+        logger.info(
+            f"Pipeline pre-pass fetched full text for {full_text_fetches} "
+            f"of {len(articles)} articles (Slice 4b)"
+        )
+
     return PipelineResponse(
         status="completed" if not errors else "partial",
-        message=f"Processed {len(articles)} articles",
+        message=f"Processed {len(articles)} articles "
+                f"({full_text_fetches} full-text pre-fetches)",
         articles_processed=len(articles),
         claims_extracted=total_claims,
         errors=errors[:10]  # Limit error list
