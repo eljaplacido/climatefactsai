@@ -15,6 +15,7 @@ import MapCountryPanel from "@/components/map/MapCountryPanel";
 import MapAgenticChat from "@/components/map/MapAgenticChat";
 import MapTimeline from "@/components/map/MapTimeline";
 import MapCompareView from "@/components/map/MapCompareView";
+import MapWalkthrough, { MapWalkthroughTrigger } from "@/components/map/MapWalkthrough";
 import { useViewContext } from "@/lib/view-context";
 import { useUrlState, URL_STATE_SERIALIZERS } from "@/lib/useUrlState";
 
@@ -93,6 +94,10 @@ function MapPageInner() {
   // Core state
   const [countryStats, setCountryStats] = useState<CountryStatEntry[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Phase 9 (2026-05-25) — onboarding walkthrough. Opens automatically
+  // on first visit; re-openable via the "Take the tour" trigger.
+  const [tourOpen, setTourOpen] = useState(false);
 
   // Map interaction state — Phase 2D: URL-persistent so `/map?country=DE`
   // and `/map?layer=temperature_anomaly` work as deeplinks.
@@ -388,6 +393,15 @@ function MapPageInner() {
           activeLayer={activeLayer}
           onChange={setActiveLayer}
         />
+
+        {/* Phase 9 (2026-05-25) — onboarding overlay + re-open trigger */}
+        <MapWalkthrough
+          forceOpen={tourOpen}
+          onClose={() => setTourOpen(false)}
+        />
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 bg-white/95 dark:bg-slate-900/95 border border-gray-200 dark:border-slate-700 rounded-full px-3 py-1 shadow-sm">
+          <MapWalkthroughTrigger onClick={() => setTourOpen(true)} />
+        </div>
 
         {/* Filter panel - left, offset past layer control */}
         <MapFilterPanel

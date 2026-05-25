@@ -33,6 +33,7 @@ import EmbedShareButton from "@/components/EmbedShareButton";
 import MultiViewTabs from "@/components/MultiViewTabs";
 import AOISubscribeButton from "@/components/AOISubscribeButton";
 import ProjectionsPanel from "@/components/ProjectionsPanel";
+import CountryBiomeSummary from "@/components/CountryBiomeSummary";
 
 /**
  * Country Climate Passport — Phase 2B (2026-05-23), MH3 from the
@@ -620,6 +621,26 @@ function OverviewTab({ detail }: { detail: CountryDetail }) {
   const cats = Object.entries(detail.category_breakdown || {});
   return (
     <div className="space-y-6">
+      {/* Phase 9 (2026-05-25) — biome + climate-effects narrative.
+          Renders BEFORE the news-corpus snapshot so users get
+          'what's at stake' framing first. */}
+      <CountryBiomeSummary
+        countryCode={detail.country_code}
+        countryName={detail.country_name}
+        onAskAssistant={(q) => {
+          // Best-effort: dispatch a window event the chat panel listens
+          // for. The panel is mounted by the global layout, so we
+          // can't pass a direct callback.
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("clilens:ask-chat", {
+                detail: { question: q, source: "country-biome" },
+              }),
+            );
+          }
+        }}
+      />
+
       <div className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-700 p-5">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-3">
           Current snapshot

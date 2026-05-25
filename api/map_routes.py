@@ -1877,6 +1877,16 @@ async def get_country_claim_ledger(
 # ---------------------------------------------------------------------------
 
 
+@router.get("/country/{cc}/biome")
+async def get_country_biome_route(cc: str):
+    """Per-country biome + climate-effects narrative + drill-down hooks."""
+    from app.domains.content.country_biome import country_biome_payload
+    cc = (cc or "").upper().strip()
+    if len(cc) != 2 or not cc.isalpha():
+        raise HTTPException(status_code=400, detail="Invalid country code")
+    return country_biome_payload(cc)
+
+
 @router.get("/country/{cc}/projections")
 async def get_country_projections(cc: str):
     """Warming projections per scenario + horizon for a single country."""
