@@ -28,6 +28,61 @@ SBTI_CSV_URL = (
 SOURCE_NAME = "sbti"
 
 
+# Aliases the SBTi CSV uses that don't appear verbatim in COUNTRY_NAMES
+# (formal name vs common name, abbreviations, historical names).
+_COUNTRY_ALIASES: dict[str, str] = {
+    "USA": "US", "U.S.A.": "US", "U.S.": "US", "United States of America": "US",
+    "UK": "GB", "U.K.": "GB", "Great Britain": "GB", "England": "GB",
+    "Scotland": "GB", "Wales": "GB", "Northern Ireland": "GB",
+    "South Korea": "KR", "Republic of Korea": "KR", "Korea, South": "KR",
+    "Korea": "KR",  # ambiguous — defaults to South per SBTi data convention
+    "North Korea": "KP", "Korea, North": "KP",
+    "Czech Republic": "CZ",
+    "Slovak Republic": "SK",
+    "Russian Federation": "RU",
+    "Vietnam": "VN", "Viet Nam": "VN",
+    "Iran": "IR", "Iran, Islamic Republic of": "IR",
+    "Syria": "SY", "Syrian Arab Republic": "SY",
+    "Venezuela": "VE", "Venezuela, Bolivarian Republic of": "VE",
+    "Bolivia": "BO", "Bolivia, Plurinational State of": "BO",
+    "Tanzania": "TZ", "Tanzania, United Republic of": "TZ",
+    "Moldova": "MD", "Moldova, Republic of": "MD",
+    "Macedonia": "MK", "Republic of North Macedonia": "MK",
+    "Macedonia, The Former Yugoslav Republic of": "MK",
+    "Taiwan, Province of China": "TW",
+    "Hong Kong SAR": "HK", "Hong Kong, China": "HK",
+    "Macao": "MO", "Macau": "MO", "Macao SAR": "MO",
+    "Côte d'Ivoire": "CI", "Cote d'Ivoire": "CI", "Ivory Coast": "CI",
+    "Cape Verde": "CV", "Cabo Verde": "CV",
+    "Brunei Darussalam": "BN",
+    "Lao People's Democratic Republic": "LA", "Laos": "LA",
+    "Myanmar (Burma)": "MM", "Burma": "MM",
+    "Palestine, State of": "PS",
+    "Congo, Democratic Republic of the": "CD", "DRC": "CD",
+    "Republic of the Congo": "CG", "Congo-Brazzaville": "CG",
+    "Holy See (Vatican City State)": "VA", "Holy See": "VA",
+}
+
+
+def _build_country_map() -> dict[str, str]:
+    """Reverse the COUNTRY_NAMES dict (ISO→name) into name→ISO, plus aliases.
+
+    Returns a case-insensitive lookup keyed by lower-stripped country name.
+    Covers ~190 countries from forecast_service.COUNTRY_NAMES plus the
+    common alternative spellings the SBTi CSV actually uses.
+    """
+    # Imported lazily so a missing forecast_service at test-time doesn't
+    # crash the import path.
+    from app.domains.content.forecast_service import COUNTRY_NAMES
+
+    out: dict[str, str] = {}
+    for code, name in COUNTRY_NAMES.items():
+        out[name.lower().strip()] = code
+    for alias, code in _COUNTRY_ALIASES.items():
+        out[alias.lower().strip()] = code
+    return out
+
+
 class SBTIAdapter:
     source_name = SOURCE_NAME
 
@@ -50,19 +105,7 @@ class SBTIAdapter:
         """
         count = 0
         errors = []
-        # Map a non-ISO country name → 2-char ISO. Tiny built-in subset;
-        # unrecognised names just store NULL country_code.
-        country_map = {
-            "United States": "US", "United Kingdom": "GB", "Germany": "DE",
-            "France": "FR", "Japan": "JP", "China": "CN", "India": "IN",
-            "Canada": "CA", "Australia": "AU", "Brazil": "BR", "Italy": "IT",
-            "Spain": "ES", "Netherlands": "NL", "Sweden": "SE", "Norway": "NO",
-            "Finland": "FI", "Denmark": "DK", "Belgium": "BE", "Switzerland": "CH",
-            "Austria": "AT", "Ireland": "IE", "Mexico": "MX", "South Korea": "KR",
-            "South Africa": "ZA", "Singapore": "SG", "New Zealand": "NZ",
-            "Saudi Arabia": "SA", "United Arab Emirates": "AE", "Indonesia": "ID",
-            "Turkey": "TR", "Poland": "PL", "Portugal": "PT", "Greece": "GR",
-        }
+        country_map = _build_country_map()
         try:
             resp = await self.client.get(SBTI_CSV_URL)
             resp.raise_for_status()
@@ -73,11 +116,21 @@ class SBTIAdapter:
                     if not name:
                         continue
                     location = (row.get("location") or "").strip()
+                    # Slice 2 (2026-05-25) — fall back to 'XX' sentinel
+                    # ("International") for unmapped locations so the
+                    # partial unique index on (name, country_code) WHERE
+                    # country_code IS NOT NULL covers every row. Without
+                    # the sentinel, unmapped locations stored NULL and
+                    # were free to duplicate (root cause of the dup
+                    # re-pollution observed 2026-05-25).
+                    resolved_cc = country_map.get(location.lower().strip())
+                    if not resolved_cc and location:
+                        resolved_cc = "XX"
                     cid = upsert_company(
                         db, name,
                         isin=(row.get("isin") or "").strip()[:12] or None,
                         lei=(row.get("lei") or "").strip()[:20] or None,
-                        country_code=country_map.get(location),
+                        country_code=resolved_cc,
                         sector_nace=(row.get("sector") or "")[:8] or None,
                     )
                     target_year = _int(row.get("target_year"))

@@ -16,64 +16,86 @@ def upsert_company(db, name: str, **kwargs) -> str:
     """Insert or update a company, return company_id.
 
     Dedup strategy (in order — first match wins):
-      1. Strong: ticker / isin / lei when any is present
-      2. Weak fallback: case-insensitive name + country_code
+      1. Strong: ticker / isin / lei (DB-level UNIQUE constraints from mig 029)
+      2. Weak fallback: case-insensitive name + country_code, guarded by
+         partial unique indexes `uq_companies_name_country` (non-null cc)
+         and `uq_companies_name_nocountry` (null cc; added in mig 043).
 
-    The weak fallback handles SBTi imports where most rows lack ticker
-    and any unique identifier — without it every SBTi target creates a
-    fresh duplicate company row. See production_deploy_2026_05_24.md
-    for the dedup incident this fixes.
+    Race protection (Slice 2, 2026-05-25): the weak-fallback INSERT uses
+    `ON CONFLICT ... DO NOTHING RETURNING company_id`. If the RETURNING
+    clause returns no rows, a concurrent caller won the race and we
+    re-SELECT to fetch the canonical id. Pre-Slice-2 this was a
+    read-then-INSERT race that re-populated dups every SBTi sync.
     """
-    # Strong dedup by identifier.
+    ticker = kwargs.get("ticker")
+    isin = kwargs.get("isin")
+    lei = kwargs.get("lei")
+    cc = kwargs.get("country_code")
+    sector = kwargs.get("sector_nace")
+
+    # Strong dedup by identifier — DB-level UNIQUE constraints make these
+    # race-safe; if a concurrent insert wins, the SELECT below catches it.
     existing = db.execute_query(
         "SELECT company_id FROM companies WHERE "
         "(ticker = :ticker AND :ticker IS NOT NULL) OR "
         "(isin = :isin AND :isin IS NOT NULL) OR "
         "(lei = :lei AND :lei IS NOT NULL) LIMIT 1",
-        {
-            "ticker": kwargs.get("ticker"),
-            "isin": kwargs.get("isin"),
-            "lei": kwargs.get("lei"),
-        },
+        {"ticker": ticker, "isin": isin, "lei": lei},
     )
-    # Weak fallback by name + country only if no identifier match.
-    if not existing:
-        existing = db.execute_query(
-            "SELECT company_id FROM companies WHERE "
-            "LOWER(TRIM(name)) = LOWER(TRIM(:name)) "
-            "AND (country_code = :cc OR (country_code IS NULL AND :cc IS NULL)) "
-            "LIMIT 1",
-            {"name": name, "cc": kwargs.get("country_code")},
-        )
     if existing:
         company_id = str(existing[0]["company_id"])
         db.execute_update(
             """UPDATE companies SET name = :name, country_code = :country_code,
                sector_nace = :sector, updated_at = NOW() WHERE company_id = :id""",
-            {
-                "name": name,
-                "country_code": kwargs.get("country_code"),
-                "sector": kwargs.get("sector_nace"),
-                "id": company_id,
-            },
+            {"name": name, "country_code": cc, "sector": sector, "id": company_id},
         )
         return company_id
 
-    company_id = str(uuid4())
-    db.execute_update(
-        """INSERT INTO companies (company_id, name, ticker, country_code, sector_nace, isin, lei)
-           VALUES (:id, :name, :ticker, :cc, :sector, :isin, :lei)""",
-        {
-            "id": company_id,
-            "name": name,
-            "ticker": kwargs.get("ticker"),
-            "cc": kwargs.get("country_code"),
-            "sector": kwargs.get("sector_nace"),
-            "isin": kwargs.get("isin"),
-            "lei": kwargs.get("lei"),
-        },
+    # Weak-fallback INSERT with race-proof ON CONFLICT. The conflict target
+    # must exactly match the partial unique index predicate, so we branch on
+    # whether cc is NULL — each branch targets its dedicated partial index.
+    new_id = str(uuid4())
+    params = {
+        "id": new_id, "name": name, "ticker": ticker, "cc": cc,
+        "sector": sector, "isin": isin, "lei": lei,
+    }
+    if cc is not None:
+        insert_sql = """
+            INSERT INTO companies (company_id, name, ticker, country_code, sector_nace, isin, lei)
+            VALUES (:id, :name, :ticker, :cc, :sector, :isin, :lei)
+            ON CONFLICT (LOWER(TRIM(name)), country_code) WHERE country_code IS NOT NULL
+            DO NOTHING
+            RETURNING company_id
+        """
+    else:
+        insert_sql = """
+            INSERT INTO companies (company_id, name, ticker, country_code, sector_nace, isin, lei)
+            VALUES (:id, :name, :ticker, :cc, :sector, :isin, :lei)
+            ON CONFLICT (LOWER(TRIM(name))) WHERE country_code IS NULL
+            DO NOTHING
+            RETURNING company_id
+        """
+    rows = db.execute_query(insert_sql, params)
+    if rows:
+        return str(rows[0]["company_id"])
+
+    # Conflict happened — a concurrent caller inserted the canonical row.
+    canonical = db.execute_query(
+        "SELECT company_id FROM companies WHERE "
+        "LOWER(TRIM(name)) = LOWER(TRIM(:name)) "
+        "AND (country_code = :cc OR (country_code IS NULL AND :cc IS NULL)) "
+        "LIMIT 1",
+        {"name": name, "cc": cc},
     )
-    return company_id
+    if canonical:
+        return str(canonical[0]["company_id"])
+
+    # Truly unreachable under normal conditions (either the INSERT returned
+    # rows or the conflict resolution SELECT did). Surface loudly if hit.
+    raise RuntimeError(
+        f"upsert_company: could not insert or resolve canonical row for "
+        f"name={name!r} country_code={cc!r}"
+    )
 
 
 def upsert_disclosure(db, record: DisclosureRecord) -> None:
