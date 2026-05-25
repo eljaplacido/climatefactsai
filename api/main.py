@@ -405,6 +405,15 @@ app.include_router(saved_items_router)
 from api.admin_link_check_routes import router as admin_link_check_router
 app.include_router(admin_link_check_router)
 
+# Deferred #13 (2026-05-25) — research feed: subscribe-to-topic +
+# CrossRef poller. Public user routes + token-gated admin poll endpoint.
+from api.research_feed_routes import (
+    router as research_feed_router,
+    admin_router as research_feed_admin_router,
+)
+app.include_router(research_feed_router)
+app.include_router(research_feed_admin_router)
+
 logger.info("Loaded Company router")
 
 
