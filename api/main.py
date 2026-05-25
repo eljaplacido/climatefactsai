@@ -397,6 +397,10 @@ app.include_router(company_router)
 from api.llm_admin_routes import router as llm_admin_router
 app.include_router(llm_admin_router)
 
+# Phase 10 (2026-05-25) — polymorphic saved_items (save anything, not just articles)
+from api.saved_items_routes import router as saved_items_router
+app.include_router(saved_items_router)
+
 logger.info("Loaded Company router")
 
 
