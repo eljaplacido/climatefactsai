@@ -1879,12 +1879,48 @@ async def get_country_claim_ledger(
 
 @router.get("/country/{cc}/biome")
 async def get_country_biome_route(cc: str):
-    """Per-country biome + climate-effects narrative + drill-down hooks."""
+    """Per-country biome + climate-effects narrative + drill-down hooks
+    + symbol metadata for map rendering.
+
+    Phase 11 (2026-05-25) — merges the curated narrative (22 countries)
+    with the comprehensive biome+Köppen mapping (195 countries) so the
+    Country Passport biome panel + the world map biome layer pull from
+    the same response.
+    """
     from app.domains.content.country_biome import country_biome_payload
+    from app.domains.content.country_biome_map import country_biome_map_entry
+
     cc = (cc or "").upper().strip()
     if len(cc) != 2 or not cc.isalpha():
         raise HTTPException(status_code=400, detail="Invalid country code")
-    return country_biome_payload(cc)
+
+    narrative = country_biome_payload(cc)
+    map_entry = country_biome_map_entry(cc)
+    # Merge: keep the narrative shape but add the symbol/koppen metadata.
+    return {
+        **narrative,
+        "biome_symbol": {
+            "biome_id": map_entry["biome_id"],
+            "biome_label": map_entry["biome_label"],
+            "biome_emoji": map_entry["biome_emoji"],
+            "koppen_id": map_entry["koppen_id"],
+            "koppen_label": map_entry["koppen_label"],
+            "koppen_color": map_entry["koppen_color"],
+        },
+    }
+
+
+@router.get("/biome-overview")
+async def get_biome_overview_route():
+    """All-countries biome + Köppen-Geiger climate-zone map (Phase 11).
+
+    Single response feeds the world-map biome layer (chloropleth fill
+    by Köppen colour + emoji marker at country centroid). Includes the
+    biome + Köppen taxonomies so the frontend renders a legend without
+    a second round-trip.
+    """
+    from app.domains.content.country_biome_map import biome_overview_payload
+    return biome_overview_payload()
 
 
 @router.get("/country/{cc}/projections")

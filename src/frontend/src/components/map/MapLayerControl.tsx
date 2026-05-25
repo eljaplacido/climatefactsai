@@ -5,6 +5,7 @@ import {
   Thermometer,
   ShieldAlert,
   Network,
+  Leaf,
 } from "lucide-react";
 import type { ActiveLayer } from "./InteractiveClimateMap";
 
@@ -39,6 +40,14 @@ const LAYERS: LayerOption[] = [
     label: "Source Diversity",
     description: "Number of distinct sources covering each country",
     icon: <Network className="h-4 w-4" />,
+  },
+  {
+    // Phase 11 (2026-05-25) — biome + Köppen-Geiger climate zone layer.
+    // Colour fill by climate zone (A/B/C/D/E) + biome emoji at centroid.
+    id: "biomes",
+    label: "Biomes & Climate",
+    description: "Biome type + Köppen climate zone per country",
+    icon: <Leaf className="h-4 w-4" />,
   },
 ];
 

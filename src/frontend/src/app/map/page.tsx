@@ -16,6 +16,7 @@ import MapAgenticChat from "@/components/map/MapAgenticChat";
 import MapTimeline from "@/components/map/MapTimeline";
 import MapCompareView from "@/components/map/MapCompareView";
 import MapWalkthrough, { MapWalkthroughTrigger } from "@/components/map/MapWalkthrough";
+import MapBiomeLegend from "@/components/map/MapBiomeLegend";
 import { useViewContext } from "@/lib/view-context";
 import { useUrlState, URL_STATE_SERIALIZERS } from "@/lib/useUrlState";
 
@@ -399,6 +400,9 @@ function MapPageInner() {
           forceOpen={tourOpen}
           onClose={() => setTourOpen(false)}
         />
+
+        {/* Phase 11 (2026-05-25) — biome layer legend (renders only when active) */}
+        <MapBiomeLegend active={activeLayer === "biomes"} />
         <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 bg-white/95 dark:bg-slate-900/95 border border-gray-200 dark:border-slate-700 rounded-full px-3 py-1 shadow-sm">
           <MapWalkthroughTrigger onClick={() => setTourOpen(true)} />
         </div>
@@ -512,6 +516,18 @@ function LayerLegend({ activeLayer }: { activeLayer: ActiveLayer }) {
         { color: "bg-violet-300", text: "3-5" },
         { color: "bg-violet-400", text: "6-10" },
         { color: "bg-violet-600", text: "10+" },
+      ],
+    },
+    biomes: {
+      // Phase 11 (2026-05-25) — inline legend shows the 5 Köppen zones.
+      // Full taxonomy lives in the MapBiomeLegend corner overlay.
+      label: "Climate zone",
+      items: [
+        { color: "bg-[#E76F51]", text: "Tropical" },
+        { color: "bg-[#F4A261]", text: "Arid" },
+        { color: "bg-[#2A9D8F]", text: "Temperate" },
+        { color: "bg-[#264653]", text: "Continental" },
+        { color: "bg-[#A8DADC]", text: "Polar" },
       ],
     },
   };

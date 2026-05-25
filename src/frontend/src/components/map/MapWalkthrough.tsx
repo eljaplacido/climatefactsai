@@ -14,7 +14,7 @@
 
 import { useEffect, useState } from "react";
 import { X, ArrowRight, ArrowLeft, MapPin, Thermometer, AlertTriangle,
-         Shield, GitCompare, MessageCircle } from "lucide-react";
+         Shield, GitCompare, MessageCircle, Leaf } from "lucide-react";
 
 const STORAGE_KEY = "clilens_map_walkthrough_dismissed";
 
@@ -66,6 +66,15 @@ const STEPS: Step[] = [
       + "fewer voices = higher single-source bias risk.",
     icon: <Shield className="w-6 h-6 text-emerald-600" />,
     highlightSelector: '[data-testid="map-layer-source_diversity"]',
+  },
+  {
+    title: "Layer 5 — Biomes & climate zones",
+    body:
+      "WWF biome type (emoji marker at country centroid) + Köppen-Geiger "
+      + "climate zone (colour fill). Lets you see at a glance which "
+      + "countries share ecological + climatic context.",
+    icon: <Leaf className="w-6 h-6 text-teal-600" />,
+    highlightSelector: '[data-testid="map-layer-biomes"]',
   },
   {
     title: "Compare two countries",

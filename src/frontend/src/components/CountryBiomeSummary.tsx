@@ -18,6 +18,15 @@ import { Leaf, AlertTriangle, MessageCircle } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
+export interface BiomeSymbol {
+  biome_id: string;
+  biome_label: string;
+  biome_emoji: string;
+  koppen_id: string;
+  koppen_label: string;
+  koppen_color: string;
+}
+
 export interface BiomePayload {
   country_code: string;
   available: boolean;
@@ -25,6 +34,8 @@ export interface BiomePayload {
   climate_effects: string[];
   key_facts: string[];
   drill_down_suggestions: string[];
+  // Phase 11 (2026-05-25) — visual biome symbol from biome_map
+  biome_symbol?: BiomeSymbol;
 }
 
 interface Props {
@@ -70,21 +81,46 @@ export default function CountryBiomeSummary({
       data-testid="biome-summary"
       aria-labelledby="biome-heading"
     >
-      <header className="flex items-start gap-2">
-        <Leaf className="w-5 h-5 text-teal-600 mt-0.5 flex-shrink-0" />
-        <div>
-          <h3
-            id="biome-heading"
-            className="text-base font-semibold text-gray-900 dark:text-slate-50"
-          >
-            {countryName} — biome + climate context
-          </h3>
-          <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
-            {data.available
-              ? "Curated narrative + drill-down chat hooks"
-              : "Generic summary — ask the assistant for country-specific detail"}
-          </p>
+      <header className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2 min-w-0">
+          <Leaf className="w-5 h-5 text-teal-600 mt-0.5 flex-shrink-0" />
+          <div className="min-w-0">
+            <h3
+              id="biome-heading"
+              className="text-base font-semibold text-gray-900 dark:text-slate-50"
+            >
+              {countryName} — biome + climate context
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+              {data.available
+                ? "Curated narrative + drill-down chat hooks"
+                : "Generic summary — ask the assistant for country-specific detail"}
+            </p>
+          </div>
         </div>
+
+        {/* Phase 11 (2026-05-25) — visual biome + climate-zone symbol.
+            Mirrors what the world map renders for this country. */}
+        {data.biome_symbol && data.biome_symbol.biome_id !== "unclassified" && (
+          <div
+            className="flex-shrink-0 flex flex-col items-center gap-1"
+            data-testid="biome-symbol-badge"
+            title={`${data.biome_symbol.biome_label} / ${data.biome_symbol.koppen_label}`}
+          >
+            <span
+              className="text-2xl leading-none"
+              aria-label={data.biome_symbol.biome_label}
+            >
+              {data.biome_symbol.biome_emoji}
+            </span>
+            <span
+              className="text-[10px] font-semibold px-1.5 py-0.5 rounded text-white whitespace-nowrap"
+              style={{ backgroundColor: data.biome_symbol.koppen_color }}
+            >
+              {data.biome_symbol.koppen_label}
+            </span>
+          </div>
+        )}
       </header>
 
       <p

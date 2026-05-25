@@ -53,7 +53,8 @@ export type ActiveLayer =
   | "article_density"
   | "temperature_anomaly"
   | "climate_risk"
-  | "source_diversity";
+  | "source_diversity"
+  | "biomes";  // Phase 11 (2026-05-25) — biome + Köppen climate zones
 
 export interface CountryStatEntry {
   country_code: string;
