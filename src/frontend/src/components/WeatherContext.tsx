@@ -110,33 +110,52 @@ function LocationCard({ ctx }: { ctx: LocationWeatherContext }) {
   );
 }
 
+type LoadState =
+  | { kind: "loading" }
+  | { kind: "ready"; data: ArticleWeatherContext }
+  | { kind: "empty" }
+  | { kind: "auth" }
+  | { kind: "tier" }
+  | { kind: "error" };
+
 export default function WeatherContext({ articleId }: Props) {
-  const [data, setData] = useState<ArticleWeatherContext | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  // Deferred #21 (2026-05-25) — distinguish auth / tier / empty / error
+  // states so the user understands WHY weather context isn't loading.
+  // Previously this silently hid on ANY error including 401/403, so the
+  // platform looked broken to anyone not on Standard+.
+  const [state, setState] = useState<LoadState>({ kind: "loading" });
 
   useEffect(() => {
     let cancelled = false;
     const timeout = setTimeout(() => {
-      if (!cancelled) setLoading(false);
-    }, 15000); // 15s hard timeout
+      if (!cancelled) setState({ kind: "error" });
+    }, 15000);
 
-    setLoading(true);
-    setError(false);
+    setState({ kind: "loading" });
 
     api
       .getArticleWeatherContext(articleId)
       .then((res) => {
-        if (!cancelled) {
-          setData(res);
-          setLoading(false);
+        if (cancelled) return;
+        if (!res || !res.weather_contexts || res.weather_contexts.length === 0) {
+          setState({ kind: "empty" });
+        } else {
+          setState({ kind: "ready", data: res });
         }
       })
-      .catch(() => {
-        if (!cancelled) setError(true);
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const status =
+          typeof err === "object" && err && "response" in err
+            ? (err as { response?: { status?: number } }).response?.status
+            : undefined;
+        if (status === 401) setState({ kind: "auth" });
+        else if (status === 403) setState({ kind: "tier" });
+        else if (status === 404) setState({ kind: "empty" });
+        else setState({ kind: "error" });
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) clearTimeout(timeout);
       });
 
     return () => {
@@ -145,9 +164,12 @@ export default function WeatherContext({ articleId }: Props) {
     };
   }, [articleId]);
 
-  if (loading) {
+  if (state.kind === "loading") {
     return (
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+      <div
+        className="bg-blue-50 border border-blue-200 rounded-lg p-4"
+        data-testid="weather-loading"
+      >
         <div className="flex items-center gap-2 text-blue-700 text-sm">
           <Cloud className="h-4 w-4 animate-pulse" />
           Loading weather context...
@@ -157,9 +179,82 @@ export default function WeatherContext({ articleId }: Props) {
     );
   }
 
-  if (error || !data || data.weather_contexts.length === 0) {
-    return null; // Silently hide if no weather context available
+  if (state.kind === "auth") {
+    return (
+      <div
+        className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-4"
+        data-testid="weather-auth-required"
+      >
+        <div className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
+          <Cloud className="h-4 w-4 mt-0.5 flex-shrink-0 text-blue-500" />
+          <div>
+            <p className="font-medium">Weather context requires sign-in.</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              <a href="/login" className="text-clilens-primary hover:underline">Sign in</a> to see
+              current conditions, anomalies vs historical normals, and 5-year trends
+              for the locations mentioned in this article.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
   }
+
+  if (state.kind === "tier") {
+    return (
+      <div
+        className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-4"
+        data-testid="weather-tier-required"
+      >
+        <div className="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-200">
+          <Cloud className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="font-medium">Weather context requires Standard or higher.</p>
+            <p className="text-xs mt-0.5">
+              Free tier limits prevent live weather + anomaly lookups.{" "}
+              <a
+                href="/dashboard/subscription"
+                className="underline hover:no-underline font-medium"
+              >
+                Upgrade
+              </a>{" "}
+              to enable for every article.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (state.kind === "empty") {
+    return (
+      <div
+        className="bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700 rounded-lg p-3"
+        data-testid="weather-empty"
+      >
+        <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+          <Cloud className="h-3.5 w-3.5" />
+          No geographic locations detected in this article — weather context unavailable.
+        </p>
+      </div>
+    );
+  }
+
+  if (state.kind === "error") {
+    return (
+      <div
+        className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3"
+        data-testid="weather-error"
+      >
+        <p className="text-xs text-red-700 dark:text-red-300 flex items-center gap-1.5">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          Weather context temporarily unavailable. Try refreshing in a moment.
+        </p>
+      </div>
+    );
+  }
+
+  const data = state.data;
 
   return (
     <div className="space-y-3" role="region" aria-label="Local weather context">

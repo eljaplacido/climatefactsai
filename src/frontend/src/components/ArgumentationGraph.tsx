@@ -50,7 +50,16 @@ export default function ArgumentationGraph({ articleId }: ArgumentationGraphProp
       setLoading(true);
       try {
         const res = await fetch(`${API_BASE}/api/carf/entity-graph/${articleId}`);
-        if (!res.ok) throw new Error("Failed to load entity graph");
+        if (!res.ok) {
+          // Deferred #21 (2026-05-25) — distinguish "no entities yet"
+          // from "endpoint error" so the surface message is honest.
+          // 404 = no entities for this article (expected, common).
+          // 5xx = backend KG pipeline issue (real problem).
+          if (res.status === 404) {
+            throw new Error("__not_yet__");
+          }
+          throw new Error(`__error_${res.status}__`);
+        }
         const json = await res.json();
         if (!cancelled) {
           setData(json);
@@ -58,7 +67,7 @@ export default function ArgumentationGraph({ articleId }: ArgumentationGraphProp
         }
       } catch (err: any) {
         if (!cancelled) {
-          setError(err.message);
+          setError(err.message || "__error_unknown__");
           setLoading(false);
         }
       }
@@ -87,16 +96,40 @@ export default function ArgumentationGraph({ articleId }: ArgumentationGraphProp
   }
 
   if (error || !data) {
+    const isNotYet = error === "__not_yet__";
+    const isBackendError = error && error.startsWith("__error_");
     return (
-      <div className="text-center py-6 text-sm text-gray-400">
-        Knowledge graph not available for this article yet.
+      <div
+        className={`text-center py-6 text-sm rounded ${
+          isBackendError
+            ? "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-700"
+            : "text-gray-400 dark:text-slate-500"
+        }`}
+        data-testid={isBackendError ? "kg-error" : "kg-pending"}
+      >
+        {isBackendError ? (
+          <>
+            <GitBranch className="h-4 w-4 inline mr-1.5" />
+            Knowledge graph temporarily unavailable — the entity-extraction
+            pipeline returned an error. Try refreshing in a moment.
+          </>
+        ) : isNotYet ? (
+          <>
+            <GitBranch className="h-4 w-4 inline mr-1.5 opacity-50" />
+            Knowledge graph not yet built for this article — entity
+            extraction runs on a scheduled background job.
+          </>
+        ) : (
+          "Knowledge graph not available for this article yet."
+        )}
       </div>
     );
   }
 
   if (data.entities.length === 0) {
     return (
-      <div className="text-center py-6 text-sm text-gray-400">
+      <div className="text-center py-6 text-sm text-gray-400 dark:text-slate-500" data-testid="kg-empty">
+        <GitBranch className="h-4 w-4 inline mr-1.5 opacity-50" />
         No entities extracted for this article yet.
       </div>
     );
