@@ -342,7 +342,25 @@ export default function AgenticAssistant({
         body: JSON.stringify(body),
       });
 
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      if (!res.ok) {
+        // Phase 9 (2026-05-25) — surface backend error detail so users
+        // can act on it instead of seeing a generic "couldn't process".
+        let detail = "";
+        try {
+          const errBody = await res.json();
+          detail =
+            errBody?.detail?.message ||
+            (typeof errBody?.detail === "string" ? errBody.detail : "") ||
+            errBody?.message ||
+            "";
+        } catch {
+          /* ignore body parsing */
+        }
+        const friendlyDetail = detail
+          ? ` (${detail.slice(0, 200)})`
+          : "";
+        throw new Error(`Chat backend returned ${res.status}${friendlyDetail}`);
+      }
       const data = await res.json();
 
       const assistantMessage: Message = {
@@ -397,12 +415,17 @@ export default function AgenticAssistant({
       if (data.session_id) setSessionId(data.session_id);
 
       setMessages((prev) => [...prev, assistantMessage]);
-    } catch {
+    } catch (err) {
+      // Show what actually failed so the user (and ops) can act.
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "Network error reaching the chat service.";
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "Sorry, I couldn't process that request. Please try again.",
+          content: `I hit a snag answering that — ${message}. Try rephrasing, or refresh and try again.`,
         },
       ]);
     } finally {
