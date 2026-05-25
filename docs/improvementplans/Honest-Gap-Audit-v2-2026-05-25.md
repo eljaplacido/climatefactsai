@@ -263,6 +263,38 @@ Recommended **Slice 1**: fix the export buttons (item 9) — it is the lowest-ri
 
 ---
 
+## Slice progress — autonomous run 2026-05-25
+
+| Slice | Commit | Status |
+|---|---|---|
+| 1 — Export buttons (item 9) | `36af118` | shipped + deployed |
+| 2 — Companies dedup hardening (item 1) | `900af29` | shipped; ON CONFLICT live |
+| 2b — Mig 044 + runner @notolerate (cross-cutting) | `85b770d` | shipped; dedup TRULY clean (100/100 unique live) |
+| 3 — Save flow unification (item 15) | `10b696f` | shipped; useSave hook + My Saves page |
+| 4a — Credibility honesty (items 3 + 4) | `1cda89a` | shipped; density factor + Limited Evidence badge |
+| 4b — full_text_fetch pre-pass | — | deferred (~0.5d separate slice) |
+| 5b — Article OG metadata (item 8) | `4789a4e` | shipped; metadataBase + per-article OG + Twitter |
+| 5a — Link rot detection (item 7) | — | deferred (~0.5d, needs Cloud Scheduler) |
+| 6 — Deep-search follow-up (item 5) | `89ac8d7` | shipped; inline thread + session_id |
+| 7 — Source scoring fence (item 10) | Mig 045 in progress | NULL-fill + P0001 assertion, runner @notolerate |
+| Persona overclaim correction | this doc + memory | reality: Public/Business toggle only, NOT 7 distinct persona routings |
+
+## Persona-claim correction
+
+The architecture report `Climatefacts-Architecture-Report-2026-05-24.docx`
+claims "7 personas served." The actual implementation is a single
+Public ↔ Business view-mode toggle exposed on Country Passport
+(`src/frontend/src/app/country/[code]/page.tsx:317, 352`) and Company
+Detail (`src/frontend/src/app/companies/[ticker]/page.tsx:208-275`).
+The 7 named personas (Consumer / Journalist / ESG / Scientist /
+Policymaker / Financial Analyst / Business Decision-Maker) influence
+*copy framing* in `lib/plainLanguage.ts` and *quota tier defaults* but
+have no routing, no persona-aware default views, no per-persona UI.
+
+Update the docx (or replace the wording) to: **"Public + Business
+view modes (with persona-flavoured copy and quota tiers)"** unless
+real persona routing is added — which is itself a multi-week project.
+
 ## Cross-cutting findings
 
 - **Migrations idempotency vs `MIGRATIONS_TOLERATE_ERRORS=true`.** `cloudbuild.yaml:67` and `infrastructure/gcp/cloudbuild-migrate.yaml:79` both ship the tolerate flag. `scripts/run_migrations.py:172-179` swallows `42P07/42701/42710/23505/42P06/42723`. Means a migration that fails on `23505 unique_violation` is silently marked applied — exactly the situation the comment in `038_force_dedupe_companies.sql:3-7` describes for 036. Migration 038's `RAISE EXCEPTION` (P0001) is NOT in the tolerated set, so it would fail loudly — but only the FIRST time. Subsequent SBTi syncs that re-create dups will pass build because 038's hash is already registered. **The build pipeline currently cannot prevent dedup regressions.**

@@ -88,3 +88,37 @@ class TestMig044HasDirective:
             "runner can silently swallow 23505 again, exactly the failure "
             "mode that wasted mig 043. See feedback_migration_tolerate_errors."
         )
+
+
+class TestMig045HasDirective:
+    """Slice 7 (2026-05-25) — Mig 045 fences source 3-axis scoring. It
+    NULL-fills any unscored rows and hard-asserts (P0001) zero NULLs
+    remain. The @notolerate directive ensures the assertion can't be
+    silently swallowed."""
+
+    def test_mig_045_starts_with_notolerate(self):
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parents[2]
+        mig_path = (
+            repo_root
+            / "infrastructure" / "database" / "migrations" / "versions"
+            / "045_source_3axis_fence.sql"
+        )
+        assert mig_path.exists(), f"Missing {mig_path}"
+        sql = mig_path.read_text(encoding="utf-8")
+        assert NOTOLERATE_RE.search(sql), (
+            "Mig 045 must have `-- @notolerate` directive."
+        )
+
+    def test_mig_045_asserts_with_p0001(self):
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parents[2]
+        sql = (
+            repo_root / "infrastructure" / "database" / "migrations"
+            / "versions" / "045_source_3axis_fence.sql"
+        ).read_text(encoding="utf-8")
+        assert "USING ERRCODE = 'P0001'" in sql
+        assert "RAISE EXCEPTION" in sql
+        assert "editorial_score" in sql
+        assert "factcheck_score" in sql
+        assert "transparency_score" in sql
