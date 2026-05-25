@@ -223,6 +223,46 @@ async def create_saved_item(
     return {"message": f"Saved {request.item_type}", "item_type": request.item_type}
 
 
+@router.get("/check")
+async def check_saved_item(
+    item_type: str = Query(..., description="One of the 8 valid item types"),
+    item_id: Optional[str] = Query(None, description="UUID for FK-able types"),
+    item_ref: Optional[str] = Query(None, description="Text ref (search URL, country code, ...)"),
+    current_user: dict = Depends(get_current_user),
+):
+    """Lightweight per-item 'is this saved' probe for buttons.
+
+    Cheaper than listing all saves of a type just to check one membership.
+    Returns {saved: bool, saved_id: str|null} so the caller can immediately
+    DELETE without re-querying.
+    """
+    if item_type not in _VALID_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unknown item_type {item_type!r}")
+    if (item_id is None) == (item_ref is None):
+        raise HTTPException(
+            status_code=400,
+            detail="Exactly one of item_id or item_ref must be provided",
+        )
+
+    db = get_postgres()
+    rows = db.execute_query(
+        """SELECT saved_id FROM saved_items
+           WHERE user_id = :uid AND item_type = :it
+             AND ((item_id = :iid AND :iid IS NOT NULL)
+                  OR (item_ref = :ref AND :ref IS NOT NULL))
+           LIMIT 1""",
+        {
+            "uid": current_user["user_id"],
+            "it": item_type,
+            "iid": item_id,
+            "ref": item_ref,
+        },
+    )
+    if rows:
+        return {"saved": True, "saved_id": str(rows[0]["saved_id"])}
+    return {"saved": False, "saved_id": None}
+
+
 @router.delete("/{saved_id}")
 async def delete_saved_item(
     saved_id: str,

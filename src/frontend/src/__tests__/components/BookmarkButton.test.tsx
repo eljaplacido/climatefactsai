@@ -4,28 +4,32 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import BookmarkButton from "@/components/BookmarkButton";
 
-const mockGetBookmarkStatus = vi.fn();
-const mockCreateBookmark = vi.fn();
-const mockDeleteBookmark = vi.fn();
+// Slice 3 (2026-05-25) — BookmarkButton was migrated off the legacy
+// /api/user/bookmarks/{id} endpoint to the polymorphic /api/user/saved
+// surface via the useSave hook. Tests now mock the polymorphic API methods.
+
+const mockCheckSavedItem = vi.fn();
+const mockCreateSavedItem = vi.fn();
+const mockDeleteSavedItem = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   api: {
-    getBookmarkStatus: (...args: any[]) => mockGetBookmarkStatus(...args),
-    createBookmark: (...args: any[]) => mockCreateBookmark(...args),
-    deleteBookmark: (...args: any[]) => mockDeleteBookmark(...args),
+    checkSavedItem: (...args: any[]) => mockCheckSavedItem(...args),
+    createSavedItem: (...args: any[]) => mockCreateSavedItem(...args),
+    deleteSavedItem: (...args: any[]) => mockDeleteSavedItem(...args),
   },
 }));
 
-describe("BookmarkButton", () => {
+describe("BookmarkButton (post Slice 3 migration)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
-    mockGetBookmarkStatus.mockResolvedValue({ article_id: "a-1", bookmarked: false });
-    mockCreateBookmark.mockResolvedValue({ message: "ok", article_id: "a-1" });
-    mockDeleteBookmark.mockResolvedValue({ message: "ok" });
+    mockCheckSavedItem.mockResolvedValue({ saved: false, saved_id: null });
+    mockCreateSavedItem.mockResolvedValue({ message: "ok", item_type: "article" });
+    mockDeleteSavedItem.mockResolvedValue({ message: "ok" });
   });
 
-  it("uses local bookmarks when unauthenticated", async () => {
+  it("uses local cache when unauthenticated — no API calls", async () => {
     render(<BookmarkButton articleId="a-1" />);
     const user = userEvent.setup();
 
@@ -33,16 +37,19 @@ describe("BookmarkButton", () => {
     await user.click(button);
 
     expect(button).toHaveTextContent("Saved");
-    expect(mockGetBookmarkStatus).not.toHaveBeenCalled();
-    expect(mockCreateBookmark).not.toHaveBeenCalled();
+    expect(mockCheckSavedItem).not.toHaveBeenCalled();
+    expect(mockCreateSavedItem).not.toHaveBeenCalled();
 
-    const stored = JSON.parse(localStorage.getItem("clilens-bookmarks") || "[]");
-    expect(stored).toEqual(["a-1"]);
+    // useSave persists per-item cache keys, not a single bookmarks blob.
+    expect(localStorage.getItem("clilens-saved:article:a-1")).toBe("1");
   });
 
-  it("hydrates saved state from backend for authenticated users", async () => {
+  it("hydrates saved state from /api/user/saved/check when authenticated", async () => {
     localStorage.setItem("clilens_token", "token-123");
-    mockGetBookmarkStatus.mockResolvedValue({ article_id: "a-1", bookmarked: true });
+    mockCheckSavedItem.mockResolvedValue({
+      saved: true,
+      saved_id: "saved-uuid-1",
+    });
 
     render(<BookmarkButton articleId="a-1" />);
 
@@ -50,43 +57,78 @@ describe("BookmarkButton", () => {
       expect(screen.getByRole("button")).toHaveTextContent("Saved");
     });
 
-    expect(mockGetBookmarkStatus).toHaveBeenCalledWith("a-1");
-    const stored = JSON.parse(localStorage.getItem("clilens-bookmarks") || "[]");
-    expect(stored).toContain("a-1");
+    expect(mockCheckSavedItem).toHaveBeenCalledWith({
+      item_type: "article",
+      item_id: "a-1",
+      item_ref: undefined,
+    });
+    expect(localStorage.getItem("clilens-saved:article:a-1")).toBe("1");
   });
 
-  it("creates bookmark via backend when authenticated", async () => {
+  it("calls createSavedItem with the polymorphic shape on save", async () => {
     localStorage.setItem("clilens_token", "token-123");
-    mockGetBookmarkStatus.mockResolvedValue({ article_id: "a-1", bookmarked: false });
+    mockCheckSavedItem.mockResolvedValue({ saved: false, saved_id: null });
 
     render(<BookmarkButton articleId="a-1" />);
-    const user = userEvent.setup();
-    const button = screen.getByRole("button");
 
-    await user.click(button);
+    // Wait for initial check to settle so subsequent click is not racing.
+    await waitFor(() => expect(mockCheckSavedItem).toHaveBeenCalled());
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button"));
 
     await waitFor(() => {
-      expect(mockCreateBookmark).toHaveBeenCalledWith("a-1");
-      expect(button).toHaveTextContent("Saved");
+      expect(mockCreateSavedItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          item_type: "article",
+          item_id: "a-1",
+        })
+      );
     });
   });
 
-  it("reverts optimistic state if backend save fails", async () => {
+  it("calls deleteSavedItem with the saved_id on unsave", async () => {
     localStorage.setItem("clilens_token", "token-123");
-    mockGetBookmarkStatus.mockResolvedValue({ article_id: "a-1", bookmarked: false });
-    mockCreateBookmark.mockRejectedValue(new Error("save failed"));
-
-    render(<BookmarkButton articleId="a-1" />);
-    const user = userEvent.setup();
-    const button = screen.getByRole("button");
-
-    await user.click(button);
-
-    await waitFor(() => {
-      expect(button).toHaveTextContent("Save");
+    mockCheckSavedItem.mockResolvedValue({
+      saved: true,
+      saved_id: "saved-uuid-1",
     });
 
-    const stored = JSON.parse(localStorage.getItem("clilens-bookmarks") || "[]");
-    expect(stored).toEqual([]);
+    render(<BookmarkButton articleId="a-1" />);
+    await waitFor(() =>
+      expect(screen.getByRole("button")).toHaveTextContent("Saved")
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button"));
+
+    await waitFor(() => {
+      expect(mockDeleteSavedItem).toHaveBeenCalledWith("saved-uuid-1");
+    });
+  });
+
+  it("surfaces 429 quota error inline", async () => {
+    localStorage.setItem("clilens_token", "token-123");
+    mockCheckSavedItem.mockResolvedValue({ saved: false, saved_id: null });
+    mockCreateSavedItem.mockRejectedValue({
+      response: {
+        status: 429,
+        data: { detail: { message: "Free tier saves up to 3 articles. Upgrade for unlimited." } },
+      },
+    });
+
+    render(<BookmarkButton articleId="a-1" />);
+    await waitFor(() => expect(mockCheckSavedItem).toHaveBeenCalled());
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        /Free tier saves up to 3 articles/
+      );
+    });
+    // State should revert (button back to "Save").
+    expect(screen.getByRole("button")).toHaveTextContent("Save");
   });
 });

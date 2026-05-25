@@ -111,6 +111,9 @@ deepseek.txt
 
 # Allow frontend lib/ directory (overrides Python lib/ ignore above)
 !src/frontend/src/lib/
+# Allow frontend __tests__/lib/ directory — hook tests live here and were
+# incidentally caught by the Python `lib/` ignore. Slice 3 (2026-05-25).
+!src/frontend/src/__tests__/lib/
 
 # Node/Next.js
 node_modules/

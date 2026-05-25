@@ -24,6 +24,9 @@ import type {
   ArticleTrend,
   SourcePerformance,
   PipelineStatus,
+  SavedItem,
+  SavedItemRequest,
+  SavedItemType,
 } from "../types";
 import { generateRequestId, setLastTrace } from "./trace";
 
@@ -300,6 +303,10 @@ export const api = {
     return response.data;
   },
 
+  // Legacy bookmark endpoints — kept for backward compat with surfaces
+  // not yet migrated to /api/user/saved. New code should use the
+  // polymorphic save methods below (listSavedItems, createSavedItem,
+  // checkSavedItem, deleteSavedItem). See audit item 15.
   async getBookmarkStatus(articleId: string): Promise<{
     article_id: string;
     bookmarked: boolean;
@@ -321,6 +328,39 @@ export const api = {
 
   async deleteBookmark(articleId: string): Promise<{ message: string }> {
     const response = await apiClient.delete(`/api/user/bookmarks/${articleId}`);
+    return response.data;
+  },
+
+  // Polymorphic save (Phase 10 saved_items table — supports article,
+  // analysis, claim, search, company, feed_setting, deep_search, country).
+  async listSavedItems(opts: {
+    item_type?: SavedItemType;
+    folder?: string;
+    limit?: number;
+  } = {}): Promise<{ items: SavedItem[]; total: number }> {
+    const response = await apiClient.get("/api/user/saved", { params: opts });
+    return response.data;
+  },
+
+  async createSavedItem(req: SavedItemRequest): Promise<{
+    message: string;
+    item_type: SavedItemType;
+  }> {
+    const response = await apiClient.post("/api/user/saved", req);
+    return response.data;
+  },
+
+  async checkSavedItem(opts: {
+    item_type: SavedItemType;
+    item_id?: string;
+    item_ref?: string;
+  }): Promise<{ saved: boolean; saved_id: string | null }> {
+    const response = await apiClient.get("/api/user/saved/check", { params: opts });
+    return response.data;
+  },
+
+  async deleteSavedItem(savedId: string): Promise<{ message: string }> {
+    const response = await apiClient.delete(`/api/user/saved/${savedId}`);
     return response.data;
   },
 

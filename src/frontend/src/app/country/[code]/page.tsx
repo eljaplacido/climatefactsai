@@ -30,6 +30,7 @@ import {
   type ViewMode,
 } from "@/lib/plainLanguage";
 import EmbedShareButton from "@/components/EmbedShareButton";
+import SaveButton from "@/components/SaveButton";
 import MultiViewTabs from "@/components/MultiViewTabs";
 import AOISubscribeButton from "@/components/AOISubscribeButton";
 import ProjectionsPanel from "@/components/ProjectionsPanel";
@@ -284,6 +285,14 @@ export default function CountryPassportPage() {
               >
                 <GitCompare className="w-3.5 h-3.5" /> Compare with…
               </Link>
+              {/* Slice 3 (2026-05-25) — save country to polymorphic
+                  /api/user/saved (item_type=country). */}
+              <SaveButton
+                type="country"
+                ref={code}
+                label={detail.country_name}
+                variant="chip"
+              />
               {/* Phase 2E (2026-05-23) — MH6 distribution play. Journalists
                   embed the KPI snapshot into their own articles via the
                   /embed/country/{code} iframe. */}

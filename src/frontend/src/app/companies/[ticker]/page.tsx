@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useUrlState } from "@/lib/useUrlState";
 import { type ViewMode } from "@/lib/plainLanguage";
+import SaveButton from "@/components/SaveButton";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -187,13 +188,21 @@ export default function CompanyDetailPage() {
         </Link>
 
         <header className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3 flex-wrap">
             {company.name}
             {company.ticker && (
               <span className="text-lg bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-mono">
                 {company.ticker}
               </span>
             )}
+            {/* Slice 3 (2026-05-25) — save company to polymorphic
+                /api/user/saved (item_type=company). */}
+            <SaveButton
+              type="company"
+              id={company.company_id}
+              label={company.name}
+              variant="chip"
+            />
           </h1>
           <div className="flex flex-wrap gap-4 mt-3 text-sm">
             {company.country_code && (

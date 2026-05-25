@@ -1,133 +1,58 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { Bookmark } from "lucide-react";
 import clsx from "clsx";
-import { api } from "@/lib/api";
-
-const STORAGE_KEY = "clilens-bookmarks";
-
-function getBookmarks(): string[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function setBookmarks(ids: string[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
-  } catch {
-    // localStorage full or unavailable
-  }
-}
+import { useSave } from "@/lib/useSave";
 
 interface BookmarkButtonProps {
   articleId: string;
   size?: "sm" | "md";
 }
 
-function hasAuthToken(): boolean {
-  if (typeof window === "undefined") return false;
-  return Boolean(localStorage.getItem("clilens_token"));
-}
-
+/**
+ * Article-save button. Slice 3 (2026-05-25) migrated this from the legacy
+ * /api/user/bookmarks/{id} endpoint to the polymorphic /api/user/saved
+ * surface via the generic useSave hook. Other surfaces (companies, search,
+ * deep-search) use useSave directly with their own item_type.
+ */
 export default function BookmarkButton({ articleId, size = "md" }: BookmarkButtonProps) {
-  const [saved, setSaved] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const { saved, busy, error, toggle } = useSave({
+    type: "article",
+    id: articleId,
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function syncStatus() {
-      const localSaved = getBookmarks().includes(articleId);
-      setSaved(localSaved);
-
-      if (!hasAuthToken()) {
-        return;
-      }
-
-      try {
-        const status = await api.getBookmarkStatus(articleId);
-        if (!cancelled) {
-          setSaved(Boolean(status.bookmarked));
-          const current = getBookmarks();
-          if (status.bookmarked && !current.includes(articleId)) {
-            setBookmarks([...current, articleId]);
-          }
-          if (!status.bookmarked && current.includes(articleId)) {
-            setBookmarks(current.filter((id) => id !== articleId));
-          }
-        }
-      } catch {
-        // Keep local fallback state.
-      }
-    }
-
-    syncStatus();
-    return () => {
-      cancelled = true;
-    };
-  }, [articleId]);
-
-  async function toggle(e: React.MouseEvent) {
+  function handleClick(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    if (busy) return;
-
-    setBusy(true);
-
-    const current = getBookmarks();
-    let next: string[];
-
-    if (current.includes(articleId)) {
-      next = current.filter((id) => id !== articleId);
-      setSaved(false);
-    } else {
-      next = [...current, articleId];
-      setSaved(true);
-    }
-    setBookmarks(next);
-
-    if (hasAuthToken()) {
-      try {
-        if (next.includes(articleId)) {
-          await api.createBookmark(articleId);
-        } else {
-          await api.deleteBookmark(articleId);
-        }
-      } catch {
-        // Revert optimistic state on server failure.
-        setBookmarks(current);
-        setSaved(current.includes(articleId));
-      }
-    }
-
-    setBusy(false);
+    toggle();
   }
 
   const iconSize = size === "sm" ? "h-4 w-4" : "h-5 w-5";
 
   return (
-    <button
-      onClick={toggle}
-      className={clsx(
-        "inline-flex items-center gap-1 transition-colors",
-        size === "sm" ? "text-xs" : "text-sm",
-        saved
-          ? "text-amber-500 hover:text-amber-600"
-          : "text-gray-400 hover:text-gray-600"
+    <span className="inline-flex flex-col gap-0.5">
+      <button
+        onClick={handleClick}
+        className={clsx(
+          "inline-flex items-center gap-1 transition-colors",
+          size === "sm" ? "text-xs" : "text-sm",
+          saved
+            ? "text-amber-500 hover:text-amber-600"
+            : "text-gray-400 hover:text-gray-600",
+          busy && "opacity-60 cursor-wait"
+        )}
+        disabled={busy}
+        title={saved ? "Remove from saved" : "Save article"}
+        aria-pressed={saved}
+      >
+        <Bookmark className={clsx(iconSize, saved && "fill-current")} />
+        {size === "md" && <span>{saved ? "Saved" : "Save"}</span>}
+      </button>
+      {error && (
+        <span className="text-[11px] text-amber-600 dark:text-amber-400" role="alert">
+          {error}
+        </span>
       )}
-      disabled={busy}
-      title={saved ? "Remove bookmark" : "Bookmark article"}
-    >
-      <Bookmark
-        className={clsx(iconSize, saved && "fill-current")}
-      />
-      {size === "md" && <span>{saved ? "Saved" : "Save"}</span>}
-    </button>
+    </span>
   );
 }

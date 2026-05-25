@@ -783,3 +783,37 @@ export interface IntelligenceBrief {
   source_count: number;
   generated_at: string;
 }
+
+// --- Polymorphic Saved Items (Phase 10 saved_items table + Slice 3 frontend) ---
+
+export type SavedItemType =
+  | "article"
+  | "analysis"
+  | "claim"
+  | "search"
+  | "company"
+  | "feed_setting"
+  | "deep_search"
+  | "country";
+
+export interface SavedItem {
+  saved_id: string;
+  item_type: SavedItemType;
+  item_id: string | null;
+  item_ref: string | null;
+  label: string | null;
+  notes: string | null;
+  folder: string | null;
+  payload: Record<string, unknown> | null;
+  created_at: string | null;
+}
+
+export interface SavedItemRequest {
+  item_type: SavedItemType;
+  item_id?: string | null;
+  item_ref?: string | null;
+  label?: string | null;
+  notes?: string | null;
+  folder?: string | null;
+  payload?: Record<string, unknown> | null;
+}

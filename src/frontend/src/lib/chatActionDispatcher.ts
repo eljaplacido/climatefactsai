@@ -199,23 +199,27 @@ const ASYNC_DISPATCHERS: Partial<
     if (typeof article_id !== "string") {
       return { status: "error", message: "Missing article_id" };
     }
+    // Slice 3 (2026-05-25) — migrated from legacy /api/user/bookmarks/{id}
+    // to polymorphic /api/user/saved so the chat skill goes through the same
+    // backend path as in-app Save buttons. Quota gate + 429 shape preserved.
     try {
       const base = process.env.NEXT_PUBLIC_API_URL || "";
-      const resp = await fetch(
-        `${base}/api/user/bookmarks/${encodeURIComponent(article_id)}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${
-              typeof window !== "undefined"
-                ? localStorage.getItem("clilens_token") || ""
-                : ""
-            }`,
-          },
-          body: JSON.stringify({ folder: "from-chat" }),
+      const resp = await fetch(`${base}/api/user/saved`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${
+            typeof window !== "undefined"
+              ? localStorage.getItem("clilens_token") || ""
+              : ""
+          }`,
         },
-      );
+        body: JSON.stringify({
+          item_type: "article",
+          item_id: article_id,
+          folder: "from-chat",
+        }),
+      });
       if (resp.status === 429) {
         const body = await resp.json().catch(() => ({}));
         return {
@@ -227,7 +231,7 @@ const ASYNC_DISPATCHERS: Partial<
         };
       }
       if (!resp.ok) {
-        return { status: "error", message: `Bookmark failed (HTTP ${resp.status})` };
+        return { status: "error", message: `Save failed (HTTP ${resp.status})` };
       }
       return { status: "executed" };
     } catch (e: any) {
