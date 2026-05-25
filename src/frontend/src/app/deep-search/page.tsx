@@ -31,6 +31,7 @@ import CompareCharts from "@/components/CompareCharts";
 import ClarificationChips from "@/components/ClarificationChips";
 import AIProvenanceBadge from "@/components/AIProvenanceBadge";
 import SentenceGroundedAnswer from "@/components/SentenceGroundedAnswer";
+import DeepSearchFollowupChat from "@/components/DeepSearchFollowupChat";
 import QuotaCounter from "@/components/QuotaCounter";
 import UpgradeModal, { type UpgradeModalQuotaEnvelope } from "@/components/UpgradeModal";
 import MultiViewTabs from "@/components/MultiViewTabs";
@@ -464,18 +465,16 @@ function DeepSearchPageInner() {
                 <TranslatableText text={searchResult.answer} as="div" maxLength={5000} />
               </div>
             )}
-            {/* Ask in Chat button */}
-            <div className="mt-4 pt-3 border-t border-gray-100 dark:border-slate-800">
-                <button
-                  onClick={() => {
-                    openAssistant(`Help me interpret this deep-search result for \"${searchResult.query}\" and suggest a more scientifically robust follow-up query.`);
-                  }}
-                  className="text-xs text-teal-700 dark:text-teal-300 hover:text-teal-900 dark:hover:text-teal-200 flex items-center gap-1.5"
-                >
-                  <MessageCircle className="w-3.5 h-3.5" />
-                  Ask about this result in chat
-              </button>
-            </div>
+            {/* Slice 6 (2026-05-25) — inline follow-up chat. Replaces
+                the prior fire-and-forget "open in global assistant"
+                button so the user can iterate on the deep-search
+                result with the query carried forward via
+                view_context.deep_search_query. */}
+            <DeepSearchFollowupChat
+              searchQuery={searchResult.query}
+              searchAnswer={searchResult.answer || ""}
+              countryCode={country || undefined}
+            />
           </div>
 
           {/* Insights dashboard */}
