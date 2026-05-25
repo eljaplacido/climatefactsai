@@ -59,6 +59,7 @@ export interface SkillsRegistry {
 // log a warning when the fetched registry diverges from this fallback,
 // so future drift surfaces visibly during development.
 const FALLBACK_SKILL_MODES: Record<string, SkillMode> = {
+  // Original 9 (pre-Phase-7-B3)
   navigate: "auto",
   apply_search_filters: "auto",
   apply_map_filters: "auto",
@@ -68,6 +69,17 @@ const FALLBACK_SKILL_MODES: Record<string, SkillMode> = {
   analyze_url: "confirm",
   bookmark_article: "confirm",
   start_calibration_label: "confirm",
+  // Phase 7 B3 (2026-05-24) — corporate-claim surface
+  open_company: "auto",
+  verify_corporate_claim: "confirm",
+  // Polish wave 1 (2026-05-25) — endpoint families from deferred
+  // items 11/12/13/14 + Slice 3 wrapped as chat skills. Keep in
+  // lockstep with backend skills.py SKILLS_REGISTRY (15 entries)
+  // and chatActionDispatcher.ts ACTION_MODES.
+  save_item: "confirm",
+  subscribe_research_topic: "confirm",
+  explore_scenario: "auto",
+  analyze_corporate_report: "confirm",
 };
 
 const FALLBACK_REGISTRY: SkillsRegistry = {

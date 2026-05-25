@@ -8,6 +8,7 @@ import {
   MapPin, FileText, Menu, X, BarChart3,
   Shield, Info, LogOut, LayoutDashboard, Rss, Settings,
   LogIn, UserPlus, Lightbulb, Loader2, Sun, Moon, Monitor,
+  Building2, Bookmark,
 } from "lucide-react";
 import {
   SUPPORTED_LANGUAGES,
@@ -24,7 +25,12 @@ const NAV_ITEMS = [
   { href: "/deep-search", labelKey: "nav.deep_search", fallback: "Deep Search", icon: Sparkles },
   { href: "/analyze", labelKey: "nav.analyze", fallback: "Analyze", icon: FileText },
   { href: "/research", labelKey: "nav.research", fallback: "Research", icon: BookOpen },
+  // Alignment polish (2026-05-25) — Companies + Saves were reachable
+  // only via direct URL / chat skill. Adding to primary nav so
+  // /companies (Phase 8 B3) and /saves (Slice 3) become discoverable.
+  { href: "/companies", labelKey: "nav.companies", fallback: "Companies", icon: Building2 },
   { href: "/sources", labelKey: "nav.sources", fallback: "Sources", icon: Shield },
+  { href: "/saves", labelKey: "nav.saves", fallback: "My Saves", icon: Bookmark },
   { href: "/suggest-source", labelKey: "nav.suggest", fallback: "Suggest", icon: Lightbulb },
 ];
 
