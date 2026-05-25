@@ -193,6 +193,20 @@ def main() -> int:
                 skipped_count += 1
                 continue
             sql = path.read_text(encoding="utf-8")
+
+            # Per-migration opt-out — a migration can include `-- @notolerate`
+            # on its own line (typically the first/second line) to demand
+            # loud-fail behaviour regardless of MIGRATIONS_TOLERATE_ERRORS.
+            # Added 2026-05-25 after mig 043 silently tolerated 23505 and
+            # left the dedup half-done in production (see
+            # feedback_migration_tolerate_errors memory).
+            notolerate = bool(
+                re.search(r"^\s*--\s*@notolerate\s*$", sql, re.MULTILINE)
+            )
+            local_tolerate = tolerate and not notolerate
+            if notolerate:
+                print(f"    @notolerate directive — failures will be loud")
+
             print(f"  > applying {path.name} (version {version}) ...")
             try:
                 with conn, conn.cursor() as cur:
@@ -206,7 +220,7 @@ def main() -> int:
                 applied_count += 1
             except psycopg2.Error as exc:
                 pgcode = getattr(exc, "pgcode", None)
-                if tolerate and pgcode in TOLERATED_CODES:
+                if local_tolerate and pgcode in TOLERATED_CODES:
                     print(
                         f"    TOLERATED ({pgcode}: {type(exc).__name__}) — "
                         f"marking as already-applied"
