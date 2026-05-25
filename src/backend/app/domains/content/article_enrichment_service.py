@@ -668,11 +668,58 @@ Write 2-3 sentences only. Be specific and data-driven."""
         runner to keep cost predictable).
         """
 
+        # GX10 polish wave (2026-05-25, audit recommendation #1) —
+        # `local-gx10` joins the pin set. Workflow:
+        #   1. GX10 serves vLLM at CLILENS_LOCAL_GX10_BASE_URL
+        #   2. Set CLILENS_ENRICHMENT_PROVIDER=local-gx10 on Cloud Run
+        #   3. This branch runs first; if unreachable / fails for any
+        #      reason, the fallback list (deepseek, openai, anthropic)
+        #      auto-engages so production never breaks while GX10 is
+        #      being warmed up or restarted.
         pin = os.getenv("CLILENS_ENRICHMENT_PROVIDER", "").strip().lower()
-        order = [pin] if pin in {"deepseek", "openai", "anthropic"} else ["deepseek", "openai", "anthropic"]
+        if pin == "local-gx10":
+            order = ["local-gx10", "deepseek", "openai", "anthropic"]
+        elif pin in {"deepseek", "openai", "anthropic"}:
+            order = [pin]
+        else:
+            order = ["deepseek", "openai", "anthropic"]
 
         for provider in order:
-            if provider == "deepseek":
+            if provider == "local-gx10":
+                base_url = os.getenv("CLILENS_LOCAL_GX10_BASE_URL")
+                api_key = os.getenv("CLILENS_LOCAL_GX10_API_KEY", "EMPTY")
+                if not base_url:
+                    # GX10 not configured — silent skip to next provider.
+                    continue
+                try:
+                    from openai import OpenAI as OpenAIClient
+                    model = os.getenv(
+                        "CLILENS_LOCAL_GX10_MODEL", "Qwen/Qwen2.5-14B-Instruct"
+                    )
+                    client = OpenAIClient(
+                        api_key=api_key, base_url=base_url, timeout=60.0
+                    )
+                    response = client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        max_tokens=max_tokens,
+                        temperature=0.3,
+                    )
+                    text = response.choices[0].message.content.strip()
+                    if text:
+                        return text, "local-gx10", model
+                except Exception as exc:
+                    # Fall through to next provider in the chain — never
+                    # let local-gx10 unavailability break enrichment.
+                    logger.warning(
+                        "local-gx10 LLM call failed; falling back to next provider",
+                        error=str(exc),
+                    )
+
+            elif provider == "deepseek":
                 key = os.getenv("DEEPSEEK_API_KEY")
                 if not key:
                     continue
