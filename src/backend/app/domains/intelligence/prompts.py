@@ -421,7 +421,11 @@ PROMPTS: Dict[str, PromptTemplate] = {
             "- bookmark_article: {{article_id}} — save an article for later\n"
             "- start_calibration_label: {{url_analysis_id}} — submit a calibration rating for an analysis\n"
             "- open_company: {{ticker}} — open a company's climate disclosure profile (e.g. MSFT, SHEL)\n"
-            "- verify_corporate_claim: {{ticker, claim_text}} — verify a corporate climate claim against the disclosure ledger (ECGT / SBTi)\n\n"
+            "- verify_corporate_claim: {{ticker, claim_text}} — verify a corporate climate claim against the disclosure ledger (ECGT / SBTi)\n"
+            "- save_item: {{item_type, item_id, item_ref, label}} — save anything to the user's saves (article / analysis / claim / search / company / country / deep_search / feed_setting)\n"
+            "- subscribe_research_topic: {{topic}} — subscribe the user to a research topic (CrossRef poller delivers new papers to /research feed)\n"
+            "- explore_scenario: {{country_code, target_warming_c, horizon_year}} — interpolate IPCC AR6 SSP projections at a target warming level for a country (read-only)\n"
+            "- analyze_corporate_report: {{ticker, report_url}} — fetch a corporate sustainability report and extract+verify every claim against the disclosure ledger\n\n"
             "Rules:\n"
             "- Only suggest actions that are genuinely useful given the question and answer.\n"
             "- Each action must have type, params (object), and label (short user-facing button text).\n"
@@ -434,7 +438,7 @@ PROMPTS: Dict[str, PromptTemplate] = {
         system=(
             "You are Climatefacts.ai's climate intelligence assistant. Answer concisely "
             "using markdown. After your answer, suggest 0-3 platform actions the user "
-            "might want to take next. Use ONLY the 11 action types documented below. "
+            "might want to take next. Use ONLY the 15 action types documented below. "
             "Output format: markdown answer then a JSON actions block separated by '---'."
         ),
         max_tokens=1200,

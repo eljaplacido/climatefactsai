@@ -14,6 +14,7 @@ import dynamic from "next/dynamic";
 import ShareButton from "@/components/ShareButton";
 import BookmarkButton from "@/components/BookmarkButton";
 import ArticleExportButtons from "@/components/ArticleExportButtons";
+import FullArticlePanel from "@/components/FullArticlePanel";
 import ReanalyzeButton from "@/components/ReanalyzeButton";
 import ArgumentationGraph from "@/components/ArgumentationGraph";
 import Link from "next/link";
@@ -461,6 +462,18 @@ export default async function ArticlePage({ params }: { params: { id: string } }
                 </div>
               </div>
             </div>
+          )}
+
+          {/* Polish wave 1 / Audit item 2 (2026-05-25) — collapsible
+              full source article. Executive Brief + Enriched In-Depth
+              above are intentionally short summaries; this surfaces
+              the underlying 1500-3000-word source body when readers
+              want it. Hidden by default to keep the page concise. */}
+          {(article as any).extracted_text && (
+            <FullArticlePanel
+              extractedText={(article as any).extracted_text}
+              sourceUrl={(article as any).url || (article as any).source_url}
+            />
           )}
 
           {/* Reliability Breakdown */}

@@ -51,6 +51,12 @@ FRONTEND_ACTION_TYPES = {
     # Phase 7 B3 (2026-05-24) — corporate-claim surface.
     "open_company",
     "verify_corporate_claim",
+    # Polish wave 1 (2026-05-25) — endpoint families from deferred
+    # items 11/12/13/14 + Slice 3 wrapped as chat skills.
+    "save_item",
+    "subscribe_research_topic",
+    "explore_scenario",
+    "analyze_corporate_report",
 }
 
 # The mode each frontend action expects — must match SKILLS_REGISTRY.
@@ -66,6 +72,11 @@ FRONTEND_ACTION_MODES = {
     "bookmark_article": "confirm",
     "start_calibration_label": "confirm",
     "verify_corporate_claim": "confirm",
+    # Polish wave 1 (2026-05-25)
+    "save_item": "confirm",
+    "subscribe_research_topic": "confirm",
+    "explore_scenario": "auto",
+    "analyze_corporate_report": "confirm",
 }
 
 
@@ -142,16 +153,15 @@ class TestAgenticSkillPin:
             "Update FRONTEND_ACTION_TYPES at the top of this test file."
         )
 
-    def test_prompt_template_says_exactly_9_actions_in_copy(self):
-        """The prompt body says '9 action types' in the system message;
-        catch drift between that copy and the actual count."""
+    def test_prompt_template_says_exactly_n_actions_in_copy(self):
+        """The prompt body says 'N action types' in the system message;
+        catch drift between that copy and the actual count. Bumped to
+        15 in Polish wave 1 (2026-05-25)."""
         prompt = get_prompt("chat_synthesis_with_actions")
         actual_count = len(_extract_actions_from_prompt(prompt.template))
-        # The system message currently references "11 action types"; bump
-        # this assertion if the count legitimately changes.
-        assert actual_count == 11, (
+        assert actual_count == 15, (
             f"Action count drifted: {actual_count} actions in template, "
-            "but system copy still says '11 action types'. Update one or the other."
+            "but system copy still says '15 action types'. Update one or the other."
         )
 
     def test_chat_synthesis_with_actions_prompt_exists(self):
@@ -225,13 +235,21 @@ class TestCanonicalSkillsRegistry:
         """The confirm-mode set is a hard-coded list because every
         confirm-mode addition needs human review (it changes user-visible
         UX). If this test fails because you added a confirm-mode action,
-        update the list here AND ensure the dispatcher renders a modal."""
+        update the list here AND ensure the dispatcher renders a modal.
+
+        Bumped in Polish wave 1 (2026-05-25) to add save_item,
+        subscribe_research_topic, analyze_corporate_report — all
+        consume tier quota or persist new rows / claims.
+        """
         confirm_names = {s.name for s in skills_by_mode("confirm")}
         assert confirm_names == {
             "analyze_url",
             "bookmark_article",
             "start_calibration_label",
             "verify_corporate_claim",
+            "save_item",
+            "subscribe_research_topic",
+            "analyze_corporate_report",
         }
 
     def test_auto_mode_is_remainder(self):

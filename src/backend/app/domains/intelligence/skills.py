@@ -211,6 +211,100 @@ SKILLS_REGISTRY: dict[str, Skill] = {
         ),
         target_surfaces=("/api/companies/[ticker]/analyze",),
     ),
+    # Polish wave 1 (2026-05-25) — 4 new skills wrap the endpoint
+    # families shipped in deferred items 11/12/13/14 + Slice 3. Each
+    # is added to BOTH this registry AND chatActionDispatcher.ts;
+    # test_agentic_skill_pin enforces parity at CI time.
+    "save_item": Skill(
+        name="save_item",
+        description="Save anything to the user's saves — article / analysis / claim / search / company / country / deep_search / feed_setting. Polymorphic Slice 3 endpoint.",
+        mode="confirm",
+        parameters=(
+            SkillParameter(
+                name="item_type",
+                type="string",
+                description=("One of: article, analysis, claim, search, "
+                             "company, feed_setting, deep_search, country"),
+            ),
+            SkillParameter(
+                name="item_id",
+                type="string",
+                description=("UUID for FK-able types (article/analysis/claim/"
+                             "company). Provide either item_id or item_ref, "
+                             "never both."),
+                required=False,
+            ),
+            SkillParameter(
+                name="item_ref",
+                type="string",
+                description=("Text ref for non-UUID types (search URL, "
+                             "country code, JSON payload)."),
+                required=False,
+            ),
+            SkillParameter(
+                name="label",
+                type="string",
+                description="Optional human-readable label for the save.",
+                required=False,
+            ),
+        ),
+        target_surfaces=("/api/user/saved", "/saves"),
+    ),
+    "subscribe_research_topic": Skill(
+        name="subscribe_research_topic",
+        description="Subscribe the user to a research topic — the CrossRef poller will deliver new papers to their /research feed.",
+        mode="confirm",
+        parameters=(
+            SkillParameter(
+                name="topic",
+                type="string",
+                description="Short label like 'Arctic sea ice' or 'CBAM compliance'",
+            ),
+        ),
+        target_surfaces=("/api/research/subscriptions",),
+    ),
+    "explore_scenario": Skill(
+        name="explore_scenario",
+        description="Interpolate IPCC AR6 SSP projections for a country at a target warming level + horizon. Read-only; returns transparent 'not simulation' disclaimer.",
+        mode="auto",
+        parameters=(
+            SkillParameter(
+                name="country_code",
+                type="string",
+                description="ISO 3166-1 alpha-2 country code",
+            ),
+            SkillParameter(
+                name="target_warming_c",
+                type="number",
+                description="Target warming in degrees C above pre-industrial (0-8)",
+            ),
+            SkillParameter(
+                name="horizon_year",
+                type="number",
+                description="One of 2030 / 2050 / 2100",
+                required=False,
+            ),
+        ),
+        target_surfaces=("/api/scenario/country/[cc]",),
+    ),
+    "analyze_corporate_report": Skill(
+        name="analyze_corporate_report",
+        description="End-to-end analysis of a corporate sustainability report URL — fetches text, extracts claims, runs each through the ECGT/SBTi analyzer, returns aggregated verdicts.",
+        mode="confirm",
+        parameters=(
+            SkillParameter(
+                name="ticker",
+                type="string",
+                description="Ticker of the company whose report is being analyzed",
+            ),
+            SkillParameter(
+                name="report_url",
+                type="string",
+                description="Public URL of the corporate sustainability report (HTML page or PDF)",
+            ),
+        ),
+        target_surfaces=("/api/companies/[ticker]/analyze-report",),
+    ),
 }
 
 

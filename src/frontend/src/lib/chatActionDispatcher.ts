@@ -32,7 +32,14 @@ export type ChatActionType =
   | "bookmark_article"
   | "start_calibration_label"
   | "open_company"
-  | "verify_corporate_claim";
+  | "verify_corporate_claim"
+  // Polish wave 1 (2026-05-25) — 4 new skills wrapping the endpoint
+  // families shipped in deferred items 11/12/13/14 + Slice 3.
+  // Keep in lockstep with backend SKILLS_REGISTRY in skills.py.
+  | "save_item"
+  | "subscribe_research_topic"
+  | "explore_scenario"
+  | "analyze_corporate_report";
 
 export interface ChatActionSpec {
   type: ChatActionType;
@@ -61,6 +68,11 @@ export const ACTION_MODES: Record<ChatActionType, ActionMode> = {
   bookmark_article: "confirm", // consumes saved_articles quota + writes DB row
   start_calibration_label: "confirm", // submits a calibration rating
   verify_corporate_claim: "confirm", // POSTs a claim row + ECGT-sensitive verdict
+  // Polish wave 1 (2026-05-25)
+  save_item: "confirm",            // polymorphic save — consumes tier quota
+  subscribe_research_topic: "confirm", // mutates server state + tier quota
+  explore_scenario: "auto",        // read-only IPCC AR6 interpolation
+  analyze_corporate_report: "confirm", // heavy LLM + persists claims
 };
 
 /**
@@ -102,6 +114,26 @@ export const ACTION_CONFIRM_COPY: Record<
     message: (p) =>
       `This will grade "${p.claim_text}" against ${p.ticker}'s public disclosure ledger (CDP / SBTi) and record the verdict on the company profile. Continue?`,
     cta: "Verify claim",
+  },
+  // Polish wave 1 (2026-05-25)
+  save_item: {
+    title: "Save this item?",
+    message: (p) =>
+      `This will count against your saved-${p.item_type ?? "item"}s quota. You can remove it later from your Saves page.`,
+    cta: "Save",
+  },
+  subscribe_research_topic: {
+    title: "Subscribe to research topic?",
+    message: (p) =>
+      `New papers matching "${p.topic}" will land in your Research feed daily. Counts against your research-subscription quota.`,
+    cta: "Subscribe",
+  },
+  explore_scenario: { title: "", message: () => "", cta: "" }, // auto-mode
+  analyze_corporate_report: {
+    title: "Analyse corporate sustainability report?",
+    message: (p) =>
+      `This will fetch "${p.report_url}", extract every claim, and grade each against ${p.ticker}'s disclosure ledger. Heavy LLM work — counts against quotas. Continue?`,
+    cta: "Analyse report",
   },
 };
 
@@ -186,6 +218,22 @@ const NAV_DISPATCHERS: Record<ChatActionType, (params: Record<string, any>) => v
     // Handled via the async path below — POSTs the claim then navigates
     // the user to the company detail page where the verdict surfaces.
   },
+  // Polish wave 1 (2026-05-25) — async-path stubs. The real work
+  // lives in ASYNC_DISPATCHERS below; these placeholders keep the
+  // dispatcher map uniform so TypeScript catches missing entries.
+  save_item: () => {},
+  subscribe_research_topic: () => {},
+  explore_scenario: ({ country_code }: any) => {
+    // Read-only — nav to the country passport where existing
+    // ProjectionsPanel renders SSP scenarios. The interpolated
+    // explorer endpoint is available at /api/scenario/country/{cc}
+    // for direct chat answers; future iteration can render an
+    // inline scenario card.
+    if (typeof country_code === "string" && country_code.length === 2) {
+      window.location.assign(`/country/${country_code.toUpperCase()}#projections`);
+    }
+  },
+  analyze_corporate_report: () => {},
 };
 
 /**
@@ -266,6 +314,152 @@ const ASYNC_DISPATCHERS: Partial<
         return {
           status: "error",
           message: `Claim verification failed (HTTP ${resp.status})`,
+        };
+      }
+      if (typeof window !== "undefined") {
+        window.location.assign(
+          `/companies/${encodeURIComponent(ticker.toUpperCase())}`,
+        );
+      }
+      return { status: "executed" };
+    } catch (e: any) {
+      return { status: "error", message: e?.message || "Network error" };
+    }
+  },
+  // Polish wave 1 (2026-05-25) — save_item: polymorphic /api/user/saved.
+  // Same 429 quota shape as bookmark_article for FE error-handling parity.
+  save_item: async ({ item_type, item_id, item_ref, label }: any) => {
+    if (typeof item_type !== "string") {
+      return { status: "error", message: "Missing item_type" };
+    }
+    if ((item_id == null) === (item_ref == null)) {
+      return {
+        status: "error",
+        message: "Exactly one of item_id or item_ref must be provided",
+      };
+    }
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || "";
+      const resp = await fetch(`${base}/api/user/saved`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${
+            typeof window !== "undefined"
+              ? localStorage.getItem("clilens_token") || ""
+              : ""
+          }`,
+        },
+        body: JSON.stringify({
+          item_type,
+          item_id: item_id ?? null,
+          item_ref: item_ref ?? null,
+          label: label ?? null,
+          folder: "from-chat",
+        }),
+      });
+      if (resp.status === 429) {
+        const body = await resp.json().catch(() => ({}));
+        return {
+          status: "error",
+          message:
+            body?.detail?.message ||
+            `Free tier limit reached for ${item_type}s. Upgrade for more.`,
+          quotaExceeded: true,
+        };
+      }
+      if (!resp.ok) {
+        return { status: "error", message: `Save failed (HTTP ${resp.status})` };
+      }
+      return { status: "executed" };
+    } catch (e: any) {
+      return { status: "error", message: e?.message || "Network error" };
+    }
+  },
+  // subscribe_research_topic: POST /api/research/subscriptions, then
+  // nav to /research so the user sees the existing feed start filling.
+  subscribe_research_topic: async ({ topic }: any) => {
+    if (typeof topic !== "string" || topic.length < 2) {
+      return { status: "error", message: "Missing topic" };
+    }
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || "";
+      const resp = await fetch(`${base}/api/research/subscriptions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${
+            typeof window !== "undefined"
+              ? localStorage.getItem("clilens_token") || ""
+              : ""
+          }`,
+        },
+        body: JSON.stringify({ topic }),
+      });
+      if (resp.status === 429) {
+        const body = await resp.json().catch(() => ({}));
+        return {
+          status: "error",
+          message:
+            body?.detail?.message ||
+            "Research-subscription quota reached. Upgrade for more.",
+          quotaExceeded: true,
+        };
+      }
+      if (!resp.ok) {
+        return { status: "error", message: `Subscribe failed (HTTP ${resp.status})` };
+      }
+      if (typeof window !== "undefined") {
+        window.location.assign("/research");
+      }
+      return { status: "executed" };
+    } catch (e: any) {
+      return { status: "error", message: e?.message || "Network error" };
+    }
+  },
+  // analyze_corporate_report: POST /api/companies/{ticker}/analyze-report
+  // then nav to /companies/{ticker} where verdicts surface in the claim
+  // ledger. Heavy LLM work — confirm-gated.
+  analyze_corporate_report: async ({ ticker, report_url }: any) => {
+    if (typeof ticker !== "string" || typeof report_url !== "string") {
+      return { status: "error", message: "Missing ticker or report_url" };
+    }
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || "";
+      const resp = await fetch(
+        `${base}/api/companies/${encodeURIComponent(ticker.toUpperCase())}/analyze-report`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${
+              typeof window !== "undefined"
+                ? localStorage.getItem("clilens_token") || ""
+                : ""
+            }`,
+          },
+          body: JSON.stringify({ report_url }),
+        },
+      );
+      if (resp.status === 404) {
+        return {
+          status: "error",
+          message: `Company ${ticker.toUpperCase()} not found in the corporate registry.`,
+        };
+      }
+      if (resp.status === 422) {
+        const body = await resp.json().catch(() => ({}));
+        return {
+          status: "error",
+          message:
+            body?.detail ||
+            "Could not extract usable text from that URL. Try a different report.",
+        };
+      }
+      if (!resp.ok) {
+        return {
+          status: "error",
+          message: `Corporate report analysis failed (HTTP ${resp.status})`,
         };
       }
       if (typeof window !== "undefined") {
