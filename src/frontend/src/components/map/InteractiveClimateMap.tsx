@@ -5,15 +5,31 @@ import {
   MapContainer,
   TileLayer,
   GeoJSON,
+  Marker,
   Tooltip,
   useMap,
 } from "react-leaflet";
-import type { Layer, PathOptions, LeafletMouseEvent } from "leaflet";
+import type { Layer, PathOptions, LeafletMouseEvent, LatLngTuple } from "leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 const GEO_URL =
   "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
+
+// Phase 11 (2026-05-25) — biome+Köppen overlay response shape.
+// Matches biome_overview_payload() in country_biome_map.py.
+interface BiomeEntry {
+  country_code: string;
+  biome_id: string;
+  biome_label: string;
+  biome_emoji: string;
+  koppen_id: string;
+  koppen_label: string;
+  koppen_color: string;
+  koppen_description: string;
+}
 
 // ISO 3166-1 numeric -> alpha-2 (same as EuropeMap.tsx)
 const NUM_TO_A2: Record<string, string> = {
@@ -85,8 +101,13 @@ function getLayerColor(
   layer: ActiveLayer,
   statsMap: Record<string, CountryStatEntry>,
   maxArticle: number,
-  maxSourceCount: number
+  maxSourceCount: number,
+  biomeData: Record<string, BiomeEntry>
 ): string {
+  if (layer === "biomes") {
+    return biomeData[cc]?.koppen_color || "#9CA3AF"; // slate-400 — unclassified
+  }
+
   const stat = statsMap[cc];
   if (!stat) return "#334155"; // slate-700 (no data)
 
@@ -177,7 +198,31 @@ export default function InteractiveClimateMap({
 }: InteractiveClimateMapProps) {
   const [geoData, setGeoData] = useState<GeoJSON.FeatureCollection | null>(null);
   const [loading, setLoading] = useState(true);
+  const [biomeData, setBiomeData] = useState<Record<string, BiomeEntry>>({});
   const geoJsonRef = useRef<L.GeoJSON | null>(null);
+
+  // Phase 11 (2026-05-25) — lazy-load biome+Köppen overlay only when its
+  // layer is selected. Cached for the session afterwards.
+  useEffect(() => {
+    if (activeLayer !== "biomes" || Object.keys(biomeData).length) return;
+    let cancelled = false;
+    fetch(`${API_BASE}/api/map/biome-overview`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload) => {
+        if (cancelled || !payload?.countries) return;
+        const map: Record<string, BiomeEntry> = {};
+        for (const entry of payload.countries as BiomeEntry[]) {
+          map[entry.country_code] = entry;
+        }
+        setBiomeData(map);
+      })
+      .catch(() => {
+        /* silent — legend surfaces the loading state */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeLayer, biomeData]);
 
   const statsMap = useMemo(
     () =>
@@ -201,6 +246,27 @@ export default function InteractiveClimateMap({
     () => new Set(highlightedCountries),
     [highlightedCountries]
   );
+
+  // Phase 11 — centroid per country, derived from the same GeoJSON we
+  // already render so we don't need a hardcoded 195-entry lookup.
+  // Memoised because L.geoJSON().getBounds() is non-trivial.
+  const countryCentroids = useMemo<Record<string, LatLngTuple>>(() => {
+    if (!geoData) return {};
+    const out: Record<string, LatLngTuple> = {};
+    for (const feat of geoData.features) {
+      const cc = feat.properties?.cc as string | undefined;
+      if (!cc) continue;
+      try {
+        const bounds = L.geoJSON(feat).getBounds();
+        if (!bounds.isValid()) continue;
+        const c = bounds.getCenter();
+        out[cc] = [c.lat, c.lng];
+      } catch {
+        /* skip malformed geometry */
+      }
+    }
+    return out;
+  }, [geoData]);
 
   // Load and convert TopoJSON -> GeoJSON
   useEffect(() => {
@@ -263,12 +329,16 @@ export default function InteractiveClimateMap({
         activeLayer,
         statsMap,
         maxArticle,
-        maxSourceCount
+        maxSourceCount,
+        biomeData
       );
+
+      // Biome layer uses softer fill so the emoji marker reads cleanly.
+      const baseOpacity = activeLayer === "biomes" ? 0.55 : 0.7;
 
       return {
         fillColor,
-        fillOpacity: isHighlighted ? 0.9 : isSelected ? 0.85 : 0.7,
+        fillOpacity: isHighlighted ? 0.9 : isSelected ? 0.85 : baseOpacity,
         color: isSelected
           ? "#0d9488"
           : isHighlighted
@@ -286,6 +356,7 @@ export default function InteractiveClimateMap({
       statsMap,
       maxArticle,
       maxSourceCount,
+      biomeData,
     ]
   );
 
@@ -294,21 +365,32 @@ export default function InteractiveClimateMap({
       const cc = feature.properties?.cc as string;
       const stat = statsMap[cc];
       const name = stat?.country_name || feature.properties?.name || cc;
+      const biome = biomeData[cc];
 
-      // Tooltip \u2014 for countries with no coverage, surface the suggest-source CTA
-      // so users can contribute rather than seeing a dead "No data" tile.
-      const tooltipContent = stat
-        ? `<div class="text-xs">
+      // Tooltip \u2014 biome layer prefers the biome+K\u00F6ppen story; other layers
+      // keep the coverage/credibility story. Countries without coverage still
+      // surface the suggest-source CTA on the data layers.
+      let tooltipContent: string;
+      if (activeLayer === "biomes" && biome) {
+        tooltipContent = `<div class="text-xs">
+            <strong class="text-sm">${name}</strong><br/>
+            <span>${biome.biome_emoji} ${biome.biome_label}</span><br/>
+            <span class="text-slate-300">K\u00F6ppen: ${biome.koppen_label}</span>
+          </div>`;
+      } else if (stat) {
+        tooltipContent = `<div class="text-xs">
             <strong class="text-sm">${name}</strong><br/>
             ${stat.article_count} articles
             ${stat.avg_credibility_score != null ? ` | Credibility: ${stat.avg_credibility_score}` : ""}
             ${stat.temperature_anomaly != null ? `<br/>Temp anomaly: ${stat.temperature_anomaly > 0 ? "+" : ""}${stat.temperature_anomaly}\u00B0C` : ""}
-          </div>`
-        : `<div class="text-xs">
+          </div>`;
+      } else {
+        tooltipContent = `<div class="text-xs">
             <strong class="text-sm">${name}</strong><br/>
             <span class="text-amber-300">No coverage yet</span><br/>
             <span class="text-slate-300">Click to suggest a source</span>
           </div>`;
+      }
 
       layer.bindTooltip(tooltipContent, {
         sticky: true,
@@ -345,14 +427,15 @@ export default function InteractiveClimateMap({
         }
       });
     },
-    [statsMap, onCountryClick]
+    [statsMap, onCountryClick, activeLayer, biomeData]
   );
 
-  // Force re-render of GeoJSON when styling deps change
+  // Force re-render of GeoJSON when styling deps change. `biomeData` key
+  // is the count so the layer redraws once the lazy fetch resolves.
   const geoJsonKey = useMemo(
     () =>
-      `${activeLayer}-${selectedCountry}-${highlightedCountries.join(",")}-${countryStats.length}`,
-    [activeLayer, selectedCountry, highlightedCountries, countryStats.length]
+      `${activeLayer}-${selectedCountry}-${highlightedCountries.join(",")}-${countryStats.length}-b${Object.keys(biomeData).length}`,
+    [activeLayer, selectedCountry, highlightedCountries, countryStats.length, biomeData]
   );
 
   if (loading) {
@@ -395,6 +478,29 @@ export default function InteractiveClimateMap({
           />
         )}
 
+        {/* Phase 11 — biome emoji markers at country centroids. Only render
+            when the biome layer is active and the centroid is known. Markers
+            are non-interactive so clicks still hit the underlying polygon. */}
+        {activeLayer === "biomes" &&
+          Object.values(biomeData).map((entry) => {
+            const centroid = countryCentroids[entry.country_code];
+            if (!centroid) return null;
+            return (
+              <Marker
+                key={`biome-${entry.country_code}`}
+                position={centroid}
+                interactive={false}
+                keyboard={false}
+                icon={L.divIcon({
+                  html: `<span style="font-size:18px;line-height:1;text-shadow:0 1px 2px rgba(0,0,0,0.6)">${entry.biome_emoji}</span>`,
+                  iconSize: [24, 24],
+                  iconAnchor: [12, 12],
+                  className: "biome-emoji-marker",
+                })}
+              />
+            );
+          })}
+
         <FlyToCountry selectedCountry={selectedCountry} geoData={geoData} />
       </MapContainer>
 
@@ -423,6 +529,14 @@ export default function InteractiveClimateMap({
         }
         .leaflet-container {
           font-family: inherit !important;
+        }
+        .biome-emoji-marker {
+          background: transparent !important;
+          border: none !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          pointer-events: none !important;
         }
       `}</style>
     </div>
