@@ -640,6 +640,21 @@ class DeepSearchService:
             "compared_at": datetime.utcnow().isoformat(),
         }
 
+    # Relevance thresholds (2026-05-25 fix — user reported "Slovenian
+    # celebrity articles returned for India heatwave query"). Below
+    # these floors the corpus has nothing genuinely on-topic and the
+    # honest surface is "0 internal hits" rather than top-N noise.
+    #
+    # MIN_SEMANTIC_SIMILARITY: cosine similarity to query embedding.
+    #   ada-002 embeddings + climate-news corpus → on-topic articles
+    #   typically score 0.75+. Below 0.55 means the top result is
+    #   mostly stop-word/grammar overlap, not actual topic match.
+    # MIN_FTS_RANK: ts_rank floor — ts_rank is normalised 0-1 by
+    #   pg's default `ts_rank_cd` heuristics. 0.01 = "at least one
+    #   query token actually appears in the doc."
+    MIN_SEMANTIC_SIMILARITY = 0.55
+    MIN_FTS_RANK = 0.01
+
     async def _search_internal_corpus(
         self,
         query: str,
@@ -647,7 +662,17 @@ class DeepSearchService:
         category: Optional[str] = None,
         limit: int = 10,
     ) -> List[Dict]:
-        """Search internal article corpus using hybrid FTS + semantic search."""
+        """Search internal article corpus using hybrid FTS + semantic search.
+
+        Relevance fence (2026-05-25): semantic results below
+        MIN_SEMANTIC_SIMILARITY (cosine) and FTS results below
+        MIN_FTS_RANK are dropped. If both layers return nothing
+        relevant, the function returns [] rather than cherry-picking
+        the top-N closest noise. Callers MUST check the empty list
+        and surface "no relevant hits in the corpus" — see the
+        synthesis path that previously fabricated answers from
+        zero-relevance Slovenian celebrity articles for India queries.
+        """
         embedding = await self.embedding_service.generate_embedding(query)
 
         results = []
@@ -655,7 +680,10 @@ class DeepSearchService:
         # Semantic search if embeddings available
         if embedding:
             filters = []
-            params: Dict[str, Any] = {"limit": limit}
+            params: Dict[str, Any] = {
+                "limit": limit,
+                "min_sim": self.MIN_SEMANTIC_SIMILARITY,
+            }
 
             if country:
                 filters.append("a.country_code = :country")
@@ -676,6 +704,7 @@ class DeepSearchService:
                     1 - (a.embedding <=> :embedding::vector) AS similarity
                 FROM articles a
                 WHERE a.embedding IS NOT NULL
+                  AND (1 - (a.embedding <=> :embedding::vector)) >= :min_sim
                   AND {where_clause}
                 ORDER BY a.embedding <=> :embedding::vector
                 LIMIT :limit
@@ -699,10 +728,16 @@ class DeepSearchService:
             except Exception as e:
                 logger.error(f"Internal corpus search failed: {e}")
 
-        # Fallback to FTS if no semantic results
+        # Fallback to FTS if no semantic results survived the threshold.
+        # FTS rank now floored at MIN_FTS_RANK so an article matching one
+        # stop-word doesn't get treated as on-topic.
         if not results:
             fts_filters = []
-            fts_params: Dict[str, Any] = {"query": query, "limit": limit}
+            fts_params: Dict[str, Any] = {
+                "query": query,
+                "limit": limit,
+                "min_rank": self.MIN_FTS_RANK,
+            }
             if country:
                 fts_filters.append("a.country_code = :country")
                 fts_params["country"] = country.upper()
@@ -724,6 +759,10 @@ class DeepSearchService:
                     FROM articles a
                     WHERE to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'') || ' ' || COALESCE(a.extracted_text,''))
                           @@ {tsq_func}('english', :query)
+                      AND ts_rank(
+                              to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'') || ' ' || COALESCE(a.extracted_text,'')),
+                              {tsq_func}('english', :query)
+                          ) >= :min_rank
                       AND {fts_where}
                     ORDER BY text_rank DESC LIMIT :limit
                 """
@@ -744,49 +783,15 @@ class DeepSearchService:
                 except Exception as e:
                     logger.warning(f"FTS search ({tsq_func}) failed: {e}")
 
-        # Final fallback: ILIKE keyword search if FTS found nothing
-        if not results:
-            # Split query into keywords and search with ILIKE
-            keywords = [w.strip() for w in query.split() if len(w.strip()) > 2][:4]
-            if keywords:
-                ilike_conditions = " OR ".join(
-                    f"LOWER(a.title) LIKE :kw{i} OR LOWER(a.excerpt) LIKE :kw{i} OR LOWER(COALESCE(a.extracted_text, '')) LIKE :kw{i}"
-                    for i in range(len(keywords))
-                )
-                ilike_params: Dict[str, Any] = {"limit": limit}
-                for i, kw in enumerate(keywords):
-                    ilike_params[f"kw{i}"] = f"%{kw.lower()}%"
-                if country:
-                    ilike_params["country"] = country.upper()
-
-                country_clause = "AND a.country_code = :country" if country else ""
-                ilike_sql = f"""
-                    SELECT a.article_id, a.title, a.source_name, a.country_code,
-                           a.content_category, a.overall_credibility, a.reliability_score,
-                           a.published_date, a.excerpt,
-                           0.1 AS text_rank
-                    FROM articles a
-                    WHERE ({ilike_conditions}) {country_clause}
-                    ORDER BY a.published_date DESC NULLS LAST
-                    LIMIT :limit
-                """
-                try:
-                    rows = self.db.execute_query(ilike_sql, ilike_params)
-                    for r in (rows or []):
-                        results.append({
-                            "article_id": str(r["article_id"]),
-                            "title": r.get("title", ""),
-                            "source_name": r.get("source_name", ""),
-                            "country_code": r.get("country_code"),
-                            "overall_credibility": r.get("overall_credibility"),
-                            "reliability_score": r.get("reliability_score"),
-                            "published_date": str(r["published_date"]) if r.get("published_date") else None,
-                            "excerpt": r.get("excerpt"),
-                            "relevance_score": 0.1,
-                        })
-                except Exception as e:
-                    logger.warning(f"ILIKE fallback search failed: {e}")
-
+        # ILIKE fallback removed (2026-05-25) — it returned a constant
+        # text_rank=0.1 for any keyword match in title/excerpt/body,
+        # which is exactly the "Slovenian celebrity article for India
+        # heatwave query" noise the user reported. If semantic + FTS
+        # both find nothing genuinely relevant, return empty so the
+        # caller surfaces an honest "no internal hits — try a broader
+        # query or rely on external sources" rather than fabricating
+        # sources. Kept the block deletion comment-only for an audit
+        # trail of the change.
         # Relevance guardrail: if none of the key query terms appear in the
         # retrieved texts and semantic relevance is weak, drop the result set.
         if results:
@@ -821,6 +826,25 @@ class DeepSearchService:
         query: str,
         results: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
+        """Reject articles whose lexical overlap AND semantic similarity
+        are both weak. Replaces the prior `overlap >= 0.1 OR rel >= 0.2`
+        gate which was permissive enough to let Slovenian celebrity
+        articles pass for an "India extreme heat" query (one shared
+        common token + neutral embedding similarity sufficed).
+
+        New thresholds (2026-05-25):
+          - MIN_LEXICAL_OVERLAP = 0.25 — at least 25 % of non-stopword
+            query terms must appear somewhere in title/excerpt/category.
+          - MIN_RELEVANCE_RESCUE = 0.5 — OR semantic similarity must be
+            strong enough that the embedding model thinks the article
+            covers the same topic.
+
+        An article keeps if EITHER threshold is met. Both being weak
+        means the article doesn't deserve to be cited.
+        """
+        MIN_LEXICAL_OVERLAP = 0.25
+        MIN_RELEVANCE_RESCUE = 0.5
+
         terms = cls._normalized_query_terms(query)
         if not terms:
             return results
@@ -842,7 +866,7 @@ class DeepSearchService:
             except (TypeError, ValueError):
                 rel_score = 0.0
 
-            if overlap >= 0.1 or rel_score >= 0.2:
+            if overlap >= MIN_LEXICAL_OVERLAP or rel_score >= MIN_RELEVANCE_RESCUE:
                 kept.append(art)
 
         return kept

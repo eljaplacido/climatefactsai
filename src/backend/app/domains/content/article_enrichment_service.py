@@ -473,10 +473,20 @@ class ArticleEnrichmentService:
             "readers quickly understand climate news articles in context. "
             "Your output must be factual, measured, and evidence-based. "
             "Never fabricate data. If weather or trend data is unavailable, "
-            "acknowledge it rather than inventing numbers."
+            "acknowledge it rather than inventing numbers. "
+            # Language-default fix (2026-05-25, user-reported): the
+            # platform stores enrichments in a single canonical
+            # language so cross-country comparisons and search ranking
+            # are consistent. User-facing translation is offered as a
+            # post-hoc step via /api/translation, NOT by writing the
+            # enrichment in the source article's language.
+            "ALWAYS write the enriched excerpt in ENGLISH, regardless of "
+            "what language the source article is in. If the source is "
+            "non-English, translate concepts and quoted figures into "
+            "English; do NOT mirror the source language."
         )
 
-        user_prompt = f"""Write an enriched excerpt (200-400 words, plain prose paragraphs) for the following climate news article. The excerpt MUST contain all four sections woven into flowing paragraphs (not bullet points):
+        user_prompt = f"""Write an enriched excerpt (200-400 words, plain prose paragraphs, in ENGLISH) for the following climate news article. The excerpt MUST contain all four sections woven into flowing paragraphs (not bullet points):
 
 a) CONTENT DESCRIPTION: Summarize the article's main topic, key findings, and any data or claims presented.
 b) KEY INSIGHTS: Explain the broader implications of the findings - why they matter and what they suggest.
@@ -561,16 +571,20 @@ Write the enriched excerpt now. Use flowing prose paragraphs, not bullet points 
         system_prompt = (
             "You are a climate data analyst. Write exactly 2-3 sentences "
             "connecting the article topic to local climate observations. "
-            "Be specific with numbers when available."
+            "Be specific with numbers when available. "
+            # Language-default fix (2026-05-25) — always English so the
+            # comparison + search layers see one canonical language.
+            "ALWAYS write your output in ENGLISH, regardless of the "
+            "source article's language."
         )
 
-        user_prompt = f"""Based on the article about "{title}" in {country_name}, write 2-3 sentences explaining how the article's topic maps to local climate data.
+        user_prompt = f"""Based on the article about "{title}" in {country_name}, write 2-3 sentences (in ENGLISH) explaining how the article's topic maps to local climate data.
 
 {weather_info}{trend_info}
 
 Article snippet: {text_snippet[:800]}
 
-Write 2-3 sentences only. Be specific and data-driven."""
+Write 2-3 sentences only, in English. Be specific and data-driven."""
 
         result = await self._call_llm(system_prompt, user_prompt, max_tokens=300)
 
