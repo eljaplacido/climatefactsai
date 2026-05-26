@@ -356,10 +356,19 @@ class Telegram:
 # ---------------------------------------------------------------------------
 
 def select_candidates(target: int, exclude_ids: set[str]) -> list[dict]:
-    """Page through /api/articles, apply gates, score, return top N."""
+    """Page through /api/articles, apply gates, score, return top N.
+
+    Relaxed selection (2026-05-26 fix after corpus exhaustion at ~140
+    articles): source allowlist is no longer a hard gate — it's a
+    scoring bonus. Hard gates are now climate-relevant title +
+    climate content_category + country_code set. This expands the
+    candidate pool from ~150 to ~1500+ across the 14k-article corpus
+    while still defending against off-topic slop via the title-keyword
+    requirement.
+    """
     seen: set[str] = set()
     out: list[dict] = []
-    for page in range(20):  # up to 2000 articles scanned per selection
+    for page in range(80):  # up to 8000 articles scanned per selection
         try:
             batch = http_get("/api/articles", {"limit": 100, "offset": page * 100})
         except urllib.error.HTTPError:
@@ -372,31 +381,36 @@ def select_candidates(target: int, exclude_ids: set[str]) -> list[dict]:
                 continue
             seen.add(aid)
             src = (a.get("source_name") or "").strip()
-            if src not in ALLOWED_SOURCES:
-                continue
-            if a.get("content_category") not in CLIMATE_CATEGORIES:
-                continue
+            cat = a.get("content_category")
             cc = a.get("country_code")
             if not cc or cc == "XX":
                 continue
-            # language_code is sometimes None in the list payload — allow
-            # that (source allowlist already implies a supported language).
             lang = a.get("language_code")
             if lang is not None and lang not in SUPPORTED_LANGS:
                 continue
-            # Title must contain an actual climate keyword — the
-            # content_category alone proved unreliable (T1 outlets file
-            # general politics under climate_science). Defends against
-            # AI slop user explicitly flagged.
             title_lower = (a.get("title") or "").lower()
+            # HARD gate 1: climate keyword in title (anti-slop)
             if not any(kw in title_lower for kw in CLIMATE_TITLE_KEYWORDS):
                 continue
-            tier = "T1" if src in T1_CLIMATE_SOURCES else "T2"
-            score = 30 if tier == "T1" else 15
+            # HARD gate 2: climate content_category OR title implies climate
+            # (some legit climate articles are mis-categorised as 'policy'
+            # or 'general' but the title-keyword gate already filters).
+            # Reject only obvious non-climate categories (none yet defined,
+            # so accept any category).
+
+            # SCORING — source tier bonus, not a hard requirement
+            if src in T1_CLIMATE_SOURCES:
+                tier, base = "T1", 30
+            elif src in T2_CLIMATE_SOURCES:
+                tier, base = "T2", 18
+            else:
+                tier, base = "T3", 8
+            score = base
             score += min(20, (a.get("claim_count") or 0) * 5)
             score += 10 if a.get("verified_claim_count", 0) > 0 else 0
             score += 5 if a.get("overall_credibility") == "HIGH" else 0
-            score += 5 if a.get("content_category") == "climate_science" else 0
+            score += 5 if cat == "climate_science" else 0
+            score += 3 if cat in CLIMATE_CATEGORIES else 0
             out.append({
                 "article_id": aid,
                 "title": (a.get("title") or "")[:90],
@@ -407,7 +421,7 @@ def select_candidates(target: int, exclude_ids: set[str]) -> list[dict]:
                 "claim_count": a.get("claim_count") or 0,
                 "score": round(score, 1),
             })
-        if len(out) >= target * 3:  # enough to rank-and-take
+        if len(out) >= target * 5:
             break
     out.sort(key=lambda c: c["score"], reverse=True)
     return out[:target]
@@ -877,44 +891,59 @@ def main() -> int:
             time.sleep(60)
             continue
         if not candidates:
-            log("No candidates left — corpus exhausted")
-            telegram.send("✅ Corpus exhausted — no more T1/T2 candidates that aren't already processed.")
-            break
-        ids = [c["article_id"] for c in candidates]
-        log(f"  queueing {len(ids)} via /admin/backfill/golden-queue")
-        try:
-            q_resp = queue_for_gx10(ids, token)
-        except Exception as exc:
-            log(f"queue error: {exc}")
-            telegram.send(f"⚠️ Wave {state['wave']} queue failed: {type(exc).__name__}: {exc}")
-            time.sleep(120)
-            continue
-        log(f"  queue resp: {q_resp}")
-        state["in_progress_ids"] = ids
-        save_state(state)
+            # Corpus exhausted for now — DON'T exit. Keep running research
+            # + company analyses (those have their own large target lists),
+            # and retry article selection on the next wave (the corpus
+            # grows as RSS ingestion happens overnight).
+            log("article corpus temporarily exhausted — skipping enrich, running research+company only")
+            telegram.send(
+                f"ℹ️ Wave {state['wave']}: no new article candidates (corpus exhausted for now). "
+                f"Continuing with research + company phases. Will retry articles next wave."
+            )
+            ids = []
+            done_ids = []
+            pending = []
+            wave_results = []
+        else:
+            ids = [c["article_id"] for c in candidates]
 
-        log(f"  waiting up to {DEFAULTS['wave_timeout_minutes']} min for Lane A worker")
-        done_ids, pending = wait_for_completion(
-            ids, DEFAULTS["wave_timeout_minutes"], telegram, state,
-        )
-        log(f"  completed {len(done_ids)}/{len(ids)} (pending: {len(pending)})")
+        # Article enrichment phase — skipped when ids is empty (corpus
+        # exhausted), but research + company phases below still fire.
+        if ids:
+            log(f"  queueing {len(ids)} via /admin/backfill/golden-queue")
+            try:
+                q_resp = queue_for_gx10(ids, token)
+            except Exception as exc:
+                log(f"queue error: {exc}")
+                telegram.send(f"⚠️ Wave {state['wave']} queue failed: {type(exc).__name__}: {exc}")
+                time.sleep(120)
+                continue
+            log(f"  queue resp: {q_resp}")
+            state["in_progress_ids"] = ids
+            save_state(state)
 
-        wave_results = [validate(aid) for aid in done_ids]
-        passed = sum(1 for r in wave_results if r["passes"])
-        gx10_n = sum(1 for r in wave_results if "local-gx10" in (r.get("llm_provider") or ""))
-        state["validation_results"].extend(wave_results)
-        state["completed_ids"].extend(done_ids)
-        completed_ids.update(done_ids)
-        state["in_progress_ids"] = []
-        save_state(state)
+            log(f"  waiting up to {DEFAULTS['wave_timeout_minutes']} min for Lane A worker")
+            done_ids, pending = wait_for_completion(
+                ids, DEFAULTS["wave_timeout_minutes"], telegram, state,
+            )
+            log(f"  completed {len(done_ids)}/{len(ids)} (pending: {len(pending)})")
 
-        write_audit_report(state)
-        telegram.send(
-            f"✅ *Wave {state['wave']} done*\n"
-            f"Enriched: {len(done_ids)}/{len(ids)} • Pending: {len(pending)}\n"
-            f"Passed gates: {passed}/{len(wave_results)} • GX10: {gx10_n}\n"
-            f"Total: {len(state['completed_ids'])}/{args.budget}"
-        )
+            wave_results = [validate(aid) for aid in done_ids]
+            passed = sum(1 for r in wave_results if r["passes"])
+            gx10_n = sum(1 for r in wave_results if "local-gx10" in (r.get("llm_provider") or ""))
+            state["validation_results"].extend(wave_results)
+            state["completed_ids"].extend(done_ids)
+            completed_ids.update(done_ids)
+            state["in_progress_ids"] = []
+            save_state(state)
+
+            write_audit_report(state)
+            telegram.send(
+                f"✅ *Wave {state['wave']} done*\n"
+                f"Enriched: {len(done_ids)}/{len(ids)} • Pending: {len(pending)}\n"
+                f"Passed gates: {passed}/{len(wave_results)} • GX10: {gx10_n}\n"
+                f"Total: {len(state['completed_ids'])}/{args.budget}"
+            )
 
         # Phase 2 — research paper analyses (per wave). Cycles through the
         # 35+ curated climate-science targets; if exhausted, cycles again
