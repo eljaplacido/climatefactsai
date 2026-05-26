@@ -338,7 +338,7 @@ def restart_lane_a_worker() -> tuple[bool, str]:
     try:
         result = subprocess.run(
             ["systemctl", "--user", "restart", "clilens-lane-a"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, text=True, timeout=60,
         )
         ok = result.returncode == 0
         return ok, (result.stderr or result.stdout or "").strip()[:200]
@@ -485,8 +485,13 @@ def select_candidates(target: int, exclude_ids: set[str]) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def validate(article_id: str) -> dict:
+    # v2 endpoint is the one that correctly serializes the enrichment
+    # fields (executive_brief, enriched_excerpt, climate_context_summary,
+    # enrichment_metadata) — the v1 path drops some of them. Using v1
+    # was causing every article to fail validation with brief=0 even
+    # when the DB had a populated brief.
     try:
-        a = http_get(f"/api/articles/{article_id}")
+        a = http_get(f"/api/v2/articles/{article_id}")
     except urllib.error.HTTPError as e:
         return {"article_id": article_id, "passes": False, "errors": [f"fetch HTTP {e.code}"]}
     brief = a.get("executive_brief") or ""
@@ -698,7 +703,7 @@ def wait_for_completion(article_ids: list[str], minutes: int, telegram: Telegram
             if aid in done:
                 continue
             try:
-                a = http_get(f"/api/articles/{aid}")
+                a = http_get(f"/api/v2/articles/{aid}")
             except urllib.error.HTTPError:
                 continue
             ex = (a.get("enriched_excerpt") or "")
@@ -739,8 +744,10 @@ def _handle_telegram_inbox(telegram: Telegram, state: dict) -> None:
             state["telegram_chat_id"] = m["chat_id"]
             telegram.chat_id = m["chat_id"]
             telegram.send("👋 Daemon online. Type /status, /report, /pause, /resume, /stop, /fix <text>.")
-        cmd = m["text"].strip().lower().split(" ", 1)
-        head = cmd[0]
+        # Case-insensitive command matching — "/Restart" works same as "/restart"
+        raw = m["text"].strip()
+        cmd = raw.split(" ", 1)
+        head = cmd[0].lower()
         arg = cmd[1] if len(cmd) > 1 else ""
         if head == "/start":
             telegram.send("Daemon running. Commands: /status /report /pause /resume /stop /fix <text>")
