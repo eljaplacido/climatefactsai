@@ -92,8 +92,9 @@ class ArticleRepository:
                 verified_claims_count as verified_claim_count,
                 claims_status, claims_error_message, claims_processed_at,
                 decomposed_confidence, insight_summary,
-                analysis_article_html, analysis_article_generated_at,
+                analysis_article_generated_at,
                 content_category, executive_brief,
+                enriched_excerpt, climate_context_summary, enrichment_metadata,
                 created_at, updated_at
             FROM articles
             WHERE article_id = :article_id
@@ -405,6 +406,20 @@ class ArticleRepository:
         if include_detail:
             columns.append("COALESCE(a.extracted_text, '') AS extracted_text")
             columns.append("a.provenance")
+            # Golden Example fix (2026-05-27): the End2End audit found
+            # /api/v2/articles/{id} was silently dropping every enrichment
+            # column even after Lane A worker populated them. ArticleDetail
+            # already declares these fields (Pydantic accepts them), but
+            # the SELECT here didn't include them, so the FE article-detail
+            # page never saw executive_brief / enriched_excerpt / climate
+            # context / metadata. Add them now so the Golden Example
+            # commits (#5 brief, #3 trend) actually surface in the UI.
+            columns.append("a.enriched_excerpt")
+            columns.append("a.climate_context_summary")
+            columns.append("a.enrichment_metadata")
+            columns.append("a.executive_brief")
+            columns.append("a.insight_summary")
+            columns.append("a.content_category")
         return ",\n                ".join(columns)
 
     def _execute_trust_query(
