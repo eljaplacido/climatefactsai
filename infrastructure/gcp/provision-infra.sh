@@ -283,6 +283,10 @@ ensure_scheduler_job "cn-aoi-poll"      "/api/scheduler/aoi-poll"            "0 
 ensure_scheduler_job "cn-enrich"             "/api/admin/scheduler/enrich-pending"           "*/30 * * * *" "ArticleEnrichmentService batch_enrich every 30 minutes — was 0% populated"
 ensure_scheduler_job "cn-credibility-backfill" "/api/admin/backfill/source-credibility-score" "15 4 * * *"   "Re-stamp articles.source_credibility_score via tier service daily at 04:15 UTC"
 ensure_scheduler_job "cn-html-backfill"      "/api/admin/backfill/extracted-text-html"        "45 4 * * *"   "Re-clean extracted_text HTML pollution daily at 04:45 UTC"
+# KG Phase 1 (2026-05-27): NER entity extraction — populates the canonical
+# knowledge_graph schema from mig 049. Hourly cadence to catch up the
+# 1664-row corpus quickly; can drop to nightly once converged.
+ensure_scheduler_job "cn-ner-extract"        "/api/admin/scheduler/extract-entities"          "0 * * * *"    "EntityExtractionService batch_extract — KG Phase 1, mig 049"
 
 # ---------------------------------------------------------------------------
 # 8. Grant Cloud Scheduler permission to invoke Cloud Run

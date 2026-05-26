@@ -247,6 +247,7 @@ steps:
           "cn-enrich:/api/admin/scheduler/enrich-pending"
           "cn-credibility-backfill:/api/admin/backfill/source-credibility-score"
           "cn-html-backfill:/api/admin/backfill/extracted-text-html"
+          "cn-ner-extract:/api/admin/scheduler/extract-entities"
         )
         for entry in "${JOBS[@]}"; do
           name="${entry%%:*}"

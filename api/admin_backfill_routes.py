@@ -231,6 +231,59 @@ async def backfill_extracted_text_html(
 
 
 # ---------------------------------------------------------------------------
+# 4. Entity extraction scheduler trigger — KG Phase 1
+# ---------------------------------------------------------------------------
+
+@router.post("/scheduler/extract-entities")
+async def trigger_extract_entities(
+    background_tasks: BackgroundTasks,
+    batch_size: int = Query(default=15, ge=1, le=50),
+    x_corporate_sync_token: Optional[str] = Header(default=None),
+    x_scheduler_secret: Optional[str] = Header(default=None),
+):
+    """Run EntityExtractionService.batch_extract_for_pending_articles.
+
+    KG-Robustness-Audit-2026-05-27 §2 Phase 1 — wires the spaCy / LLM
+    entity extractor against the canonical knowledge_graph schema (mig
+    049). Without this trigger the `entities` + `article_entities` +
+    `entity_relationships` tables stay empty in prod and
+    `GET /api/articles/{id}/kg` returns the "kg_not_populated" soft-fail.
+
+    Runs in a background task; progress logged via the service's
+    structured logger. Cadence target: hourly via cn-ner-extract cron
+    until the corpus is fully linked, then nightly.
+    """
+    _auth(x_corporate_sync_token, x_scheduler_secret)
+    db = get_postgres()
+
+    try:
+        from app.domains.intelligence.entity_extraction_service import (
+            EntityExtractionService,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"EntityExtractionService unavailable: {type(exc).__name__}",
+        )
+
+    async def _run():
+        service = EntityExtractionService(db)
+        try:
+            summary = await service.batch_extract_for_pending_articles(limit=batch_size)
+            logger.info(f"scheduler/extract-entities: {summary}")
+        except Exception as exc:
+            logger.error(f"scheduler/extract-entities failed: {exc}")
+
+    background_tasks.add_task(_run)
+    return {
+        "status": "queued",
+        "task": "batch_extract_for_pending_articles",
+        "batch_size": batch_size,
+        "note": "Progress logged via 'batch_extract complete' structured log.",
+    }
+
+
+# ---------------------------------------------------------------------------
 # 3. Enrichment scheduler trigger
 # ---------------------------------------------------------------------------
 

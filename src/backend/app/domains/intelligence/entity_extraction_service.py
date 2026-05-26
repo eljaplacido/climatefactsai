@@ -321,6 +321,74 @@ class EntityExtractionService:
     # Embedding generation for entities
     # ------------------------------------------------------------------
 
+    async def batch_extract_for_pending_articles(self, limit: int = 25) -> dict:
+        """Run extract_and_store on the oldest articles missing entity links.
+
+        KG-Robustness-Audit Phase 1 (2026-05-27) — feeds the canonical
+        knowledge_graph schema (mig 049) by walking
+        `articles LEFT JOIN article_entities` and picking up the first N
+        rows with no associated entity rows. Pairs with the
+        `/api/admin/scheduler/extract-entities` admin endpoint + the
+        `cn-ner-extract` cron.
+
+        Returns a summary dict so the scheduler log + admin response
+        carry the same shape as batch_enrich.
+        """
+        rows = self.db.execute_query(
+            """SELECT a.article_id,
+                      COALESCE(a.title, '') AS title,
+                      COALESCE(a.extracted_text, '') AS extracted_text
+                 FROM articles a
+                 LEFT JOIN article_entities ae ON ae.article_id = a.article_id
+                WHERE ae.article_id IS NULL
+                  AND a.is_synthetic = FALSE
+                  AND LENGTH(COALESCE(a.extracted_text, '')) >= 200
+                ORDER BY a.created_at DESC NULLS LAST
+                LIMIT :lim""",
+            {"lim": limit},
+        )
+        if not rows:
+            return {"processed": 0, "skipped": 0, "failed": 0, "total_found": 0}
+
+        processed = 0
+        skipped = 0
+        failed = 0
+        total_entities = 0
+        total_relationships = 0
+        for row in rows:
+            article_id = str(row["article_id"])
+            text = row.get("extracted_text") or ""
+            title = row.get("title") or ""
+            if len(text.strip()) < 200:
+                skipped += 1
+                continue
+            try:
+                summary = await self.extract_and_store(article_id, title, text)
+                if summary.get("error"):
+                    failed += 1
+                else:
+                    processed += 1
+                    total_entities += int(summary.get("entities_extracted") or 0)
+                    total_relationships += int(summary.get("relationships_found") or 0)
+            except Exception as exc:
+                failed += 1
+                logger.warning(
+                    "batch_extract: article failed",
+                    article_id=article_id,
+                    error=str(exc),
+                )
+
+        result = {
+            "processed": processed,
+            "skipped": skipped,
+            "failed": failed,
+            "total_found": len(rows),
+            "total_entities_extracted": total_entities,
+            "total_relationships_extracted": total_relationships,
+        }
+        logger.info("batch_extract complete", **result)
+        return result
+
     async def _generate_entity_embeddings(self, entity_map: Dict[str, str]) -> None:
         """Generate and store embeddings for entities that lack one."""
         try:
