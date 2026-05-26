@@ -244,13 +244,40 @@ def log(msg: str) -> None:
 # HTTP — stdlib only
 # ---------------------------------------------------------------------------
 
+def _http_with_retry(req: urllib.request.Request, timeout: int = 30, max_attempts: int = 4) -> Any:
+    """HTTP retry wrapper. Retries on 5xx, 429, and network errors with
+    exponential backoff (1s, 3s, 9s, 27s). Fail-loud on 4xx (other than
+    429) since those are programmer/auth errors that retry won't fix.
+    """
+    backoff = 1.0
+    last_exc: Exception | None = None
+    for attempt in range(max_attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            last_exc = e
+            if e.code == 429 or 500 <= e.code < 600:
+                time.sleep(backoff)
+                backoff *= 3.0
+                continue
+            raise  # 4xx (other than 429) — re-raise immediately
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+            last_exc = e
+            time.sleep(backoff)
+            backoff *= 3.0
+            continue
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("HTTP retry exhausted with no exception")
+
+
 def http_get(path: str, params: dict | None = None, base: str | None = None) -> Any:
     url = (base or API_BASE) + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"User-Agent": "golden-daemon/1.0"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read())
+    return _http_with_retry(req, timeout=30)
 
 
 def http_post(path: str, body: dict, token: str | None = None, base: str | None = None) -> Any:
@@ -261,8 +288,7 @@ def http_post(path: str, body: dict, token: str | None = None, base: str | None 
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(), headers=headers, method="POST",
     )
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.loads(r.read())
+    return _http_with_retry(req, timeout=60)
 
 
 # ---------------------------------------------------------------------------
@@ -287,10 +313,37 @@ def load_state() -> dict:
 
 
 def save_state(state: dict) -> None:
+    """Atomic save with one-deep backup so corruption is recoverable."""
     STATE_DIR.mkdir(parents=True, exist_ok=True)
+    # Backup previous good state before overwriting
+    if STATE_FILE.exists():
+        try:
+            backup = STATE_FILE.with_suffix(".json.bak")
+            backup.write_bytes(STATE_FILE.read_bytes())
+        except Exception:
+            pass
     tmp = STATE_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(state, indent=2, default=str))
     tmp.replace(STATE_FILE)
+
+
+def restart_lane_a_worker() -> tuple[bool, str]:
+    """Self-healing: restart the Lane A worker via systemctl.
+
+    Called when daemon detects Lane A has stalled (no enrichment progress
+    for N minutes). Best-effort — systemd user services require the user
+    session to be active (linger=yes confirmed).
+    """
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "restart", "clilens-lane-a"],
+            capture_output=True, text=True, timeout=15,
+        )
+        ok = result.returncode == 0
+        return ok, (result.stderr or result.stdout or "").strip()[:200]
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
 
 
 # ---------------------------------------------------------------------------
@@ -626,14 +679,18 @@ def run_company_analysis(company_id_or_ticker: str, name: str, claim_template: d
 
 
 def wait_for_completion(article_ids: list[str], minutes: int, telegram: Telegram, state: dict) -> tuple[list[str], list[str]]:
-    """Poll /api/articles/{id} until each article has enriched_excerpt > 100 chars.
+    """Poll until each article has enriched_excerpt > 100 chars.
 
-    Returns (done_ids, pending_ids). Also yields control every ~25s to poll
-    Telegram for commands during the wait.
+    Self-healing: if no progress for STALL_THRESHOLD_SEC (default 8min),
+    attempts to restart the Lane A worker via systemctl. After 2 stall
+    cycles, gives up on this wave and returns whatever's done.
     """
+    STALL_THRESHOLD_SEC = 480  # 8 minutes without progress = stalled
     deadline = time.monotonic() + minutes * 60
     done: set[str] = set()
-    last_progress = -1
+    last_progress_count = -1
+    last_progress_at = time.monotonic()
+    stall_attempts = 0
     while time.monotonic() < deadline:
         if state.get("stop_requested"):
             break
@@ -647,9 +704,21 @@ def wait_for_completion(article_ids: list[str], minutes: int, telegram: Telegram
             ex = (a.get("enriched_excerpt") or "")
             if len(ex) > 100:
                 done.add(aid)
-        if len(done) != last_progress:
+        if len(done) != last_progress_count:
             log(f"  enrichment progress: {len(done)}/{len(article_ids)}")
-            last_progress = len(done)
+            last_progress_count = len(done)
+            last_progress_at = time.monotonic()
+            stall_attempts = 0
+        elif (time.monotonic() - last_progress_at) > STALL_THRESHOLD_SEC and stall_attempts < 2:
+            stall_attempts += 1
+            log(f"  STALL detected ({STALL_THRESHOLD_SEC}s no progress) — restarting Lane A worker (attempt {stall_attempts}/2)")
+            ok, msg = restart_lane_a_worker()
+            telegram.send(
+                f"Stall detected on wave {state['wave']} ({len(done)}/{len(article_ids)} done). "
+                f"Restarting Lane A worker: {'OK' if ok else 'FAILED ' + msg[:100]}"
+            )
+            last_progress_at = time.monotonic()  # reset stall timer post-restart
+            time.sleep(30)
         if len(done) >= len(article_ids):
             break
         _handle_telegram_inbox(telegram, state)
@@ -690,10 +759,47 @@ def _handle_telegram_inbox(telegram: Telegram, state: dict) -> None:
             state["stop_requested"] = True
             telegram.send("🛑 Stop requested. Finishing current wave, then exiting cleanly.")
         elif head == "/fix":
-            state["issues_reported"].append({"at": datetime.now(timezone.utc).isoformat(), "issue": arg})
-            telegram.send(f"📌 Logged issue: {arg[:120]}")
+            # /fix <text> — log issue AND attempt self-healing actions:
+            #   - clear stop_requested if set
+            #   - unpause if paused
+            #   - re-hydrate top_companies if empty
+            #   - reset in_progress_ids (so a stuck wave isn't tracked forever)
+            state["issues_reported"].append({
+                "at": datetime.now(timezone.utc).isoformat(),
+                "issue": arg,
+            })
+            actions: list[str] = []
+            if state.get("stop_requested"):
+                state["stop_requested"] = False
+                actions.append("cleared stop_requested")
+            if state.get("paused"):
+                state["paused"] = False
+                actions.append("unpaused")
+            if not state.get("top_companies"):
+                try:
+                    companies = fetch_top_companies(limit=50)
+                    state["top_companies"] = [
+                        {"id": c.get("company_id"), "ticker": c.get("ticker"), "name": c.get("name")}
+                        for c in companies if c.get("company_id")
+                    ]
+                    actions.append(f"rehydrated top_companies ({len(state['top_companies'])})")
+                except Exception as exc:
+                    actions.append(f"company refresh failed: {type(exc).__name__}")
+            if state.get("in_progress_ids"):
+                actions.append(f"cleared in_progress_ids ({len(state['in_progress_ids'])})")
+                state["in_progress_ids"] = []
+            save_state(state)
+            heal = ", ".join(actions) if actions else "no obvious recovery actions"
+            telegram.send(f"Issue logged: {arg[:120]}\nSelf-healing: {heal}")
+        elif head == "/restart":
+            # Force daemon process exit so systemd restarts it cleanly
+            state["stop_requested"] = False  # ensure resumes after restart
+            save_state(state)
+            telegram.send("Restart requested. Process exiting now; systemd will respawn in 30s.")
+            log("/restart received — exit(75) to trigger systemd restart")
+            sys.exit(75)
         else:
-            telegram.send("Unknown command. Try: /status /report /pause /resume /stop /fix <text>")
+            telegram.send("Unknown command. Try: /status /report /pause /resume /stop /fix <text> /restart")
 
 
 def _status_message(state: dict) -> str:
@@ -727,22 +833,28 @@ def write_audit_report(state: dict) -> None:
     failed = [r for r in results if not r["passes"]]
     gx10 = [r for r in results if "local-gx10" in (r.get("llm_provider") or "")]
 
+    retried = state.get("retried_ids", {}) or {}
+    research = state.get("research_results", [])
+    companies = state.get("company_results", [])
     lines = [
         f"# Golden Pipeline Evaluation — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
         "",
-        f"Autonomous overnight run via `scripts/golden_pipeline_daemon.py`. Targets",
-        f"the highest-quality T1/T2 climate-journalism articles in the corpus,",
-        f"routes enrichment through the GX10 Lane A worker (qwen2.5:14b via Ollama),",
-        f"validates every output against explicit quality gates.",
+        f"Autonomous overnight run via `scripts/golden_pipeline_daemon.py`. Three",
+        f"interleaved phases per wave: article enrichment (GX10 qwen2.5:7b via",
+        f"Ollama, Lane A pattern), research-paper analysis (Cloud Run DeepSeek),",
+        f"and corporate-claim verification (Cloud Run DeepSeek + ECGT adjudicator).",
+        f"Every output validated against explicit quality gates. Failed articles",
+        f"auto-retried once via the retrospective-evaluation pass.",
         "",
         "## Run state",
         "",
         f"- Started: `{state['started_at']}`",
-        f"- Wave: **{state['wave']}** of max {DEFAULTS['max_waves']}",
-        f"- Validated: **{len(results)}** articles",
-        f"- Passed all gates: **{len(passed)}** ({(100*len(passed)/len(results)) if results else 0:.0f}%)",
-        f"- GX10-enriched: **{len(gx10)}** ({(100*len(gx10)/len(results)) if results else 0:.0f}%)",
-        f"- Failed gates: **{len(failed)}**",
+        f"- Current wave: **{state['wave']}** of max {DEFAULTS['max_waves']}",
+        f"- 📰 Articles validated: **{len(results)}** ({len(passed)} passed, {len(failed)} failed, {len(retried)} retried)",
+        f"- 📄 Research papers analyzed: **{len(research)}** ({sum(1 for r in research if r.get('passes'))} passed)",
+        f"- 🏢 Company claims analyzed: **{len(companies)}** ({sum(1 for r in companies if r.get('passes'))} passed)",
+        f"- GX10 share on articles: **{len(gx10)}/{len(results)}** ({(100*len(gx10)/len(results)) if results else 0:.0f}%)",
+        f"- Issues logged via /fix: {len(state.get('issues_reported', []))}",
         f"- Stop requested: {state['stop_requested']}",
         "",
         "## Quality gates",
@@ -944,6 +1056,28 @@ def main() -> int:
                 f"Passed gates: {passed}/{len(wave_results)} • GX10: {gx10_n}\n"
                 f"Total: {len(state['completed_ids'])}/{args.budget}"
             )
+
+            # RETROSPECTIVE EVALUATION — for articles that failed the
+            # validation gates this wave (brief too short / no GX10 /
+            # missing context), give them ONE more chance by re-queueing
+            # for GX10 enrichment. State tracks retry_attempts so an
+            # article can't be looped indefinitely. After 1 retry it's
+            # accepted as a permanent failure in the audit.
+            state.setdefault("retried_ids", {})
+            failed_for_retry = [
+                r["article_id"] for r in wave_results
+                if not r["passes"] and state["retried_ids"].get(r["article_id"], 0) < 1
+            ]
+            if failed_for_retry:
+                log(f"  [retro-eval] re-queueing {len(failed_for_retry)} failed articles for 1 more GX10 attempt")
+                try:
+                    queue_for_gx10(failed_for_retry, token)
+                    for aid in failed_for_retry:
+                        state["retried_ids"][aid] = state["retried_ids"].get(aid, 0) + 1
+                    save_state(state)
+                    telegram.send(f"Retro-eval: re-queued {len(failed_for_retry)} failed articles for retry")
+                except Exception as exc:
+                    log(f"  [retro-eval] re-queue failed: {exc}")
 
         # Phase 2 — research paper analyses (per wave). Cycles through the
         # 35+ curated climate-science targets; if exhausted, cycles again
