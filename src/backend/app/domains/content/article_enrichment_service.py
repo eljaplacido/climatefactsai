@@ -357,7 +357,11 @@ class ArticleEnrichmentService:
                 if not dates or not temps:
                     return None
 
-                # Group by year and compute annual averages
+                # Group daily temps by year. Track count separately so we
+                # can drop incomplete years (the current year typically has
+                # only Jan-current-month, and a partial cool/warm window
+                # creates fake "-7°C cooling trend" results — see
+                # Golden-Artifact-Examples-2026-05-27.md §1 bug catalog).
                 year_temps: Dict[int, List[float]] = {}
                 for d_str, t in zip(dates, temps):
                     if t is None:
@@ -365,21 +369,45 @@ class ArticleEnrichmentService:
                     year = int(d_str[:4])
                     year_temps.setdefault(year, []).append(t)
 
+                # COMPLETE-YEAR FILTER: a real year has ~340-366 daily
+                # observations. Cap the floor at 330 (allows for archive
+                # gaps but excludes Jan-May partial years). Without this
+                # the trend math compared 2021's 365-day average to
+                # 2026's 145-day winter-only average and produced -7.65°C.
+                COMPLETE_YEAR_MIN_DAYS = 330
                 annual_averages: Dict[int, float] = {}
                 for year, values in sorted(year_temps.items()):
-                    if values:
+                    if values and len(values) >= COMPLETE_YEAR_MIN_DAYS:
                         annual_averages[year] = round(sum(values) / len(values), 2)
 
                 if len(annual_averages) < 2:
+                    logger.info(
+                        "5-year trend: too few complete years (need 2+, got %s)",
+                        len(annual_averages),
+                    )
                     return None
 
-                # Compute trend: simple linear comparison first year vs last year
+                # Compute trend: simple linear comparison first vs last
+                # complete year (now safe — both have ~full annual coverage).
                 years_sorted = sorted(annual_averages.keys())
                 first_avg = annual_averages[years_sorted[0]]
                 last_avg = annual_averages[years_sorted[-1]]
                 total_change = round(last_avg - first_avg, 2)
                 span_years = years_sorted[-1] - years_sorted[0]
                 annual_change = round(total_change / max(span_years, 1), 2)
+
+                # Sanity cap: real 5-yr climate trends are bounded at
+                # roughly ±2°C even in fast-warming regions. Anything
+                # beyond ±4°C indicates instrumentation noise or a
+                # remaining math bug — return None rather than feed a
+                # nonsense number into the LLM enrichment prompt.
+                if abs(total_change) > 4.0:
+                    logger.warning(
+                        "5-year trend: implausible total_change=%.2f for %s; "
+                        "discarding (years=%s)",
+                        total_change, country_code, years_sorted,
+                    )
+                    return None
 
                 if total_change > 0.3:
                     direction = "warming"
@@ -397,6 +425,7 @@ class ArticleEnrichmentService:
                     "annual_change_c": annual_change,
                     "direction": direction,
                     "data_points": sum(len(v) for v in year_temps.values()),
+                    "complete_years": list(years_sorted),
                 }
         except Exception as exc:
             logger.warning(

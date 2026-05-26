@@ -86,16 +86,42 @@ class AnalyzeReportResponse(BaseModel):
 async def list_companies(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    sort: str = Query("richness", regex="^(richness|name|recent)$"),
+    has_climate_data: bool = Query(False, description="Only companies with scope/SBTi/net-zero data"),
+    sbti_only: bool = Query(False, description="Only companies with sbti_validated=TRUE disclosure"),
 ):
-    from app.domains.content.corporate.repository import list_companies as _list
+    """List companies in the Corporate Climate Tracker.
+
+    Golden Example fix (2026-05-27, see Golden-Artifact-Examples-2026-05-27.md):
+    default sort is now `richness` (sbti_validated + scope + net_zero +
+    disclosure_count + ticker), so well-known public companies (Apple,
+    Microsoft, Alphabet, etc.) surface first instead of the alphabetic
+    SBTi shell companies that made the index look empty.
+    """
+    from app.domains.content.corporate.repository import (
+        list_companies as _list,
+        companies_stats as _stats,
+    )
 
     db = get_postgres()
     try:
-        rows = _list(db, limit=limit, offset=offset)
+        rows = _list(
+            db, limit=limit, offset=offset, sort=sort,
+            has_climate_data=has_climate_data, sbti_only=sbti_only,
+        )
+        stats = _stats(db)
     except Exception as e:
         logger.warning(f"list_companies failed: {e}")
         rows = []
-    return {"companies": rows, "total": len(rows), "limit": limit, "offset": offset}
+        stats = {"total_companies": 0, "with_disclosures": 0, "sbti_validated": 0, "fully_disclosed": 0}
+    return {
+        "companies": rows,
+        "total": len(rows),
+        "limit": limit,
+        "offset": offset,
+        "sort": sort,
+        "stats": stats,
+    }
 
 
 @router.get("/{ticker}")

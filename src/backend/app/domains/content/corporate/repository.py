@@ -198,14 +198,76 @@ def get_company(db, ticker_or_id: str) -> Optional[CompanyProfile]:
     )
 
 
-def list_companies(db, limit: int = 50, offset: int = 0) -> List[dict]:
+def list_companies(
+    db,
+    limit: int = 50,
+    offset: int = 0,
+    sort: str = "richness",
+    has_climate_data: bool = False,
+    sbti_only: bool = False,
+) -> List[dict]:
+    """List companies with climate-disclosure summary.
+
+    Golden Example fix (2026-05-27): the user saw "No company data
+    ingested yet" because the default sort was alphabetical and the
+    first 200 rows were obscure SBTi-listed shell companies with no
+    ticker/sector/scope data. Switched default to rank-by-richness so
+    the well-known companies with comprehensive disclosures surface
+    first.
+
+    Args:
+        sort: "richness" (sbti_validated + disclosure_count + ticker
+              first, default) | "name" (alphabetical) | "recent"
+              (latest disclosure year).
+        has_climate_data: filter to companies with at least one
+              disclosure carrying scope1 OR sbti_validated OR
+              net_zero_target_year.
+        sbti_only: filter to companies with at least one
+              sbti_validated=TRUE disclosure.
+    """
+    where_clauses = []
+    if has_climate_data:
+        where_clauses.append(
+            "(MAX(CASE WHEN cd.scope1_tco2e IS NOT NULL THEN 1 ELSE 0 END) = 1 "
+            "OR BOOL_OR(cd.sbti_validated) = TRUE "
+            "OR MAX(cd.net_zero_target_year) IS NOT NULL)"
+        )
+    if sbti_only:
+        where_clauses.append("BOOL_OR(cd.sbti_validated) = TRUE")
+    having_sql = ("HAVING " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    order_sql = {
+        "richness": (
+            # Composite richness rank: sbti+scope+net_zero coverage,
+            # then disclosure count, then ticker first (well-known
+            # publicly-traded companies usually have one), then name.
+            "ORDER BY "
+            "(MAX(CASE WHEN cd.sbti_validated THEN 1 ELSE 0 END) "
+            " + MAX(CASE WHEN cd.scope1_tco2e IS NOT NULL THEN 1 ELSE 0 END) "
+            " + MAX(CASE WHEN cd.net_zero_target_year IS NOT NULL THEN 1 ELSE 0 END)) DESC, "
+            "COUNT(cd.disclosure_id) DESC, "
+            "(c.ticker IS NOT NULL) DESC, "
+            "c.name"
+        ),
+        "name": "ORDER BY c.name",
+        "recent": "ORDER BY MAX(cd.reporting_year) DESC NULLS LAST, c.name",
+    }.get(sort, "ORDER BY c.name")
+
     rows = db.execute_query(
-        """SELECT c.*, COUNT(cd.disclosure_id) AS disclosure_count,
-                  MAX(cd.reporting_year) AS latest_year
-           FROM companies c
-           LEFT JOIN company_climate_disclosures cd ON cd.company_id = c.company_id
-           GROUP BY c.company_id
-           ORDER BY c.name LIMIT :limit OFFSET :offset""",
+        f"""SELECT c.*,
+                   COUNT(cd.disclosure_id) AS disclosure_count,
+                   MAX(cd.reporting_year) AS latest_year,
+                   BOOL_OR(cd.sbti_validated) AS sbti_validated,
+                   MAX(cd.net_zero_target_year) AS net_zero_target_year,
+                   MAX(cd.scope1_tco2e) AS scope1_tco2e,
+                   MAX(cd.scope3_tco2e) AS scope3_tco2e,
+                   MAX(cd.target_pct_reduction) AS target_pct_reduction
+            FROM companies c
+            LEFT JOIN company_climate_disclosures cd ON cd.company_id = c.company_id
+            GROUP BY c.company_id
+            {having_sql}
+            {order_sql}
+            LIMIT :limit OFFSET :offset""",
         {"limit": limit, "offset": offset},
     )
     return [
@@ -217,9 +279,39 @@ def list_companies(db, limit: int = 50, offset: int = 0) -> List[dict]:
             "sector_nace": r.get("sector_nace"),
             "disclosure_count": int(r.get("disclosure_count") or 0),
             "latest_disclosure_year": r.get("latest_year"),
+            # Polish (2026-05-27): include climate signals directly in the
+            # list response so the FE card can preview scope/SBTi/net-zero
+            # without a per-row /companies/{ticker} round trip.
+            "sbti_validated": bool(r.get("sbti_validated", False)),
+            "net_zero_target_year": r.get("net_zero_target_year"),
+            "scope1_tco2e": r.get("scope1_tco2e"),
+            "scope3_tco2e": r.get("scope3_tco2e"),
+            "target_pct_reduction": r.get("target_pct_reduction"),
         }
         for r in (rows or [])
     ]
+
+
+def companies_stats(db) -> dict:
+    """Top-line stats for the /companies index banner."""
+    rows = db.execute_query(
+        """SELECT COUNT(DISTINCT c.company_id) AS total_companies,
+                  COUNT(DISTINCT cd.company_id) AS with_disclosures,
+                  COUNT(DISTINCT CASE WHEN cd.sbti_validated THEN cd.company_id END) AS sbti_validated,
+                  COUNT(DISTINCT CASE WHEN cd.net_zero_target_year IS NOT NULL
+                                       AND cd.scope1_tco2e IS NOT NULL
+                                       AND cd.sbti_validated THEN cd.company_id END) AS fully_disclosed
+           FROM companies c
+           LEFT JOIN company_climate_disclosures cd ON cd.company_id = c.company_id""",
+        {},
+    )
+    r = rows[0] if rows else {}
+    return {
+        "total_companies": int(r.get("total_companies") or 0),
+        "with_disclosures": int(r.get("with_disclosures") or 0),
+        "sbti_validated": int(r.get("sbti_validated") or 0),
+        "fully_disclosed": int(r.get("fully_disclosed") or 0),
+    }
 
 
 def get_company_disclosures(db, company_id: str, source: Optional[str] = None) -> List[dict]:
