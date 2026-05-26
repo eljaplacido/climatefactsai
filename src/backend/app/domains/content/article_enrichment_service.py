@@ -133,12 +133,25 @@ class ArticleEnrichmentService:
         # preserved. Either way the FE shows nothing. Fall back to the
         # first ~150 words of the enriched_excerpt so the brief slot is
         # always populated when the long excerpt landed.
+        # Diagnostic: log inputs to fallback so we can see why brief stays empty
+        logger.info(
+            "brief-fallback-check",
+            article_id=article_id,
+            llm_brief_len=len(executive_brief) if executive_brief else 0,
+            llm_brief_is_none=executive_brief is None,
+            excerpt_len=len(enriched_excerpt) if enriched_excerpt else 0,
+        )
         if not executive_brief and enriched_excerpt:
             words = enriched_excerpt.split()
             fallback = " ".join(words[:150])
             if len(words) > 150:
                 fallback = fallback.rstrip(".,;:") + "…"
             executive_brief = fallback
+            logger.info(
+                "brief-fallback-fired",
+                article_id=article_id,
+                fallback_chars=len(executive_brief),
+            )
 
         finished_at = datetime.utcnow()
         metadata["finished_at"] = finished_at.isoformat()
@@ -158,6 +171,12 @@ class ArticleEnrichmentService:
             metadata["llm_model"] = "none"
 
         # Persist to database
+        logger.info(
+            "brief-before-store",
+            article_id=article_id,
+            brief_chars=len(executive_brief) if executive_brief else 0,
+            brief_is_none=executive_brief is None,
+        )
         self._store_enrichment(
             article_id=article_id,
             enriched_excerpt=enriched_excerpt,
