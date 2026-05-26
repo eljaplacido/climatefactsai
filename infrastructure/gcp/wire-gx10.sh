@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 #
 # wire-gx10.sh — one-shot script to connect Cloud Run to the on-prem
-# ASUS GX10 vLLM endpoint over Tailscale.
+# NVIDIA DGX Spark (Tailscale hostname `gx10-cd1b`) running Ollama on
+# port 11434 — OpenAI-compatible /v1 API.
 #
-# Discovered 2026-05-27 by deep-scan probe:
+# Discovered 2026-05-27 by deep-scan probe + first-pass setup:
+#   * Hardware:           NVIDIA DGX Spark, aarch64 (Grace Blackwell)
 #   * Tailscale hostname: gx10-cd1b
 #   * Tailscale IP:       100.86.231.23
 #   * LAN IP:             192.168.50.216 (MAC 30-C5-99-40-CD-1B)
-#   * OS:                 Linux
-#   * Only port 3000 open (Next.js / OpenWebUI) — vLLM NOT running yet
+#   * OS:                 Ubuntu 24 (Python 3.12, PEP 668 externally-managed)
+#   * Serving:            Ollama (OpenAI-compatible) on :11434 — vLLM would
+#                         require building from source for aarch64
 #
 # What this script does:
 #   1. Asks you to confirm GX10 URL + API key + model
@@ -17,41 +20,41 @@
 #   4. Patches the running climatenews-api Cloud Run service with
 #      --update-secrets so the new env vars take effect without rebuild
 #   5. Flips CLILENS_ENRICHMENT_PROVIDER=local-gx10 on the same service
-#   6. Optionally prints the Tailscale sidecar config you need to add
-#      so Cloud Run can actually reach 100.86.231.23
+#   6. Prints the Tailscale sidecar config you need to add so Cloud Run
+#      can actually reach 100.86.231.23
 #
-# PRE-FLIGHT (do these on the GX10 first — this script can't):
-#   ssh gx10
-#   pip install vllm
-#   huggingface-cli download Qwen/Qwen2.5-14B-Instruct   # ~28 GB
-#   API_KEY="clilens-gx10-$(date +%s)"
-#   echo "API_KEY=$API_KEY" > /tmp/gx10.env
-#   vllm serve Qwen/Qwen2.5-14B-Instruct \
-#       --host 0.0.0.0 --port 8000 \
-#       --max-model-len 8192 --gpu-memory-utilization 0.85 \
-#       --api-key "$API_KEY"
-#   # Confirm reachable: curl -H "Authorization: Bearer $API_KEY" \
-#   #                       http://localhost:8000/v1/models
-#   # From this Windows machine: curl http://gx10-cd1b:8000/v1/models
+# PRE-FLIGHT (do this on the GX10 first — see infrastructure/gx10/setup-gx10-ollama.sh):
+#   ssh eljaplacido@gx10-cd1b
+#   bash <(curl -s file:///...path-to-script.../setup-gx10-ollama.sh)
+#   # or copy/paste the contents from infrastructure/gx10/setup-gx10-ollama.sh
+#   # The script installs Ollama, pulls qwen2.5:14b-instruct, configures
+#   # systemd to bind 0.0.0.0:11434, smoke-tests the endpoint.
+#   # Confirm: curl http://gx10-cd1b:11434/v1/models
 #
-# Then run this script:
+# Then run THIS script from your dev machine:
 #   bash infrastructure/gcp/wire-gx10.sh                  # interactive
-#   GX10_API_KEY=xyz GX10_MODEL=Qwen/Qwen2.5-14B-Instruct \
-#       bash infrastructure/gcp/wire-gx10.sh --non-interactive
+#   bash infrastructure/gcp/wire-gx10.sh --non-interactive  # uses defaults below
+#   # Override any default via env:
+#   GX10_MODEL=llama3.3:70b bash infrastructure/gcp/wire-gx10.sh
 
 set -euo pipefail
 
-# --- Defaults (override via env vars or --flags) ----------------------------
+# --- Defaults (override via env vars) ---------------------------------------
 PROJECT_ID="${PROJECT_ID:-climatenews-495412}"
 REGION="${REGION:-europe-west4}"
 API_SERVICE="${API_SERVICE:-climatenews-api}"
 
-# Discovered endpoint defaults. Tailscale is preferred because Cloud Run
-# can reach it via the sidecar; LAN only works for local dev.
-GX10_BASE_URL_DEFAULT="http://gx10-cd1b:8000/v1"
+# Discovered + chosen defaults for the DGX-Spark-Ollama setup.
+# Tailscale hostname is preferred because Cloud Run reaches it via the
+# sidecar; LAN IP only works for local dev.
+GX10_BASE_URL_DEFAULT="http://gx10-cd1b:11434/v1"
 GX10_BASE_URL="${GX10_BASE_URL:-$GX10_BASE_URL_DEFAULT}"
-GX10_API_KEY="${GX10_API_KEY:-}"
-GX10_MODEL="${GX10_MODEL:-Qwen/Qwen2.5-14B-Instruct}"
+# Ollama ignores the Authorization header but llm_routing.py requires
+# *something* to construct the OpenAI client, so literal "ollama" is the
+# accepted convention. Override via GX10_API_KEY env if you put a real
+# proxy in front (e.g. Caddy with bearer auth).
+GX10_API_KEY="${GX10_API_KEY:-ollama}"
+GX10_MODEL="${GX10_MODEL:-qwen2.5:14b-instruct}"
 INTERACTIVE=1
 
 for arg in "$@"; do
@@ -65,27 +68,21 @@ done
 
 if [[ $INTERACTIVE -eq 1 ]]; then
     echo "============================================================"
-    echo "GX10 wire-up — Cloud Run → on-prem vLLM over Tailscale"
+    echo "GX10 wire-up — Cloud Run → on-prem Ollama on DGX Spark"
     echo "============================================================"
     echo "Project ID:   $PROJECT_ID"
     echo "Region:       $REGION"
     echo "API service:  $API_SERVICE"
     echo "GX10 URL:     $GX10_BASE_URL"
     echo "GX10 model:   $GX10_MODEL"
-    if [[ -z "$GX10_API_KEY" ]]; then
-        echo
-        read -r -p "Paste GX10 vLLM API key: " GX10_API_KEY
-        if [[ -z "$GX10_API_KEY" ]]; then
-            echo "Empty API key — aborting"; exit 1
-        fi
-    fi
+    echo "API key:      $GX10_API_KEY   (Ollama ignores Bearer auth by default)"
     echo
     read -r -p "Proceed? [y/N] " yn
     [[ "$yn" =~ ^[yY] ]] || { echo "Aborted"; exit 0; }
 fi
 
 if [[ -z "$GX10_API_KEY" ]]; then
-    echo "GX10_API_KEY env var is required in --non-interactive mode" >&2
+    echo "GX10_API_KEY env var is required (default is the literal string 'ollama')" >&2
     exit 1
 fi
 
