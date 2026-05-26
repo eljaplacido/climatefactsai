@@ -70,6 +70,13 @@ interface CountryDetail {
     source_name: string;
     article_count: number;
     avg_credibility: number;
+    // Polish wave 3 (2026-05-27, End2End audit §7.4): 3-axis source scores
+    // joined from source_credibility_tiers so the per-source breakdown can
+    // render editorial/factcheck/transparency instead of one rolled number.
+    tier?: string | null;
+    editorial_score?: number | null;
+    factcheck_score?: number | null;
+    transparency_score?: number | null;
   }[];
 }
 
@@ -557,36 +564,78 @@ export default function MapCountryPanel({
                 <div className="p-4">
                   {sources.length > 0 ? (
                     <div className="space-y-2">
-                      {sources.map((source) => (
-                        <div
-                          key={source.source_name}
-                          className="p-3 bg-slate-700/50 rounded-lg border border-slate-600"
-                        >
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-sm font-medium text-slate-200">
-                              {source.source_name}
-                            </span>
-                            <span className="text-xs text-slate-400">
-                              {source.article_count} articles
-                            </span>
+                      {sources.map((source) => {
+                        const hasAxes =
+                          typeof source.editorial_score === "number" ||
+                          typeof source.factcheck_score === "number" ||
+                          typeof source.transparency_score === "number";
+                        return (
+                          <div
+                            key={source.source_name}
+                            className="p-3 bg-slate-700/50 rounded-lg border border-slate-600"
+                          >
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="text-sm font-medium text-slate-200 flex items-center gap-2">
+                                {source.source_name}
+                                {source.tier && (
+                                  <span
+                                    className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-slate-600 text-slate-200 border border-slate-500"
+                                    title={`Source tier ${source.tier}`}
+                                  >
+                                    {source.tier}
+                                  </span>
+                                )}
+                              </span>
+                              <span className="text-xs text-slate-400">
+                                {source.article_count} articles
+                              </span>
+                            </div>
+                            <div className="w-full h-1.5 bg-slate-600 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${
+                                  source.avg_credibility >= 75
+                                    ? "bg-emerald-500"
+                                    : source.avg_credibility >= 50
+                                    ? "bg-amber-500"
+                                    : "bg-red-500"
+                                }`}
+                                style={{ width: `${source.avg_credibility}%` }}
+                              />
+                            </div>
+                            <p className="text-[10px] text-slate-500 mt-1">
+                              Credibility: {source.avg_credibility.toFixed(0)}/100
+                            </p>
+                            {hasAxes && (
+                              <div className="mt-2 flex gap-1 text-[9px] font-mono">
+                                {typeof source.editorial_score === "number" && (
+                                  <span
+                                    className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-600"
+                                    title="Editorial standards (0-100)"
+                                  >
+                                    ED {source.editorial_score}
+                                  </span>
+                                )}
+                                {typeof source.factcheck_score === "number" && (
+                                  <span
+                                    className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-600"
+                                    title="Fact-check record (0-100)"
+                                  >
+                                    FC {source.factcheck_score}
+                                  </span>
+                                )}
+                                {typeof source.transparency_score === "number" && (
+                                  <span
+                                    className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-600"
+                                    title="Transparency (0-100)"
+                                  >
+                                    TR {source.transparency_score}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
-                          <div className="w-full h-1.5 bg-slate-600 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${
-                                source.avg_credibility >= 75
-                                  ? "bg-emerald-500"
-                                  : source.avg_credibility >= 50
-                                  ? "bg-amber-500"
-                                  : "bg-red-500"
-                              }`}
-                              style={{ width: `${source.avg_credibility}%` }}
-                            />
-                          </div>
-                          <p className="text-[10px] text-slate-500 mt-1">
-                            Credibility: {source.avg_credibility.toFixed(0)}/100
-                          </p>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <p className="text-sm text-slate-400 text-center py-8">

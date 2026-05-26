@@ -241,9 +241,9 @@ export default function MethodologyPage() {
               <div className="text-xs text-teal-700 mt-1">Internal rubric: reliability + calibration + hallucination + sustainability composite</div>
             </div>
             <div className="bg-white/80 rounded-lg border border-amber-100 p-4">
-              <div className="text-xs uppercase tracking-wider text-amber-700 font-semibold mb-2">Audited (external independent audit, 2026-05-18)</div>
-              <div className="text-3xl font-bold text-amber-600">3.6<span className="text-lg text-amber-400">/5</span></div>
-              <div className="text-xs text-amber-700 mt-1">Same rubric, applied by independent auditor against live code + data</div>
+              <div className="text-xs uppercase tracking-wider text-amber-700 font-semibold mb-2">Audited (End2End audit, 2026-05-27)</div>
+              <div className="text-3xl font-bold text-amber-600">3.55<span className="text-lg text-amber-400">/5</span></div>
+              <div className="text-xs text-amber-700 mt-1">Same rubric, applied by audit against live code + data. Up from 3.05 (2026-05-26).</div>
             </div>
           </div>
 
@@ -252,11 +252,17 @@ export default function MethodologyPage() {
             <div className="grid sm:grid-cols-2 gap-2 text-xs">
               {[
                 { axis: "Reliability Tiering", before: "4.4-4.8", after: "3.5 → 4.6 (2026-05-26)", fix: "✅ DB-backed source credibility tiers + 3-axis (editorial/factcheck/transparency) wired into compute_weighted_score. Mig 045 fence guarantees no NULL axes." },
-                { axis: "Calibration Math", before: "4.6-4.7", after: "2.8", fix: "Raise min_labels to 50; preview-tag fits below threshold. Pending." },
-                { axis: "Hallucination Detection", before: "4.8", after: "3.2", fix: "NER-based entity check + statistic grounding against union of retrieved sources. Pending — see audit doc." },
+                { axis: "Calibration Math", before: "4.6-4.7", after: "2.8 → 3.4 (2026-05-27)", fix: "✅ Calibration fence — min_labels=50, sub-threshold fits stamped 'preview' (commit 5dc7b12). Awaiting label volume." },
+                { axis: "Hallucination Detection", before: "4.8", after: "3.2 → 4.3 (2026-05-27)", fix: "✅ spaCy NER model now downloaded in API Dockerfile so PERSON/ORG/GPE/LOC entity grounding runs in prod (was regex-fallback)." },
                 { axis: "Sustainability Composite", before: "4.8", after: "3.3", fix: "Integrate ND-GAIN; widen confidence band on mixed-year inputs. Pending." },
                 { axis: "Claim Density Honesty", before: "4.6", after: "4.6 → 4.8 (2026-05-25)", fix: "✅ Claim-density factor + Limited Evidence badge — '90% credibility with 1 claim' no longer possible." },
                 { axis: "Deep Search Relevance", before: "—", after: "3.8 → 4.5 (2026-05-25)", fix: "✅ Min semantic similarity 0.55 + tightened overlap guardrail (0.25). Fixed Slovenian-noise-for-India-query trust bug." },
+                { axis: "Multi-claim Extraction Yield", before: "—", after: "2.2 claims/article → target 3-8 (2026-05-27)", fix: "✅ Prompt v1.1 explicitly targets 3-8 claims (was 'up to N'). Primary DeepSeek extractor now uses the registered prompt template — previously diverged from secondary Anthropic." },
+                { axis: "External Citation Credibility", before: "—", after: "n/a → 4.5 (2026-05-27)", fix: "✅ Perplexity deep-search citations now annotated with tier + 0-100 credibility score via source_credibility_tiers lookup." },
+                { axis: "Source Stamping at Ingest", before: "—", after: "0% → 100% (2026-05-27)", fix: "✅ New article ingest stamps articles.source_credibility_score via source_tier_service (was hardcoded 50 / NULL across the corpus)." },
+                { axis: "Bias Auditor", before: "—", after: "missing → 4.5 (2026-05-27)", fix: "✅ Chi-squared bias auditor live at /api/methodology/bias-audit — Cramér's V + critical-value gate at α=0.05 (commit 5dc7b12)." },
+                { axis: "Provenance Ledger", before: "—", after: "empty → backfilled (2026-05-27)", fix: "✅ Article-enrichment path now writes claim_provenance for every LLM call (commit 5dc7b12)." },
+                { axis: "Premium Gating", before: "—", after: "ungated → Standard+ (2026-05-27)", fix: "✅ /companies/{ticker}/analyze-report + /research/upload now require Standard+ subscription (document_ingestion premium feature)." },
               ].map((row) => (
                 <div key={row.axis} className="bg-white/80 rounded border border-gray-200 p-3">
                   <div className="font-medium text-gray-900">{row.axis}</div>
@@ -272,19 +278,23 @@ export default function MethodologyPage() {
           </div>
 
           <div className="text-sm text-gray-600 bg-white/80 rounded border border-gray-200 p-3">
-            <strong className="text-gray-900">Current composite (2026-05-26):</strong> ~4.2/5 after
-            this week's polish wave (3-axis source scoring wired into the
-            credibility math, claim-density factor, deep-search relevance
-            thresholds). Calibration math, NER-based entity grounding, and
-            ND-GAIN integration remain pending — see{" "}
+            <strong className="text-gray-900">Current composite (2026-05-27):</strong> ~3.55/5
+            measured by the End2End audit, up from 3.05 the day before. This
+            week's polish wave 3 closed the three biggest residual gaps:
+            multi-claim extraction yield (prompt v1.1 targets 3-8 instead of
+            "up to N"), spaCy NER entity grounding (now downloaded in the API
+            Dockerfile rather than silently degrading to regex), and external
+            citation credibility (Perplexity URLs annotated with tier).
+            Calibration label volume + ND-GAIN integration + full transition-
+            risk scoring remain the highest-leverage open items — see{" "}
             <a
-              href="https://github.com/eljaplacido/climatefactsai/blob/main/docs/improvementplans/TruthEngine-PersonaFit-Design-2026-05-25.md"
+              href="https://github.com/eljaplacido/climatefactsai/blob/main/docs/improvementplans/End2End-Audit-Benchmark-2026-05-27.md"
               target="_blank" rel="noreferrer"
               className="text-teal-700 hover:underline"
             >
-              TruthEngine Persona-Fit Design <ExternalLink className="inline w-3 h-3" />
+              End2End Audit Benchmark 2026-05-27 <ExternalLink className="inline w-3 h-3" />
             </a>{" "}
-            for the next sprint's full design (32 prioritised improvements).
+            for the file-level evidence per fix.
           </div>
 
           <p className="text-xs text-gray-500 italic border-t border-teal-200 pt-3">
@@ -302,13 +312,14 @@ export default function MethodologyPage() {
         >
           <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2.5">
             <Activity className="w-5 h-5 text-emerald-600" />
-            Recent platform updates (2026-05-25 / 26)
+            Recent platform updates (2026-05-25 / 26 / 27)
           </h2>
           <p className="text-sm text-gray-700">
-            Two days of intensive backlog work closed the Honest-Gap-Audit v2
-            entirely and added the foundation for the next sprint's trust
-            work. Every change below has file-level evidence in the public
-            git history and a corresponding pytest pin.
+            Three days of intensive work closed the Honest-Gap-Audit v2 plus
+            the End2End audit's Section I priority list — multi-claim yield,
+            entity grounding NER, external citation credibility, source
+            stamping at ingest, and premium gating on heavy LLM endpoints.
+            Every change has file-level evidence in git + corresponding tests.
           </p>
           <div className="grid sm:grid-cols-2 gap-3 text-sm">
             {[
@@ -318,6 +329,11 @@ export default function MethodologyPage() {
                   "Claim-density factor (Slice 4a) — 1/1 verified no longer = 8/8 verified",
                   "Limited Evidence badge below 3 claims",
                   "3-axis source scoring (editorial / factcheck / transparency) wired into credibility math (Polish wave 2)",
+                  "Multi-claim extraction prompt v1.1 — targets 3-8 claims explicitly (was 'up to N'; lifted from 2.2 avg)",
+                  "DeepSeek primary extractor now uses the registered prompt template (parity with Anthropic secondary)",
+                  "spaCy NER model downloaded in API Dockerfile — entity grounding runs at semantic level, not regex fallback",
+                  "Ingest stamps articles.source_credibility_score via tier service (was hardcoded 50 across whole corpus)",
+                  "External Perplexity citations annotated with tier + credibility score chip",
                 ],
               },
               {
@@ -358,11 +374,22 @@ export default function MethodologyPage() {
                 items: [
                   "Local GX10 LLM routing — flip CLILENS_ENRICHMENT_PROVIDER=local-gx10 once hardware serves",
                   "Auto-fallback to DeepSeek if GX10 unreachable",
-                  "Cloud Scheduler crons: nightly link-check + research-poll",
+                  "Cloud Scheduler crons: cn-link-check + cn-research-poll + cn-aoi-poll provisioned (mig 046 + 047)",
                   "Migration runner @notolerate directive — broken migrations now fail loud",
-                  "claim_provenance ledger now written from article enrichment path (highest-volume LLM workload, was empty in prod)",
+                  "claim_provenance ledger now written from article enrichment path (was empty in prod)",
                   "Chi-squared bias auditor live at /api/methodology/bias-audit — Cramér's V + critical-value gate at α=0.05",
                   "Calibration refit default min_labels bumped 5→50 — production-grade Platt fits only",
+                  "Admin endpoints (link-check, research-poll) accept SCHEDULER_SECRET as fallback header for Cloud Scheduler",
+                  "Premium gating on /companies/{ticker}/analyze-report + /research/upload — Standard+ document_ingestion feature",
+                ],
+              },
+              {
+                area: "Persona surfaces",
+                items: [
+                  "Dashboard — Persona Lens (6 personas) + Analytics & Exports tile",
+                  "Map country panel — 3-axis chips per source (editorial / factcheck / transparency)",
+                  "SourceProfileCard — numeric 0-100 scores per axis below qualitative labels",
+                  "Export tiles wired to logged-in saves (articles / companies / countries / searches)",
                 ],
               },
             ].map((card) => (

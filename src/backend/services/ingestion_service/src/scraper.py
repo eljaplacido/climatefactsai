@@ -20,6 +20,52 @@ from structlog.stdlib import BoundLogger
 from langdetect import detect
 
 
+# End2End audit fix (2026-05-27, Section II): legacy ingest path used to
+# hardcode 50 for every article. Inline lookup table keyed on netloc → tier
+# score so the kafka-based ingest writes a real per-tier score without
+# requiring DB access. The richer DB-backed path
+# (api/discovery_routes.py + app.domains.trust.source_tier_service) is the
+# canonical lookup used by the live Cloud Run ingest.
+_T1_DOMAINS = {
+    "nature.com", "science.org", "ipcc.ch", "noaa.gov", "nasa.gov",
+    "esa.int", "carbonbrief.org", "wri.org", "iea.org", "irena.org",
+    "unep.org", "unfccc.int", "worldbank.org", "imf.org", "oecd.org",
+    "reuters.com", "apnews.com", "bbc.co.uk", "bbc.com", "ft.com",
+    "economist.com", "theguardian.com", "nytimes.com", "washingtonpost.com",
+}
+_T2_DOMAINS = {
+    "climatechangenews.com", "grist.org", "insideclimatenews.com",
+    "scientificamerican.com", "newscientist.com", "phys.org",
+    "spiegel.de", "lemonde.fr", "elpais.com", "corriere.it",
+    "yle.fi", "svt.se", "nrk.no", "dr.dk",
+}
+_T3_DOMAINS = {
+    "medium.com", "substack.com", "blogspot.com", "wordpress.com",
+}
+
+
+def _resolve_credibility_score(netloc: str) -> int:
+    """Return 0-100 credibility score for an ingested source's netloc.
+
+    T1 (Reuters/Nature/IPCC) → 90, T2 → 75, T3 → 60, unknown → 50.
+    Strips leading 'www.' before matching. Strict suffix match so
+    'climate.bbc.co.uk' still resolves to T1 via bbc.co.uk.
+    """
+    host = (netloc or "").lower().lstrip(".")
+    if host.startswith("www."):
+        host = host[4:]
+    for d in _T1_DOMAINS:
+        if host == d or host.endswith("." + d):
+            return 90
+    for d in _T2_DOMAINS:
+        if host == d or host.endswith("." + d):
+            return 75
+    for d in _T3_DOMAINS:
+        if host == d or host.endswith("." + d):
+            return 60
+    return 50
+
+
 class NewsScraperPool:
     """
     Uutisscraper-pool
@@ -274,16 +320,24 @@ class NewsScraperPool:
             published_date = self._extract_published_date(soup)
             language = self._detect_language(extracted_text)
 
+            # End2End audit gap (2026-05-27) — was hardcoded 50 for every ingested
+            # article, which made the reliability scorer's 50% source weighting
+            # collapse to a neutral constant. Look up the real tier-band score so
+            # T1 sources (Reuters / Nature / IPCC) ingest at ~90 and unknown
+            # blogs at 50.
+            source_netloc = urlparse(article_url).netloc
+            credibility = _resolve_credibility_score(source_netloc)
+
             return {
                 "url": article_url,
                 "title": title_text,
                 "extracted_text": extracted_text,
                 "author": author,
                 "published_date": published_date.isoformat() if published_date else None,
-                "source_name": urlparse(article_url).netloc,
+                "source_name": source_netloc,
                 "language": language,
                 "tags": [],
-                "source_credibility_score": 50,  # Default
+                "source_credibility_score": credibility,
                 "processing_time_ms": 0
             }
             

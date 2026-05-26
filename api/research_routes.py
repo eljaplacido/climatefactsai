@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from shared.database import get_postgres
 from shared.logger import setup_logging
 from api.auth_routes import get_current_user, get_optional_user
+from api.rate_limiter import check_premium_feature
 
 logger = setup_logging("research")
 router = APIRouter(prefix="/api/research", tags=["Research Reports"])
@@ -84,7 +85,7 @@ async def analyze_research_report(
 async def upload_research_document(
     file: UploadFile = File(..., description="PDF, DOCX, TXT, MD, or HTML file"),
     doi: Optional[str] = Form(None, description="Optional DOI to attach"),
-    current_user: dict = Depends(get_optional_user),
+    current_user: dict = Depends(get_current_user),
 ):
     """Submit a research document by direct file upload.
 
@@ -100,7 +101,30 @@ async def upload_research_document(
 
     The extracted text is fed to the same ResearchReportService used
     by POST /research/analyze so the response shape is identical.
+
+    End2End audit gap (2026-05-27 §6.5): this endpoint was ungated — a
+    free-tier user could run a 25 MiB PDF through heavy LLM extraction
+    for free. Now requires Standard+ ("document_ingestion"). Free-tier
+    users can still paste raw text into /api/research/analyze.
     """
+    if not check_premium_feature(current_user, "document_ingestion"):
+        tier = current_user.get("subscription_tier", "freemium")
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "premium_feature_required",
+                "feature": "document_ingestion",
+                "current_tier": tier,
+                "required_tier": "standard",
+                "upgrade_url": "/dashboard/subscription",
+                "message": (
+                    "Research document upload requires a Standard subscription "
+                    "or higher. Free-tier users can paste raw text via POST "
+                    "/api/research/analyze with the `text` field."
+                ),
+            },
+        )
+
     # Size guard — read at most MAX_UPLOAD_BYTES + 1 to detect overage.
     content = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:

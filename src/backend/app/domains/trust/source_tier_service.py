@@ -128,6 +128,42 @@ def get_source_3axis_scores(
     return _db_lookup_axes(db, effective_domain, source_name)
 
 
+# End2End audit gap (2026-05-27, Section II priority): articles.source_credibility_score
+# was NULL or hardcoded 50 across the entire production corpus because no ingest
+# path called the tier service. This helper closes the loop: given a source name
+# or URL, return the 0-100 credibility score we'd stamp on a fresh article row.
+# Maps the curated 79-tier table → tier band defaults.
+_TIER_BASE_SCORE: Dict[str, int] = {
+    "T1": 90,
+    "T2": 75,
+    "T3": 60,
+    "unknown": 50,
+    "retracted": 20,
+}
+
+
+def get_source_credibility_score(
+    db,
+    source_name: str,
+    domain: Optional[str] = None,
+) -> int:
+    """Return the 0-100 source credibility score for a source name / URL.
+
+    Looks the domain up in source_credibility_tiers (mig 027 + 041). Falls
+    back to legacy LEGACY_KNOWN_VENUES (Nature/Science/Elsevier/...) → T1
+    on miss, then to neutral 50. Always returns an int in [0, 100].
+
+    Used by ingestion to stamp `articles.source_credibility_score` so the
+    reliability scorer has real data to blend (the 0.5×source weighting
+    was collapsing to 50 for every article before this helper).
+    """
+    bonus, tier = get_source_tier_prior(db, source_name, domain)
+    base = _TIER_BASE_SCORE.get((tier or "unknown").lower(), 50)
+    # The prior_bonus is additive (T1=30/T2=15/T3=5) but we already encode
+    # the band in base; clamp the final score into [0, 100].
+    return max(0, min(100, base))
+
+
 def get_source_tier_prior(
     db,
     source_name: str,

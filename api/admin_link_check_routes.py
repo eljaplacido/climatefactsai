@@ -38,15 +38,25 @@ USER_AGENT = (
 )
 
 
-def _auth(token: Optional[str]) -> None:
-    expected = os.environ.get("CORPORATE_SYNC_TOKEN")
-    if not expected:
+def _auth(token: Optional[str], scheduler_secret: Optional[str] = None) -> None:
+    """Accept either the CORPORATE_SYNC_TOKEN (operator curl) or the
+    SCHEDULER_SECRET that all Cloud Scheduler jobs send via
+    X-Scheduler-Secret. End2End audit (2026-05-27 §1.4) added cn-link-check
+    to provision-infra.sh; the scheduler-update step in cloudbuild.yaml
+    sets X-Scheduler-Secret on every job, so the cron only works if this
+    endpoint accepts that header too."""
+    corp_expected = os.environ.get("CORPORATE_SYNC_TOKEN")
+    sched_expected = os.environ.get("SCHEDULER_SECRET")
+    if not corp_expected and not sched_expected:
         raise HTTPException(
             status_code=503,
-            detail="Link-check endpoint disabled — set CORPORATE_SYNC_TOKEN to enable",
+            detail="Link-check endpoint disabled — set CORPORATE_SYNC_TOKEN or SCHEDULER_SECRET to enable",
         )
-    if token != expected:
-        raise HTTPException(status_code=401, detail="Invalid admin token")
+    if corp_expected and token == corp_expected:
+        return
+    if sched_expected and scheduler_secret == sched_expected:
+        return
+    raise HTTPException(status_code=401, detail="Invalid admin token")
 
 
 def _classify(status_code: int) -> str:
@@ -88,6 +98,7 @@ async def _probe(url: str, timeout: float = DEFAULT_TIMEOUT) -> str:
 async def run_link_check(
     batch_size: int = Query(default=100, ge=1, le=500),
     x_corporate_sync_token: Optional[str] = Header(default=None),
+    x_scheduler_secret: Optional[str] = Header(default=None),
 ):
     """Run a batched link-rot check.
 
@@ -96,7 +107,7 @@ async def run_link_check(
     status + timestamp. Concurrent probes (max 8 at a time) keep the
     job under a minute for a 200-article batch.
     """
-    _auth(x_corporate_sync_token)
+    _auth(x_corporate_sync_token, x_scheduler_secret)
     db = get_postgres()
 
     rows = db.execute_query(

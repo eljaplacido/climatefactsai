@@ -292,31 +292,28 @@ Example output format (return exactly this structure, no markdown, no explanatio
         return claims
 
     async def _extract_with_deepseek(self, text: str, max_claims: int) -> list[AtomicClaim]:
-        """Extract claims using DeepSeek API (OpenAI-compatible)."""
-        prompt = f"""Analyze the following climate news article and extract atomic, verifiable claims.
+        """Extract claims using DeepSeek API (OpenAI-compatible).
 
-ARTICLE TEXT:
-{text[:4000]}
+        Uses the centrally-registered `claim_extraction` prompt template
+        (prompts.PROMPTS["claim_extraction"]) so the multi-LLM verifier
+        measures cross-model agreement rather than prompt drift. Previous
+        revision hardcoded the prompt inline, which meant any update to the
+        registered template silently bypassed this primary extractor — the
+        DeepSeek path kept producing 1-2 claims while the Anthropic
+        secondary saw the v1.1 yield-target prompt and corroborated none of
+        them.
+        """
+        from .prompts import get_prompt
 
-INSTRUCTIONS:
-Extract factual claims that are:
-1. Self-contained (understandable without context)
-2. Singular (one assertion per claim)
-3. Specific (includes numbers, dates, entities)
-4. Verifiable (can be fact-checked)
-
-For each claim, provide:
-- claim_text: The exact claim
-- claim_type: "factual", "opinion", or "prediction"
-- claim_category: one of "scientific_causal", "statistical", "policy", "anecdotal", "predictive"
-- importance_score: 0.0-1.0 (how central to the article)
-- claim_context: Surrounding sentence for context
-
-Return ONLY a valid JSON array, no other text. Extract up to {max_claims} most important claims.
-"""
+        tmpl = get_prompt("claim_extraction")
+        prompt = tmpl.format(text=text[:4000], max_claims=max_claims)
         logger.info(f"Calling DeepSeek API with model: {self.deepseek_model}")
         response_text = _deepseek_chat(
-            self.deepseek_client, self.deepseek_model, prompt, max_tokens=2000, temperature=0.1
+            self.deepseek_client,
+            self.deepseek_model,
+            prompt,
+            max_tokens=tmpl.max_tokens or 2500,
+            temperature=tmpl.temperature if tmpl.temperature is not None else 0.1,
         )
 
         # Parse JSON from response

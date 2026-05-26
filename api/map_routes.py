@@ -1304,19 +1304,41 @@ async def get_country_detail(cc: str):
         pass
 
     # --- Source coverage -------------------------------------------------------
+    # End2End audit (2026-05-27 §7.4 + §8.2): top-source breakdown was a single
+    # "avg_credibility" number per source. Now JOIN source_credibility_tiers
+    # (mig 027 + 041) so the map country panel can render the 3-axis editorial
+    # / factcheck / transparency chip per source instead of a single rolled-up
+    # number. LEFT JOIN so un-tiered sources still appear (with NULL axes).
     source_coverage: List[Dict[str, Any]] = []
     try:
         src_rows = db.execute_query("""
-            SELECT source_name, COUNT(*) as cnt,
-                   AVG(reliability_score) as avg_rel
-            FROM articles WHERE country_code = :cc AND source_name IS NOT NULL AND is_synthetic = FALSE
-            GROUP BY source_name ORDER BY cnt DESC LIMIT 10
+            SELECT a.source_name,
+                   COUNT(*) as cnt,
+                   AVG(a.reliability_score) as avg_rel,
+                   MAX(sct.tier) as tier,
+                   MAX(sct.editorial_score) as editorial_score,
+                   MAX(sct.factcheck_score) as factcheck_score,
+                   MAX(sct.transparency_score) as transparency_score
+            FROM articles a
+            LEFT JOIN source_credibility_tiers sct
+              ON sct.domain = LOWER(a.source_name)
+              OR sct.source_name = a.source_name
+            WHERE a.country_code = :cc
+              AND a.source_name IS NOT NULL
+              AND a.is_synthetic = FALSE
+            GROUP BY a.source_name
+            ORDER BY cnt DESC
+            LIMIT 10
         """, {"cc": cc})
         source_coverage = [
             {
                 "source_name": r["source_name"],
                 "article_count": r["cnt"],
                 "avg_credibility": round(float(r["avg_rel"]), 1) if r.get("avg_rel") else None,
+                "tier": r.get("tier"),
+                "editorial_score": int(r["editorial_score"]) if r.get("editorial_score") is not None else None,
+                "factcheck_score": int(r["factcheck_score"]) if r.get("factcheck_score") is not None else None,
+                "transparency_score": int(r["transparency_score"]) if r.get("transparency_score") is not None else None,
             }
             for r in (src_rows or [])
         ]

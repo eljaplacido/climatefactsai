@@ -228,6 +228,15 @@ Extract factual claims that are:
 3. Specific (includes numbers, dates, entities)
 4. Verifiable (can be fact-checked)
 
+YIELD TARGET: extract **AT LEAST 3 and ideally 5-8** distinct atomic claims. A
+single sentence can yield multiple claims when it asserts multiple facts; split
+those into separate atomic entries. If the article is genuinely short (<150
+words) and yields fewer than 3 truly verifiable claims, return what you can — but
+exhaust the article first. Do NOT return only 1-2 claims because the article
+"feels short"; re-read it and look for: numbers, dates, named entities,
+attribution statements, scope qualifiers, comparative claims, and any sentence
+containing units (%, °C, ppm, GW, Mt, TWh, GtCO2e).
+
 For each claim, provide:
 - claim_text: The exact claim
 - claim_type: "factual", "opinion", or "prediction"
@@ -356,10 +365,10 @@ PROMPTS: Dict[str, PromptTemplate] = {
     ),
     "claim_extraction": PromptTemplate(
         name="claim_extraction",
-        version="v1.0",
+        version="v1.1",
         template=_CLAIM_EXTRACTION_TEMPLATE,
         system=None,
-        max_tokens=2000,
+        max_tokens=2500,
         temperature=0.1,
         description=(
             "Extracts atomic, verifiable claims from a climate news article "
@@ -369,10 +378,13 @@ PROMPTS: Dict[str, PromptTemplate] = {
             "verification (Phase 5) is measuring AGREEMENT, not PROMPT DRIFT."
         ),
         rationale=(
-            "v1.0 extracted from services.py:_extract_with_deepseek (2026-05-16) "
-            "during Phase 5 wave 2. The same template feeds both LLMs so when "
-            "the multi-LLM verifier compares outputs, any divergence is "
-            "attributable to model behaviour, not prompt phrasing differences."
+            "v1.1 (2026-05-27, End2End audit Section I priority #1) — explicit "
+            "yield target of 3-8 claims to fix the 1-2-claims-per-article rut. "
+            "Live audit measured average 2.24 claims/article and 0% of articles "
+            "reaching 6+ claims, which means the density factor in the "
+            "reliability scorer never reached full credit. Bumping max_tokens "
+            "to 2500 to give the model room for fuller extraction. "
+            "v1.0 (Phase 5 wave 2, 2026-05-16) — original extraction prompt."
         ),
     ),
     "claim_extraction_auditor_persona": PromptTemplate(

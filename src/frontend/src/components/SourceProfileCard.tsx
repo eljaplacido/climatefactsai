@@ -87,15 +87,21 @@ function SourceProfileCard({ profile, compact = false }: SourceProfileCardProps)
 
       {/* Body */}
       <div className="p-4 space-y-3">
-        {/* Trust factors */}
+        {/* Trust factors with optional 3-axis numeric scores (mig 041). */}
         <div className="grid grid-cols-3 gap-3">
           <div>
             <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">Editorial Standards</p>
             <p className={clsx("text-sm font-medium", editorial.color)}>{editorial.label}</p>
+            {typeof profile.editorial_score === "number" && (
+              <p className="text-[10px] text-gray-500 mt-0.5 font-mono">{profile.editorial_score}/100</p>
+            )}
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">Fact-Check Record</p>
             <p className={clsx("text-sm font-medium", factcheck.color)}>{factcheck.label}</p>
+            {typeof profile.factcheck_score === "number" && (
+              <p className="text-[10px] text-gray-500 mt-0.5 font-mono">{profile.factcheck_score}/100</p>
+            )}
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">Transparency</p>
@@ -107,6 +113,9 @@ function SourceProfileCard({ profile, compact = false }: SourceProfileCardProps)
               {profile.transparency_level === "unknown" ? "Not assessed" :
                profile.transparency_level.charAt(0).toUpperCase() + profile.transparency_level.slice(1)}
             </p>
+            {typeof profile.transparency_score === "number" && (
+              <p className="text-[10px] text-gray-500 mt-0.5 font-mono">{profile.transparency_score}/100</p>
+            )}
           </div>
         </div>
 

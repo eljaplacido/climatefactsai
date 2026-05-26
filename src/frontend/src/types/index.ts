@@ -235,6 +235,14 @@ export interface SourceProfile {
   // not yet tier-classified. Frontend renders these on SourceProfileCard.
   tier?: string | null;
   tier_prior_bonus?: number | null;
+  // Polish wave 3 (2026-05-27, End2End audit §7.1 + §8.2): 3-axis numeric
+  // scores from mig 041 (editorial / factcheck / transparency, 0-100).
+  // Backend reliability scorer blends them 60/40 with the legacy single
+  // score; surfacing the raw axes on the card lets journalists + ESG
+  // buyers see the multi-dimensional breakdown they need.
+  editorial_score?: number | null;
+  factcheck_score?: number | null;
+  transparency_score?: number | null;
 }
 
 // --- URL Analysis ---

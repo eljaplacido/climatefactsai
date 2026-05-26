@@ -15,11 +15,12 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from api.rate_limiter import TIER_LIMITS, UsageTracker
+from api.auth_routes import get_current_user
+from api.rate_limiter import TIER_LIMITS, UsageTracker, check_premium_feature
 from shared.database import get_postgres
 from shared.logger import setup_logging
 
@@ -184,7 +185,11 @@ async def analyze_company_claim(ticker: str, request: AnalyzeClaimRequest):
 
 
 @router.post("/{ticker}/analyze-report", response_model=AnalyzeReportResponse)
-async def analyze_company_report(ticker: str, request: AnalyzeReportRequest):
+async def analyze_company_report(
+    ticker: str,
+    request: AnalyzeReportRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """End-to-end analysis of a corporate sustainability report.
 
     Pipeline:
@@ -200,6 +205,12 @@ async def analyze_company_report(ticker: str, request: AnalyzeReportRequest):
 
     Exactly one of report_url or report_text must be provided.
     Closes audit item 12 (corporate sustainability report analysis).
+
+    End2End audit gap (2026-05-27 §6.5): this endpoint was ungated — a
+    free-tier user could run a 100-page sustainability report through
+    DeepSeek extraction + claim verification at no cost. Now requires
+    Standard+ ("document_ingestion" premium feature) to match exports
+    and weather_context tier policy.
     """
     from app.domains.content.corporate.repository import (
         get_company,
@@ -207,6 +218,24 @@ async def analyze_company_report(ticker: str, request: AnalyzeReportRequest):
         upsert_company_claim,
     )
     from app.domains.content.corporate.schemas import CompanyClaim
+
+    if not check_premium_feature(current_user, "document_ingestion"):
+        tier = current_user.get("subscription_tier", "freemium")
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "premium_feature_required",
+                "feature": "document_ingestion",
+                "current_tier": tier,
+                "required_tier": "standard",
+                "upgrade_url": "/dashboard/subscription",
+                "message": (
+                    "Corporate sustainability report analysis requires a "
+                    "Standard subscription or higher. Upgrade to unlock "
+                    "/api/companies/{ticker}/analyze-report."
+                ),
+            },
+        )
 
     if (request.report_url is None) == (request.report_text is None):
         raise HTTPException(

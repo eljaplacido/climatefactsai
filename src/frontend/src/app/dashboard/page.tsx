@@ -15,6 +15,13 @@ import {
   ArrowRight,
   Loader2,
   TrendingUp,
+  Briefcase,
+  GraduationCap,
+  Newspaper,
+  Building2,
+  ShieldCheck,
+  Download,
+  ScrollText,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
@@ -43,6 +50,70 @@ interface ReadingHistoryItem {
   credibility?: string;
 }
 
+interface SavedItemCounts {
+  article: number;
+  company: number;
+  country: number;
+  analysis: number;
+  claim: number;
+  search: number;
+  deep_search: number;
+  feed_setting: number;
+}
+
+// Polish wave 3 (2026-05-27): personas + export wiring for logged-in users.
+// Each lens points to the surface that's the entry point for that workflow.
+const PERSONA_LENSES = [
+  {
+    id: "journalist",
+    label: "Journalist",
+    icon: Newspaper,
+    href: "/search?credibility_min=70",
+    color: "bg-blue-50 text-blue-700 border-blue-200",
+    blurb: "Verified-source feed + provenance ledger walks",
+  },
+  {
+    id: "esg",
+    label: "ESG Officer",
+    icon: Briefcase,
+    href: "/companies?view=business",
+    color: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    blurb: "Corporate disclosures + SBTi + ECGT compliance chips",
+  },
+  {
+    id: "researcher",
+    label: "Researcher",
+    icon: GraduationCap,
+    href: "/research",
+    color: "bg-purple-50 text-purple-700 border-purple-200",
+    blurb: "PDF upload + CrossRef subscriptions + methodology",
+  },
+  {
+    id: "policymaker",
+    label: "Policymaker",
+    icon: ShieldCheck,
+    href: "/map",
+    color: "bg-amber-50 text-amber-700 border-amber-200",
+    blurb: "Country passport + scenario explorer + NDC indicators",
+  },
+  {
+    id: "analyst",
+    label: "Financial Analyst",
+    icon: TrendingUp,
+    href: "/companies",
+    color: "bg-teal-50 text-teal-700 border-teal-200",
+    blurb: "SBTi-validated portfolio + transition risk",
+  },
+  {
+    id: "business",
+    label: "Business Decision-maker",
+    icon: Building2,
+    href: "/country/DE?view=business",
+    color: "bg-indigo-50 text-indigo-700 border-indigo-200",
+    blurb: "Board-ready risk framing + jurisdiction snapshots",
+  },
+];
+
 const TIER_COLORS: Record<string, string> = {
   freemium: "bg-gray-100 text-gray-700",
   basic: "bg-blue-100 text-blue-700",
@@ -68,6 +139,7 @@ export default function DashboardPage() {
   const { user, token } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [history, setHistory] = useState<ReadingHistoryItem[]>([]);
+  const [savedCounts, setSavedCounts] = useState<SavedItemCounts | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -77,9 +149,12 @@ export default function DashboardPage() {
       try {
         const headers = { Authorization: `Bearer ${token}` };
 
-        const [statsResp, historyResp] = await Promise.all([
+        // Polish wave 3 (2026-05-27): pull saved-items breakdown so the
+        // dashboard can show how many items the user has parked per type.
+        const [statsResp, historyResp, savedResp] = await Promise.all([
           fetch(`${API_URL}/api/user/dashboard-stats`, { headers }),
           fetch(`${API_URL}/api/user/reading-history?limit=5`, { headers }),
+          fetch(`${API_URL}/api/user/saved?limit=200`, { headers }),
         ]);
 
         if (statsResp.ok) {
@@ -88,6 +163,19 @@ export default function DashboardPage() {
         if (historyResp.ok) {
           const data = await historyResp.json();
           setHistory(data.items || data || []);
+        }
+        if (savedResp.ok) {
+          const sd = await savedResp.json();
+          const items: Array<{ item_type: string }> = sd?.items || sd || [];
+          const counts: SavedItemCounts = {
+            article: 0, company: 0, country: 0, analysis: 0,
+            claim: 0, search: 0, deep_search: 0, feed_setting: 0,
+          };
+          for (const it of items) {
+            const k = (it.item_type || "") as keyof SavedItemCounts;
+            if (k in counts) counts[k] = (counts[k] || 0) + 1;
+          }
+          setSavedCounts(counts);
         }
       } catch {
         // Non-critical: dashboard still renders
@@ -303,7 +391,170 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Polish wave 3 (2026-05-27) — persona-tied analytics + exports.
+          Closes End2End audit §5/§9: every persona has a real entry point,
+          and saved-item-type counts surface what the user has actively
+          collected per workflow. Premium-gated exports link directly to
+          the upgrade page rather than failing inline. */}
+      <PersonaLensSection
+        tier={tier}
+        savedCounts={savedCounts}
+        loading={loading}
+      />
+
+      <ExportsAndAnalyticsSection tier={tier} savedCounts={savedCounts} />
     </div>
+  );
+}
+
+function PersonaLensSection({
+  tier,
+  savedCounts,
+  loading,
+}: {
+  tier: string;
+  savedCounts: SavedItemCounts | null;
+  loading: boolean;
+}) {
+  return (
+    <section className="bg-white rounded-xl border border-gray-200 p-5">
+      <header className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="font-semibold text-gray-900">Persona Lens</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Jump into the workflow that matches your role. Each lens preloads
+            credibility + view filters appropriate to that audience.
+          </p>
+        </div>
+        {!loading && savedCounts && (
+          <div className="text-xs text-gray-500 hidden sm:flex gap-2">
+            <span>{savedCounts.article} saved articles</span>
+            <span>·</span>
+            <span>{savedCounts.company} companies</span>
+            <span>·</span>
+            <span>{savedCounts.country} countries</span>
+          </div>
+        )}
+      </header>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {PERSONA_LENSES.map((p) => {
+          const Icon = p.icon;
+          return (
+            <Link
+              key={p.id}
+              href={p.href}
+              className={`group block rounded-lg border p-3 transition-colors hover:shadow-sm ${p.color}`}
+            >
+              <div className="flex items-start gap-2.5">
+                <Icon className="h-5 w-5 mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <div className="font-semibold text-sm">{p.label}</div>
+                  <div className="text-xs opacity-90 mt-0.5">{p.blurb}</div>
+                </div>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+      {tier === "freemium" && (
+        <p className="text-xs text-gray-500 mt-3 italic">
+          Some persona surfaces (corporate report analysis, deep search,
+          research upload) require a paid tier — see{" "}
+          <Link href="/dashboard/subscription" className="text-teal-700 hover:underline">
+            Subscription
+          </Link>{" "}
+          to upgrade.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function ExportsAndAnalyticsSection({
+  tier,
+  savedCounts,
+}: {
+  tier: string;
+  savedCounts: SavedItemCounts | null;
+}) {
+  const isPaid = ["standard", "basic", "professional", "enterprise"].includes(tier);
+  return (
+    <section className="bg-white rounded-xl border border-gray-200 p-5">
+      <header className="mb-4">
+        <h2 className="font-semibold text-gray-900">Analytics & Exports</h2>
+        <p className="text-xs text-gray-500 mt-0.5">
+          Pull your saved items as a report or feed the API directly. Paid
+          tiers required for the heavy exports.
+        </p>
+      </header>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <ExportTile
+          label="Saved articles → CSV"
+          icon={Download}
+          count={savedCounts?.article ?? 0}
+          href="/saves?export=csv&type=article"
+          enabled={isPaid}
+        />
+        <ExportTile
+          label="Saved companies → CSV"
+          icon={Building2}
+          count={savedCounts?.company ?? 0}
+          href="/saves?export=csv&type=company"
+          enabled={isPaid}
+        />
+        <ExportTile
+          label="Country comparison brief"
+          icon={ScrollText}
+          count={savedCounts?.country ?? 0}
+          href="/saves?export=pdf&type=country"
+          enabled={isPaid}
+        />
+        <ExportTile
+          label="My saved searches"
+          icon={Search}
+          count={(savedCounts?.search ?? 0) + (savedCounts?.deep_search ?? 0)}
+          href="/saves?type=search"
+          enabled={true}
+        />
+      </div>
+      {!isPaid && (
+        <p className="text-xs text-gray-500 mt-3 italic">
+          Article / company / country exports require a Standard subscription
+          or higher. Saved searches are available to all tiers.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function ExportTile({
+  label, icon: Icon, count, href, enabled,
+}: {
+  label: string;
+  icon: any;
+  count: number;
+  href: string;
+  enabled: boolean;
+}) {
+  return (
+    <Link
+      href={enabled ? href : "/dashboard/subscription"}
+      className={`flex flex-col gap-1 p-3 rounded-lg border transition-colors ${
+        enabled
+          ? "border-gray-200 hover:bg-gray-50"
+          : "border-gray-100 bg-gray-50 opacity-70 hover:opacity-100"
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <Icon className="h-4 w-4 text-gray-500" />
+        <span className="text-sm font-semibold text-gray-900">{count}</span>
+      </div>
+      <span className="text-xs text-gray-700 leading-snug">{label}</span>
+      {!enabled && (
+        <span className="text-[10px] text-amber-700 mt-0.5">Standard+</span>
+      )}
+    </Link>
   );
 }
 

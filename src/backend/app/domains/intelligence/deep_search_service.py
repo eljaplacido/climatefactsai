@@ -100,13 +100,39 @@ class DeepSearchService:
                 "excerpt": (art.get("excerpt") or "")[:200],
             })
 
-        # Add Perplexity citations
+        # Add Perplexity citations — End2End audit (2026-05-27) flagged
+        # external citations as un-tiered: deep-search showed Perplexity URLs
+        # with no visible credibility chip, so a CDN-hosted blog ranked the
+        # same as a peer-reviewed journal. Lookup each external URL's
+        # domain in source_credibility_tiers and surface tier + score.
         if perplexity_results.get("citations"):
+            try:
+                from app.domains.trust.source_tier_service import (
+                    get_source_credibility_score,
+                    get_source_tier_prior,
+                )
+            except Exception:  # pragma: no cover
+                get_source_credibility_score = None  # type: ignore[assignment]
+                get_source_tier_prior = None  # type: ignore[assignment]
+
             for url in perplexity_results["citations"]:
+                ext_domain = _domain_from_url(url)
+                tier = None
+                cred_score = None
+                if get_source_tier_prior is not None and get_source_credibility_score is not None:
+                    try:
+                        _bonus, tier_label = get_source_tier_prior(self.db, ext_domain, ext_domain)
+                        tier = tier_label
+                        cred_score = get_source_credibility_score(self.db, ext_domain, ext_domain)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug(f"external citation tier lookup failed for {ext_domain}: {exc}")
+
                 citations.append({
                     "type": "external_web",
                     "source_url": url,
-                    "source_name": _domain_from_url(url),
+                    "source_name": ext_domain,
+                    "credibility_tier": tier,        # "T1" | "T2" | "T3" | "unknown" | None
+                    "credibility_score": cred_score, # 0-100 or None
                 })
 
         internal_count = len(internal_results or [])

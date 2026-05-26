@@ -241,6 +241,9 @@ steps:
           "cn-retry:/api/scheduler/processing/retry-failed"
           "cn-feeds:/api/scheduler/feeds/update"
           "cn-translate:/api/scheduler/translation/batch"
+          "cn-link-check:/api/admin/link-check"
+          "cn-research-poll:/api/admin/research-poll"
+          "cn-aoi-poll:/api/scheduler/aoi-poll"
         )
         for entry in "${JOBS[@]}"; do
           name="${entry%%:*}"

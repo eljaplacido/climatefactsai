@@ -271,6 +271,12 @@ ensure_scheduler_job "cn-retry"         "/api/scheduler/processing/retry-failed"
 ensure_scheduler_job "cn-feeds"         "/api/scheduler/feeds/update"        "0 */8 * * *"  "Update feeds every 8 hours"
 ensure_scheduler_job "cn-translate"     "/api/scheduler/translation/batch"   "0 */12 * * *" "Batch translate every 12 hours"
 
+# End2End audit gap (2026-05-27 §1.4): 3 production-relevant admin
+# endpoints had NO scheduler trigger so they never fired in prod.
+ensure_scheduler_job "cn-link-check"    "/api/admin/link-check"              "0 2 * * *"    "Link-rot detection daily at 02:00 UTC (mig 046 source_url_status)"
+ensure_scheduler_job "cn-research-poll" "/api/admin/research-poll"           "30 3 * * *"   "CrossRef research feed polling daily at 03:30 UTC (mig 047 research_feed_items)"
+ensure_scheduler_job "cn-aoi-poll"      "/api/scheduler/aoi-poll"            "0 5 * * *"    "Area-of-interest poll daily at 05:00 UTC"
+
 # ---------------------------------------------------------------------------
 # 8. Grant Cloud Scheduler permission to invoke Cloud Run
 # ---------------------------------------------------------------------------

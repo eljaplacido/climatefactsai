@@ -253,12 +253,34 @@ async def discover_news(request_body: DiscoverNewsRequest, request: Request) -> 
         RETURNING article_id
     """
 
+    # End2End audit gap (2026-05-27, Section II): stamp the real tier-band
+    # credibility score per article instead of the constant 50 that made the
+    # reliability scorer's 50% source weighting collapse to neutral. Lazy
+    # import to keep the route module light when the helper isn't available.
+    try:
+        from app.domains.trust.source_tier_service import get_source_credibility_score
+    except Exception:  # pragma: no cover - defensive
+        get_source_credibility_score = None  # type: ignore[assignment]
+
     for article in articles:
         try:
             published_date = None
             if article.get("published_date"):
                 # Allow YYYY-MM-DD strings; DB will coerce or reject.
                 published_date = article["published_date"]
+
+            source_name = article["source_name"]
+            credibility_score = 50
+            if get_source_credibility_score is not None:
+                try:
+                    credibility_score = get_source_credibility_score(
+                        db, source_name, article.get("url"),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug(
+                        "tier_credibility_lookup_failed",
+                        source=source_name, error=str(exc),
+                    )
 
             result = db.execute_query(
                 insert_sql,
@@ -267,13 +289,13 @@ async def discover_news(request_body: DiscoverNewsRequest, request: Request) -> 
                     "title": article["title"],
                     "author": None,
                     "published_date": published_date,
-                    "source_name": article["source_name"],
+                    "source_name": source_name,
                     "extracted_text": article["extracted_text"],
                     "excerpt": article.get("excerpt"),
                     "language_code": article.get("language_code") or "en",
                     "country_code": country_code,
                     "task_id": task_id,
-                    "source_credibility_score": 50,
+                    "source_credibility_score": credibility_score,
                     "tags": _to_pg_array(article.get("tags") or []),
                 },
             )

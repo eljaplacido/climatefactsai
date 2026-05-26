@@ -90,15 +90,26 @@ class FeedItemResponse(BaseModel):
     discovered_at: str
 
 
-def _auth_admin(token: Optional[str]) -> None:
-    expected = os.environ.get("CORPORATE_SYNC_TOKEN")
-    if not expected:
+def _auth_admin(
+    token: Optional[str], scheduler_secret: Optional[str] = None
+) -> None:
+    """Accept either the CORPORATE_SYNC_TOKEN (operator curl) or the
+    SCHEDULER_SECRET that all Cloud Scheduler jobs send via
+    X-Scheduler-Secret. End2End audit (2026-05-27 §1.4) added
+    cn-research-poll to provision-infra.sh; the scheduler-update step
+    sets X-Scheduler-Secret on every job."""
+    corp_expected = os.environ.get("CORPORATE_SYNC_TOKEN")
+    sched_expected = os.environ.get("SCHEDULER_SECRET")
+    if not corp_expected and not sched_expected:
         raise HTTPException(
             status_code=503,
-            detail="Research-poll admin endpoint disabled — set CORPORATE_SYNC_TOKEN",
+            detail="Research-poll admin endpoint disabled — set CORPORATE_SYNC_TOKEN or SCHEDULER_SECRET",
         )
-    if token != expected:
-        raise HTTPException(status_code=401, detail="Invalid admin token")
+    if corp_expected and token == corp_expected:
+        return
+    if sched_expected and scheduler_secret == sched_expected:
+        return
+    raise HTTPException(status_code=401, detail="Invalid admin token")
 
 
 def _row_to_subscription(r: dict) -> SubscriptionResponse:
@@ -335,6 +346,7 @@ async def _poll_crossref(query: str, rows: int = DEFAULT_POLL_ROWS) -> List[dict
 async def run_research_poll(
     batch_size: int = Query(default=20, ge=1, le=100),
     x_corporate_sync_token: Optional[str] = Header(default=None),
+    x_scheduler_secret: Optional[str] = Header(default=None),
 ):
     """Run a batched CrossRef poll across the oldest-polled active subscriptions.
 
@@ -343,7 +355,7 @@ async def run_research_poll(
     CrossRef with (topic + keywords joined), inserts up to
     DEFAULT_POLL_ROWS new feed items via ON CONFLICT DO NOTHING.
     """
-    _auth_admin(x_corporate_sync_token)
+    _auth_admin(x_corporate_sync_token, x_scheduler_secret)
     db = get_postgres()
 
     subs = db.execute_query(
