@@ -124,6 +124,22 @@ class ArticleEnrichmentService:
             content_category=content_category,
         )
 
+        # Golden Example fix follow-up (2026-05-27): the 2026-05-26 cloud
+        # backfill landed every other enrichment column correctly but
+        # executive_brief came back empty across all 10 curated articles.
+        # Either the brief LLM call returned an empty string (so
+        # `_call_llm`'s `if text:` guard fell through every provider) or
+        # the column was a legacy empty-string default that COALESCE
+        # preserved. Either way the FE shows nothing. Fall back to the
+        # first ~150 words of the enriched_excerpt so the brief slot is
+        # always populated when the long excerpt landed.
+        if not executive_brief and enriched_excerpt:
+            words = enriched_excerpt.split()
+            fallback = " ".join(words[:150])
+            if len(words) > 150:
+                fallback = fallback.rstrip(".,;:") + "…"
+            executive_brief = fallback
+
         finished_at = datetime.utcnow()
         metadata["finished_at"] = finished_at.isoformat()
         metadata["duration_seconds"] = round(
@@ -1104,7 +1120,7 @@ Write 2-3 sentences only, in English. Be specific and data-driven."""
                 """UPDATE articles
                    SET enriched_excerpt = :excerpt,
                        climate_context_summary = :climate,
-                       executive_brief = COALESCE(:brief, executive_brief),
+                       executive_brief = COALESCE(NULLIF(:brief, ''), NULLIF(executive_brief, ''), :brief),
                        enrichment_metadata = :meta,
                        enriched_at = NOW(),
                        updated_at = NOW()
