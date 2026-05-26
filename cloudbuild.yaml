@@ -123,10 +123,19 @@ steps:
       - "--set-secrets=NASA_API_KEY=nasa-api-key:latest"
       # Phase 8 (2026-05-24) — gates POST /api/companies/admin/sync/{source}
       - "--set-secrets=CORPORATE_SYNC_TOKEN=corporate-sync-token:latest"
+      # 2026-05-27 — on-prem GX10 (DGX Spark) LLM endpoint reached via Cloudflare
+      # Tunnel. Persisted here so Cloud Build redeploys don't wipe the
+      # secret mounts that `wire-gx10.sh` initially attached. See
+      # docs/improvementplans/KG-Robustness-Audit-2026-05-27.md +
+      # docs/reports/asusgx10inferencestrategy.md for the rationale.
+      - "--set-secrets=CLILENS_LOCAL_GX10_BASE_URL=clilens-local-gx10-base-url:latest"
+      - "--set-secrets=CLILENS_LOCAL_GX10_API_KEY=clilens-local-gx10-api-key:latest"
+      - "--set-secrets=CLILENS_LOCAL_GX10_MODEL=clilens-local-gx10-model:latest"
       - "--set-env-vars=ENVIRONMENT=production"
       - "--set-env-vars=LOG_LEVEL=INFO"
       - "--set-env-vars=API_HOST=0.0.0.0"
       - "--set-env-vars=API_PORT=8000"
+      - "--set-env-vars=CLILENS_ENRICHMENT_PROVIDER=local-gx10"
       - "--memory=1Gi"
       - "--cpu=1"
       - "--concurrency=80"
