@@ -198,31 +198,59 @@ async def get_entity_graph(article_id: str, user: dict = Depends(get_optional_us
 
     Returns entities extracted from the article, their relationships,
     and articles connected via shared entities.
+
+    End2End audit + KG-Robustness-Audit-2026-05-27.md: the canonical
+    `infrastructure/database/migrations/versions/` tree does not include
+    the knowledge_graph schema (it lives only in the legacy `migrations/`
+    path), so on production the JOINs below raise `relation
+    "article_entities" does not exist`. Soft-fail to a 200 + empty graph
+    so the frontend renders the "KG not populated for this article yet"
+    empty state instead of a hard 500. The honest fix is mig 049 +
+    spaCy NER worker — see the KG audit doc for the 3-phase sequencing.
     """
     from shared.database import get_postgres
 
     db = get_postgres()
 
-    # Get entities for this article
-    entities = db.execute_query(
-        """
-        SELECT
-            e.entity_id,
-            e.entity_name,
-            e.entity_type,
-            e.description,
-            e.article_count,
-            ae.mention_count,
-            ae.salience
-        FROM article_entities ae
-        JOIN entities e ON e.entity_id = ae.entity_id
-        WHERE ae.article_id = :aid
-        ORDER BY ae.salience DESC
-        """,
-        {"aid": article_id},
-    )
+    def _empty_graph(reason: str) -> dict:
+        return {
+            "article_id": article_id,
+            "entities": [],
+            "relationships": [],
+            "connected_articles": [],
+            "status": "kg_not_populated",
+            "reason": reason,
+            "next_steps_doc": (
+                "docs/improvementplans/KG-Robustness-Audit-2026-05-27.md"
+            ),
+        }
+
+    # Get entities for this article (soft-fail if the schema isn't deployed).
+    try:
+        entities = db.execute_query(
+            """
+            SELECT
+                e.entity_id,
+                e.entity_name,
+                e.entity_type,
+                e.description,
+                e.article_count,
+                ae.mention_count,
+                ae.salience
+            FROM article_entities ae
+            JOIN entities e ON e.entity_id = ae.entity_id
+            WHERE ae.article_id = :aid
+            ORDER BY ae.salience DESC
+            """,
+            {"aid": article_id},
+        )
+    except Exception as exc:
+        logger.debug(f"entity-graph schema missing for {article_id}: {exc}")
+        return _empty_graph(
+            "knowledge_graph schema not deployed (mig 013 legacy path only)"
+        )
     if not entities:
-        raise HTTPException(status_code=404, detail="No entities found for this article")
+        return _empty_graph("no entities extracted for this article yet")
 
     entity_ids = [str(e["entity_id"]) for e in entities]
 

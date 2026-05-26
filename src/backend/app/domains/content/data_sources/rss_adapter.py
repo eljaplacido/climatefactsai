@@ -22,6 +22,13 @@ from bs4 import BeautifulSoup
 
 from app.core.logging import get_logger
 
+# End2End audit follow-up (2026-05-27, Task D): the RSS-summary fallback
+# below used to write raw HTML markup (img / p / a tags + WordPress
+# "The post X appeared first on Y" footers) directly into
+# articles.extracted_text, which then surfaced verbatim in the Full
+# Article panel. Route fallback content through the shared cleaner.
+from shared.html_cleaner import clean_article_text
+
 logger = get_logger(__name__)
 
 # Full-text fetch settings (env-overridable for ops tuning)
@@ -224,7 +231,14 @@ def _parse_feed(url: str, max_items: int = 20) -> List[Dict[str, Any]]:
         bodies_failed = 0
         for entry in feed.entries[:max_items]:
             entry_url = entry.get("link", "").strip()
-            rss_summary = entry.get("summary", "")[:500].strip()
+            # End2End audit (2026-05-27, Task D) — strip HTML from the
+            # RSS summary before storing. Publishers like Premium Times
+            # Nigeria embed `<img>` + `<p>` + "The post ... appeared first
+            # on ..." footer markup directly in the feed; the cleaner
+            # normalises this to readable plain text so the Full Article
+            # panel doesn't render raw tags.
+            rss_summary_raw = entry.get("summary", "")[:2000]
+            rss_summary = clean_article_text(rss_summary_raw)[:500]
 
             # Fetch the article body from the canonical URL. Fail-soft to
             # the RSS summary so a publisher that blocks scrapers still
@@ -233,6 +247,7 @@ def _parse_feed(url: str, max_items: int = 20) -> List[Dict[str, Any]]:
             if RSS_FETCH_FULL_TEXT and entry_url:
                 body_text = _fetch_and_extract_article_body(entry_url)
                 if body_text:
+                    body_text = clean_article_text(body_text)
                     bodies_fetched += 1
                 else:
                     bodies_failed += 1
@@ -243,8 +258,9 @@ def _parse_feed(url: str, max_items: int = 20) -> List[Dict[str, Any]]:
                 "published_date": entry.get("published", entry.get("updated", "")),
                 "summary": rss_summary,
                 # `extracted_text` is what ingestion writes to articles.extracted_text.
-                # Prefer the fetched body; fall back to the RSS summary so we
-                # never write an empty extraction for non-extractable pages.
+                # Prefer the fetched body; fall back to the cleaned RSS
+                # summary so we never write an empty extraction for
+                # non-extractable pages — but always go through the cleaner.
                 "extracted_text": body_text or rss_summary,
                 "extraction_method": "html_body" if body_text else "rss_summary",
                 "author": entry.get("author", ""),

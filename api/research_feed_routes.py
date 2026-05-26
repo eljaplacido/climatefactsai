@@ -124,6 +124,136 @@ def _row_to_subscription(r: dict) -> SubscriptionResponse:
     )
 
 
+# ---------------------------------------------------------------------------
+# Default research topics — curated catalogue + bulk-subscribe (2026-05-27)
+# ---------------------------------------------------------------------------
+
+class DefaultTopicResponse(BaseModel):
+    topic_id: str
+    slug: str
+    label: str
+    description: Optional[str] = None
+    keywords: List[str] = []
+    category: Optional[str] = None
+    sort_order: int = 100
+
+
+@router.get("/default-topics", response_model=List[DefaultTopicResponse])
+async def list_default_topics():
+    """Public catalogue of curated climate-research topics (mig 048).
+
+    Open endpoint — anyone can browse the catalogue. Users subscribe to a
+    subset via POST /subscriptions or in bulk via POST /subscriptions/default.
+    """
+    db = get_postgres()
+    try:
+        rows = db.execute_query(
+            """SELECT topic_id, slug, label, description, keywords,
+                      category, sort_order
+                 FROM default_research_topics
+                WHERE is_active = TRUE
+                ORDER BY sort_order, label""",
+            {},
+        )
+    except Exception as exc:
+        logger.warning(f"list_default_topics failed: {exc}")
+        return []
+    return [
+        DefaultTopicResponse(
+            topic_id=str(r["topic_id"]),
+            slug=r["slug"],
+            label=r["label"],
+            description=r.get("description"),
+            keywords=list(r.get("keywords") or []),
+            category=r.get("category"),
+            sort_order=int(r.get("sort_order") or 100),
+        )
+        for r in (rows or [])
+    ]
+
+
+class BulkSubscribeRequest(BaseModel):
+    slugs: List[str] = Field(..., min_length=1, max_length=20,
+                             description="default_research_topics slugs to subscribe to")
+
+
+@router.post("/subscriptions/default", status_code=201)
+async def bulk_subscribe_defaults(
+    request: BulkSubscribeRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Bulk-subscribe the current user to a set of default topics.
+
+    Looks up the topic catalogue, then INSERTs one research_subscriptions
+    row per topic with ON CONFLICT DO NOTHING (so re-running is safe and
+    pre-existing manual subscriptions are preserved). Respects the per-tier
+    subscription cap.
+    """
+    user_id = current_user["user_id"]
+    tier = str(current_user.get("subscription_tier", "freemium"))
+    cap = TIER_SUB_CAPS.get(tier, 2)
+
+    db = get_postgres()
+    rows = db.execute_query(
+        """SELECT slug, label, keywords FROM default_research_topics
+            WHERE slug = ANY(:slugs) AND is_active = TRUE""",
+        {"slugs": request.slugs},
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="No matching default topics")
+
+    # Subscriptions remaining before hitting the tier cap.
+    if cap is not None:
+        used = db.execute_query(
+            "SELECT COUNT(*) AS n FROM research_subscriptions "
+            "WHERE user_id = :uid AND is_active = TRUE",
+            {"uid": user_id},
+        )
+        used_count = int(used[0]["n"]) if used else 0
+        remaining = max(0, cap - used_count)
+        if remaining == 0:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "research_subscription_tier_limit",
+                    "tier": tier,
+                    "used": used_count,
+                    "limit": cap,
+                    "upgrade_url": "/dashboard/subscription",
+                },
+            )
+        rows = rows[:remaining]
+
+    created = 0
+    skipped = 0
+    for r in rows:
+        try:
+            updated = db.execute_update(
+                """INSERT INTO research_subscriptions
+                       (user_id, topic, keywords, notification_email)
+                   VALUES (:uid, :topic, :kw, FALSE)
+                   ON CONFLICT (user_id, topic) DO NOTHING""",
+                {
+                    "uid": user_id,
+                    "topic": r["label"],
+                    "kw": list(r.get("keywords") or []),
+                },
+            )
+            if updated:
+                created += 1
+            else:
+                skipped += 1
+        except Exception as exc:
+            logger.warning(f"bulk_subscribe insert failed for {r.get('slug')}: {exc}")
+
+    return {
+        "created": created,
+        "skipped": skipped,
+        "total_requested": len(request.slugs),
+        "note": "Skipped slugs already had an active subscription for this user.",
+    }
+
+
 @router.post("/subscriptions", response_model=SubscriptionResponse, status_code=201)
 async def create_subscription(
     request: SubscribeRequest,

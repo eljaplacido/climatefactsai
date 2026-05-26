@@ -277,6 +277,13 @@ ensure_scheduler_job "cn-link-check"    "/api/admin/link-check"              "0 
 ensure_scheduler_job "cn-research-poll" "/api/admin/research-poll"           "30 3 * * *"   "CrossRef research feed polling daily at 03:30 UTC (mig 047 research_feed_items)"
 ensure_scheduler_job "cn-aoi-poll"      "/api/scheduler/aoi-poll"            "0 5 * * *"    "Area-of-interest poll daily at 05:00 UTC"
 
+# 2026-05-27 follow-up: enrichment + backfill crons. The enrichment
+# service was wired but never fired in prod; the credibility backfill
+# converges historical rows that ingested before the tier-driven path.
+ensure_scheduler_job "cn-enrich"             "/api/admin/scheduler/enrich-pending"           "*/30 * * * *" "ArticleEnrichmentService batch_enrich every 30 minutes — was 0% populated"
+ensure_scheduler_job "cn-credibility-backfill" "/api/admin/backfill/source-credibility-score" "15 4 * * *"   "Re-stamp articles.source_credibility_score via tier service daily at 04:15 UTC"
+ensure_scheduler_job "cn-html-backfill"      "/api/admin/backfill/extracted-text-html"        "45 4 * * *"   "Re-clean extracted_text HTML pollution daily at 04:45 UTC"
+
 # ---------------------------------------------------------------------------
 # 8. Grant Cloud Scheduler permission to invoke Cloud Run
 # ---------------------------------------------------------------------------

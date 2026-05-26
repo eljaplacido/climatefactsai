@@ -420,6 +420,13 @@ app.include_router(research_feed_admin_router)
 from api.scenario_routes import router as scenario_router
 app.include_router(scenario_router)
 
+# 2026-05-27 Section II audit — backfill admin endpoints for
+# source_credibility_score, extracted-text HTML strip, and the missing
+# enrichment scheduler trigger. All three accept SCHEDULER_SECRET so
+# they can be driven by Cloud Scheduler cron jobs.
+from api.admin_backfill_routes import router as admin_backfill_router
+app.include_router(admin_backfill_router)
+
 logger.info("Loaded Company router")
 
 

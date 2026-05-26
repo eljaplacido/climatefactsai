@@ -244,6 +244,9 @@ steps:
           "cn-link-check:/api/admin/link-check"
           "cn-research-poll:/api/admin/research-poll"
           "cn-aoi-poll:/api/scheduler/aoi-poll"
+          "cn-enrich:/api/admin/scheduler/enrich-pending"
+          "cn-credibility-backfill:/api/admin/backfill/source-credibility-score"
+          "cn-html-backfill:/api/admin/backfill/extracted-text-html"
         )
         for entry in "${JOBS[@]}"; do
           name="${entry%%:*}"

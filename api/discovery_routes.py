@@ -262,6 +262,14 @@ async def discover_news(request_body: DiscoverNewsRequest, request: Request) -> 
     except Exception:  # pragma: no cover - defensive
         get_source_credibility_score = None  # type: ignore[assignment]
 
+    # End2End audit gap (2026-05-27, Task D): clean HTML from extracted_text
+    # before persisting so the Full Article panel doesn't surface raw
+    # `<img>` / `<p>` markup the way it does for Premium Times feeds.
+    try:
+        from shared.html_cleaner import clean_article_text
+    except Exception:  # pragma: no cover
+        clean_article_text = None  # type: ignore[assignment]
+
     for article in articles:
         try:
             published_date = None
@@ -282,6 +290,16 @@ async def discover_news(request_body: DiscoverNewsRequest, request: Request) -> 
                         source=source_name, error=str(exc),
                     )
 
+            extracted = article["extracted_text"]
+            excerpt = article.get("excerpt")
+            if clean_article_text is not None:
+                try:
+                    extracted = clean_article_text(extracted)
+                    if excerpt:
+                        excerpt = clean_article_text(excerpt)[:500]
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("html_cleaner failed", url=article.get("url"), error=str(exc))
+
             result = db.execute_query(
                 insert_sql,
                 params={
@@ -290,8 +308,8 @@ async def discover_news(request_body: DiscoverNewsRequest, request: Request) -> 
                     "author": None,
                     "published_date": published_date,
                     "source_name": source_name,
-                    "extracted_text": article["extracted_text"],
-                    "excerpt": article.get("excerpt"),
+                    "extracted_text": extracted,
+                    "excerpt": excerpt,
                     "language_code": article.get("language_code") or "en",
                     "country_code": country_code,
                     "task_id": task_id,

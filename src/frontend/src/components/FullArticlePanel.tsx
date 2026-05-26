@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { BookOpen, ChevronDown, ChevronUp } from "lucide-react";
 
 // Polish wave 1 / Audit item 2 (2026-05-25) — the Executive Brief +
@@ -10,6 +10,12 @@ import { BookOpen, ChevronDown, ChevronUp } from "lucide-react";
 // adds a collapsible "Full source article" panel — opt-in expansion
 // keeps the article page concise by default while letting users
 // reach the raw 1500-3000-word body when they want to.
+//
+// 2026-05-27 (Task D): defensive client-side HTML strip for legacy
+// rows where the RSS-summary fallback left raw `<img>` / `<p>` /
+// "appeared first on" footers in extracted_text. The backend cleaner
+// + backfill job converge over a few nights; until then this keeps
+// the UI clean. New rows ingest already-clean via shared.html_cleaner.
 
 interface FullArticlePanelProps {
   extractedText: string;
@@ -19,22 +25,52 @@ interface FullArticlePanelProps {
 
 const PREVIEW_LIMIT = 600;
 
+function stripHtml(text: string): string {
+  if (!text) return "";
+  // Quick probe — only do the work if we actually see tags.
+  if (!/<[a-zA-Z!/]/.test(text)) return text;
+  // Strip script/style blocks entirely.
+  let out = text.replace(/<(script|style|iframe)[\s\S]*?<\/\1>/gi, "");
+  // Drop self-closing media/asset tags.
+  out = out.replace(/<(img|br|hr|input|source|track|meta|link)[^>]*\/?>/gi, "\n");
+  // Convert block tag boundaries to paragraph breaks.
+  out = out.replace(/<\/(p|div|section|article|h[1-6]|li|tr)>/gi, "\n\n");
+  // Strip every remaining tag.
+  out = out.replace(/<[^>]+>/g, " ");
+  // Decode the handful of entities we care about.
+  out = out
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+  // "The post X appeared first on Y" footer that WordPress feeds inject.
+  out = out.replace(/\n*The post\s+[\s\S]+?\s+appeared first on\s+[\s\S]+?\.\s*$/i, "");
+  // Collapse whitespace.
+  out = out.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  return out;
+}
+
 export default function FullArticlePanel({
   extractedText,
   sourceUrl,
 }: FullArticlePanelProps) {
   const [expanded, setExpanded] = useState(false);
 
-  if (!extractedText || extractedText.trim().length < 200) {
+  // Memoise so the cleaner doesn't re-run on every render.
+  const cleanText = useMemo(() => stripHtml(extractedText || ""), [extractedText]);
+
+  if (!cleanText || cleanText.trim().length < 200) {
     // Nothing meaningful to expand to — RSS-only article with just an
     // excerpt. Skip the panel entirely rather than showing an empty UI.
     return null;
   }
 
-  const wordCount = extractedText.trim().split(/\s+/).length;
-  const charCount = extractedText.length;
-  const preview = extractedText.slice(0, PREVIEW_LIMIT);
-  const truncated = extractedText.length > PREVIEW_LIMIT;
+  const wordCount = cleanText.trim().split(/\s+/).length;
+  const charCount = cleanText.length;
+  const preview = cleanText.slice(0, PREVIEW_LIMIT);
+  const truncated = cleanText.length > PREVIEW_LIMIT;
 
   return (
     <section
@@ -78,7 +114,7 @@ export default function FullArticlePanel({
           className="px-4 pb-4 border-t border-gray-100 dark:border-slate-700"
         >
           <div className="pt-3 prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
-            {extractedText}
+            {cleanText}
           </div>
           {sourceUrl && (
             <p className="mt-4 pt-3 text-xs text-gray-500 dark:text-slate-400 border-t border-gray-100 dark:border-slate-700">
@@ -98,7 +134,7 @@ export default function FullArticlePanel({
 
       {!expanded && truncated && (
         <div className="px-4 pb-4 border-t border-gray-100 dark:border-slate-700">
-          <p className="pt-3 text-sm text-gray-600 dark:text-slate-400 line-clamp-3 italic">
+          <p className="pt-3 text-sm text-gray-600 dark:text-slate-400 line-clamp-3 italic whitespace-pre-wrap">
             {preview}…
           </p>
         </div>

@@ -325,6 +325,10 @@ async def get_article_weather_context(
     try:
         result = await service.get_article_weather_context(article_id)
         if not result:
+            # End2End audit (2026-05-27, Task G): was raising 404 here which
+            # the frontend mapped to the empty state — fine. The Real bug
+            # was the catch-all 500 below. Keep the empty/no-locations
+            # contract intact.
             raise HTTPException(
                 status_code=404,
                 detail="No weather context available for this article."
@@ -333,8 +337,20 @@ async def get_article_weather_context(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Weather context failed for {article_id}: {e}")
-        raise HTTPException(status_code=500, detail="Weather context unavailable.")
+        # End2End audit (2026-05-27, Task G): the catch-all used to return
+        # 500 which the frontend rendered as "Weather context temporarily
+        # unavailable. Try refreshing in a moment." for every article whose
+        # NER didn't surface a GPE entity. Now degrade gracefully to a 200
+        # response with an empty weather_contexts list so the frontend
+        # shows the proper "No geographic locations detected" empty state.
+        # Real infra outages (DB unreachable, Open-Meteo 503) still log
+        # but the user-facing UX matches the empty-list contract.
+        logger.warning(f"Weather context degraded for {article_id}: {e}")
+        return ArticleWeatherContext(
+            article_id=article_id,
+            locations_found=0,
+            weather_contexts=[],
+        )
 
 
 @router.get("/intelligence-brief")
