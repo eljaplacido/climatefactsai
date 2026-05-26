@@ -798,9 +798,38 @@ Write 2-3 sentences only, in English. Be specific and data-driven."""
                         max_tokens=max_tokens,
                         temperature=0.3,
                     )
-                    text = response.choices[0].message.content.strip()
+                    msg = response.choices[0].message
+                    # 2026-05-27: reasoning-style local models (Nemotron-3,
+                    # DeepSeek-R1, etc.) on Ollama emit the actual answer in a
+                    # non-standard `reasoning` field while `content` stays empty.
+                    # The OpenAI SDK exposes such fields via model_extra. Fall
+                    # back to that whole-message dump when content is blank so
+                    # we don't silently miss a successful call + fall through
+                    # to DeepSeek — which is what the End2End audit caught.
+                    text = (getattr(msg, "content", None) or "").strip()
+                    if not text:
+                        try:
+                            extras = (msg.model_extra or {}) if hasattr(msg, "model_extra") else {}
+                            text = (
+                                extras.get("reasoning")
+                                or extras.get("thinking")
+                                or extras.get("reasoning_content")
+                                or ""
+                            ).strip()
+                        except Exception:
+                            text = ""
                     if text:
+                        logger.info(
+                            "local-gx10 LLM call succeeded",
+                            model=model,
+                            chars=len(text),
+                        )
                         return text, "local-gx10", model
+                    # No usable content even after the reasoning-field check.
+                    logger.warning(
+                        "local-gx10 returned empty content; falling back to next provider",
+                        model=model,
+                    )
                 except Exception as exc:
                     # Fall through to next provider in the chain — never
                     # let local-gx10 unavailability break enrichment.
