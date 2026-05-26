@@ -48,17 +48,19 @@ if [[ ! -x "$VENV_DIR/bin/python" ]]; then
     python3 -m venv "$VENV_DIR"
 fi
 "$VENV_DIR/bin/pip" install --upgrade pip --quiet
-echo "Installing worker dependencies (this is the minimal subset, not the full API)"
+echo "Installing worker dependencies (api/requirements.txt covers the shared.* chain)"
+# Use api/requirements.txt which is the focused subset the backend's
+# shared.* modules need (~30 packages, no Scrapy/Playwright/transformers).
+# Plus a couple of extras the enrichment service uses directly.
+"$VENV_DIR/bin/pip" install --quiet -r "$REPO_DIR/api/requirements.txt"
 "$VENV_DIR/bin/pip" install --quiet \
-    'psycopg[binary]>=3.1' \
-    'sqlalchemy>=2.0' \
-    'openai>=1.10' \
-    'httpx>=0.27' \
-    'python-dotenv>=1.0' \
-    'structlog>=24.1' \
+    'openai>=1.40' \
     'beautifulsoup4>=4.12' \
-    'pydantic>=2.5' \
-    'tenacity>=8.2'
+    'httpx>=0.27' \
+    'tenacity>=8.2' \
+    'feedparser>=6.0' \
+    'langdetect>=1.0' \
+    'anthropic>=0.39'
 
 # --- 3. Write env template if missing ------------------------------------
 mkdir -p "$(dirname "$ENV_FILE")"
