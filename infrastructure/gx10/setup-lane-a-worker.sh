@@ -32,6 +32,8 @@ VENV_DIR="${VENV_DIR:-$HOME/clilens/venv}"
 ENV_FILE="${ENV_FILE:-$HOME/clilens/lane-a.env}"
 SERVICE_NAME="clilens-lane-a"
 SYSTEMD_UNIT="$HOME/.config/systemd/user/${SERVICE_NAME}.service"
+ENTITY_SERVICE_NAME="clilens-lane-a-entity"
+ENTITY_SYSTEMD_UNIT="$HOME/.config/systemd/user/${ENTITY_SERVICE_NAME}.service"
 
 # --- 1. Clone or update the repo ------------------------------------------
 if [[ ! -d "$REPO_DIR/.git" ]]; then
@@ -138,18 +140,49 @@ if ! loginctl show-user "$USER" 2>/dev/null | grep -q "Linger=yes"; then
     }
 fi
 
+# --- 4b. Entity extraction sibling unit ---------------------------------
+# Per asusgx10inferencestrategy.md Lane A item #2: entity extraction
+# runs alongside enrichment, sharing the same DB + Ollama backend.
+cat > "$ENTITY_SYSTEMD_UNIT" <<EOF
+[Unit]
+Description=Climatefacts Lane A entity extraction worker (GX10)
+After=network-online.target ollama.service ${SERVICE_NAME}.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=$ENV_FILE
+WorkingDirectory=$REPO_DIR
+ExecStart=$VENV_DIR/bin/python infrastructure/gx10/lane_a_entity_worker.py
+Restart=on-failure
+RestartSec=15
+StandardOutput=append:$HOME/clilens/lane-a-entity.log
+StandardError=append:$HOME/clilens/lane-a-entity.log
+
+[Install]
+WantedBy=default.target
+EOF
+
 # --- 6. Reload + start ----------------------------------------------------
 systemctl --user daemon-reload
-systemctl --user enable "${SERVICE_NAME}.service"
-systemctl --user restart "${SERVICE_NAME}.service"
+systemctl --user enable "${SERVICE_NAME}.service" "${ENTITY_SERVICE_NAME}.service"
+systemctl --user restart "${SERVICE_NAME}.service" "${ENTITY_SERVICE_NAME}.service"
 sleep 3
-systemctl --user --no-pager status "${SERVICE_NAME}.service" | head -15
+echo "=== Enrichment worker status ==="
+systemctl --user --no-pager status "${SERVICE_NAME}.service" | head -12
 echo
-echo "Last 30 log lines:"
-tail -30 "$HOME/clilens/lane-a.log" 2>/dev/null || echo "(log empty — worker may still be starting)"
+echo "=== Entity worker status ==="
+systemctl --user --no-pager status "${ENTITY_SERVICE_NAME}.service" | head -12
+echo
+echo "Last 20 log lines (enrichment):"
+tail -20 "$HOME/clilens/lane-a.log" 2>/dev/null || echo "(log empty)"
+echo
+echo "Last 20 log lines (entity):"
+tail -20 "$HOME/clilens/lane-a-entity.log" 2>/dev/null || echo "(log empty)"
 echo
 echo "Done. Useful commands:"
-echo "  systemctl --user status  clilens-lane-a"
-echo "  systemctl --user restart clilens-lane-a"
-echo "  systemctl --user stop    clilens-lane-a"
+echo "  systemctl --user status   clilens-lane-a clilens-lane-a-entity"
+echo "  systemctl --user restart  clilens-lane-a clilens-lane-a-entity"
+echo "  systemctl --user stop     clilens-lane-a clilens-lane-a-entity"
 echo "  tail -f \$HOME/clilens/lane-a.log"
+echo "  tail -f \$HOME/clilens/lane-a-entity.log"
