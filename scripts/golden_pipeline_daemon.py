@@ -960,6 +960,13 @@ def main() -> int:
     state = load_state() if args.resume or STATE_FILE.exists() else load_state()
     if tg_chat_id_env and not state.get("telegram_chat_id"):
         state["telegram_chat_id"] = int(tg_chat_id_env)
+    # ALWAYS start in non-stop, non-paused mode. The prior process may
+    # have saved stop_requested=True on SIGTERM (systemd restart) — that
+    # was an OLD intent, not a current one. If the user wants to stop,
+    # they send /stop. Otherwise default is "run".
+    state["stop_requested"] = False
+    state["paused"] = False
+    save_state(state)
     telegram = Telegram(tg_token, state["telegram_chat_id"])
 
     if args.status:
