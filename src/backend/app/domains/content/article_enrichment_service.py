@@ -786,8 +786,15 @@ Write 2-3 sentences only, in English. Be specific and data-driven."""
                     model = os.getenv(
                         "CLILENS_LOCAL_GX10_MODEL", "Qwen/Qwen2.5-14B-Instruct"
                     )
+                    # 2026-05-27: bumped from 60s to 240s. Local cold-loads on
+                    # Ollama can take 15-25s for a 14B Q4 model on Grace
+                    # Blackwell, plus ~10s to generate a 400-word enrichment.
+                    # The previous 60s cap was triggering Ollama-side 500s
+                    # when the OpenAI client cut the connection mid-generation.
+                    # Env override: CLILENS_LOCAL_GX10_TIMEOUT (seconds).
+                    timeout_s = float(os.getenv("CLILENS_LOCAL_GX10_TIMEOUT", "240"))
                     client = OpenAIClient(
-                        api_key=api_key, base_url=base_url, timeout=60.0
+                        api_key=api_key, base_url=base_url, timeout=timeout_s
                     )
                     response = client.chat.completions.create(
                         model=model,
