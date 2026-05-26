@@ -113,6 +113,17 @@ class ArticleEnrichmentService:
             temperature_trend=temperature_trend,
         )
 
+        # Golden Example #5 (2026-05-27): generate the executive brief —
+        # a tight 100-180 word top-of-article summary that goes ABOVE
+        # the enriched_excerpt. The audit showed executive_brief 0%
+        # populated across the corpus; this third LLM call closes the gap.
+        executive_brief = await self._generate_executive_brief(
+            title=title,
+            extracted_text=extracted_text,
+            country_code=cc,
+            content_category=content_category,
+        )
+
         finished_at = datetime.utcnow()
         metadata["finished_at"] = finished_at.isoformat()
         metadata["duration_seconds"] = round(
@@ -135,6 +146,7 @@ class ArticleEnrichmentService:
             article_id=article_id,
             enriched_excerpt=enriched_excerpt,
             climate_context_summary=climate_context_summary,
+            executive_brief=executive_brief,
             metadata=metadata,
         )
 
@@ -149,6 +161,7 @@ class ArticleEnrichmentService:
         return {
             "enriched_excerpt": enriched_excerpt,
             "climate_context_summary": climate_context_summary,
+            "executive_brief": executive_brief,
             "metadata": metadata,
         }
 
@@ -576,6 +589,75 @@ Write the enriched excerpt now. Use flowing prose paragraphs, not bullet points 
             user_prompt=user_prompt,
         )
         return text
+
+    async def _generate_executive_brief(
+        self,
+        title: str,
+        extracted_text: str,
+        country_code: str,
+        content_category: Optional[str],
+    ) -> Optional[str]:
+        """Generate a 100-180 word executive brief — the top-of-article
+        summary that goes above the long enriched_excerpt.
+
+        Golden Example #5 (2026-05-27): adds a third LLM call to populate
+        the `articles.executive_brief` column that the FE expects but the
+        End2End audit caught as 0% populated across the entire corpus.
+        Different from enriched_excerpt: this is TIGHT (target ~150
+        words), neutral framing, news-style lede. enriched_excerpt is
+        the 400-800 word analytical version with credibility + climate
+        context layered in. Both have a role on the article page.
+
+        Returns None gracefully on LLM failure — _store_enrichment uses
+        COALESCE so an existing brief is preserved rather than nulled.
+        """
+        country_name = COUNTRY_NAMES.get(country_code, country_code)
+        text_snippet = extracted_text[:3500]
+
+        system_prompt = (
+            "You write 100-180 word news-style executive briefs summarising "
+            "climate articles for a busy professional audience. ALWAYS write "
+            "in English. Lead with the most important fact. Be neutral and "
+            "concrete. No editorial framing, no boosterism, no value "
+            "judgements. Do not invent facts not in the source. If the "
+            "article isn't actually about climate, say so plainly in the "
+            "first sentence."
+        )
+
+        user_prompt = (
+            f"Article title: {title}\n"
+            f"Source country: {country_name}\n"
+            f"Content category hint: {content_category or 'unspecified'}\n\n"
+            f"Article body:\n{text_snippet}\n\n"
+            "Write a 100-180 word executive brief. Plain prose, no headings, "
+            "no bullet lists. End with one sentence on why a climate-focused "
+            "reader should or shouldn't care about this article."
+        )
+
+        result = await self._call_llm(system_prompt, user_prompt, max_tokens=350)
+        if not result:
+            return None
+        text, provider, model = result
+        self._record_llm_call(provider, model)
+        self._append_training_row(
+            task="executive_brief",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            assistant_output=text,
+            provider=provider,
+            model=model,
+            country_code=country_code,
+            source_name=None,
+        )
+        self._record_enrichment_provenance(
+            task="executive_brief",
+            provider=provider,
+            model=model,
+            prompt_name="article_executive_brief",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+        )
+        return text.strip()
 
     async def _generate_climate_context_summary(
         self,
@@ -1009,13 +1091,20 @@ Write 2-3 sentences only, in English. Be specific and data-driven."""
         enriched_excerpt: str,
         climate_context_summary: str,
         metadata: dict,
+        executive_brief: Optional[str] = None,
     ) -> None:
-        """Persist enrichment results to the articles table."""
+        """Persist enrichment results to the articles table.
+
+        Golden Example #5 (2026-05-27): now writes executive_brief too.
+        Backward compat: callers that don't pass executive_brief just
+        leave that column NULL (was the old behavior anyway).
+        """
         try:
             self.db.execute_update(
                 """UPDATE articles
                    SET enriched_excerpt = :excerpt,
                        climate_context_summary = :climate,
+                       executive_brief = COALESCE(:brief, executive_brief),
                        enrichment_metadata = :meta,
                        enriched_at = NOW(),
                        updated_at = NOW()
@@ -1024,6 +1113,7 @@ Write 2-3 sentences only, in English. Be specific and data-driven."""
                     "id": article_id,
                     "excerpt": enriched_excerpt,
                     "climate": climate_context_summary,
+                    "brief": executive_brief,
                     "meta": json.dumps(metadata),
                 },
             )
