@@ -93,6 +93,17 @@ class ReliabilityScorer:
     LIMITED_EVIDENCE_THRESHOLD = 3   # < this many claims => "Limited evidence"
     CLAIMS_FOR_FULL_CREDIT = 6       # this many or more => density_factor = 1.0
 
+    # Polish wave 2 (2026-05-26, Section I priority #2) — 3-axis source
+    # scoring wired into the credibility math. Mig 041 added editorial,
+    # factcheck, transparency columns; mig 045 fenced them never-null;
+    # but neither was consumed by the score calculation until now. Per
+    # the strategy report: "must be wired into the compute_weighted_score()
+    # math to provide a defensible, multi-dimensional view of source
+    # quality." Blend 60/40 with the legacy source_credibility_score to
+    # preserve backward-compat while letting axes shift the headline.
+    SOURCE_LEGACY_WEIGHT = 0.6       # weight of source_credibility_score
+    SOURCE_AXES_WEIGHT   = 0.4       # weight of mean(editorial, factcheck, transparency)
+
     @classmethod
     def calculate_reliability_score(
         cls,
@@ -101,7 +112,10 @@ class ReliabilityScorer:
         verified_claims: int = 0,
         false_claims: int = 0,
         misleading_claims: int = 0,
-        content_relevance_score: Optional[float] = None
+        content_relevance_score: Optional[float] = None,
+        editorial_score: Optional[int] = None,
+        factcheck_score: Optional[int] = None,
+        transparency_score: Optional[int] = None,
     ) -> Tuple[int, str]:
         """
         Calculate overall reliability score and credibility level
@@ -118,12 +132,23 @@ class ReliabilityScorer:
             Tuple of (reliability_score: int, credibility_level: str)
         """
 
-        # 1. Source Credibility Component (50%)
-        if source_credibility_score is not None:
-            source_component = cls._normalize_score(source_credibility_score) * cls.WEIGHT_SOURCE_CREDIBILITY
+        # 1. Source Credibility Component (50%) — blended with 3-axis
+        #    source scoring when available.
+        legacy = (
+            cls._normalize_score(source_credibility_score)
+            if source_credibility_score is not None
+            else 50.0
+        )
+        axes = [s for s in (editorial_score, factcheck_score, transparency_score) if s is not None]
+        if axes:
+            axes_mean = sum(cls._normalize_score(s) for s in axes) / len(axes)
+            blended_source = (
+                cls.SOURCE_LEGACY_WEIGHT * legacy
+                + cls.SOURCE_AXES_WEIGHT * axes_mean
+            )
         else:
-            # Default to neutral if not provided
-            source_component = 50.0 * cls.WEIGHT_SOURCE_CREDIBILITY
+            blended_source = legacy
+        source_component = blended_source * cls.WEIGHT_SOURCE_CREDIBILITY
 
         # 2. Verified Claims Ratio Component (30%)
         if total_claims > 0:
@@ -405,7 +430,10 @@ class ReliabilityScorer:
             >>> print(f"Updated: {result['reliability_score']} ({result['credibility_level']})")
         """
 
-        # 1. Fetch article data
+        # 1. Fetch article data + source 3-axis scores via JOIN to
+        # source_credibility_tiers (mig 041/045). LEFT JOIN so unscored
+        # sources still get a row; the calculator handles NULL axes by
+        # falling back to legacy source_credibility_score only.
         article_query = """
             SELECT
                 a.source_credibility_score,
@@ -413,8 +441,13 @@ class ReliabilityScorer:
                 a.title,
                 a.extracted_text,
                 a.claims_count,
-                a.verified_claims_count
+                a.verified_claims_count,
+                sct.editorial_score,
+                sct.factcheck_score,
+                sct.transparency_score
             FROM articles a
+            LEFT JOIN source_credibility_tiers sct
+                ON sct.source_name ILIKE a.source_name
             WHERE a.article_id = :article_id
         """
 
@@ -460,12 +493,15 @@ class ReliabilityScorer:
             # Ensure it's a float between 0-1
             content_relevance = float(content_relevance)
 
-        # 4. Calculate reliability score
+        # 4. Calculate reliability score (with 3-axis when available)
         reliability_score, credibility_level = cls.calculate_reliability_score(
             source_credibility_score=article.get('source_credibility_score'),
             total_claims=article.get('claims_count', 0),
             verified_claims=factcheck.get('verified_count', 0),
             false_claims=factcheck.get('false_count', 0),
+            editorial_score=article.get('editorial_score'),
+            factcheck_score=article.get('factcheck_score'),
+            transparency_score=article.get('transparency_score'),
             misleading_claims=factcheck.get('misleading_count', 0),
             content_relevance_score=content_relevance
         )

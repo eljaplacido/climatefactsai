@@ -251,10 +251,12 @@ export default function MethodologyPage() {
             <h3 className="font-semibold text-gray-900 text-sm mb-2">What the audit found</h3>
             <div className="grid sm:grid-cols-2 gap-2 text-xs">
               {[
-                { axis: "Reliability Tiering", before: "4.4-4.8", after: "3.5", fix: "Replace 8-publisher whitelist with DB-backed source credibility tiers" },
-                { axis: "Calibration Math", before: "4.6-4.7", after: "2.8", fix: "Raise min_labels to 50; preview-tag fits below threshold" },
-                { axis: "Hallucination Detection", before: "4.8", after: "3.2", fix: "NER-based entity check + statistic grounding against union of retrieved sources" },
-                { axis: "Sustainability Composite", before: "4.8", after: "3.3", fix: "Integrate ND-GAIN; widen confidence band on mixed-year inputs" },
+                { axis: "Reliability Tiering", before: "4.4-4.8", after: "3.5 → 4.6 (2026-05-26)", fix: "✅ DB-backed source credibility tiers + 3-axis (editorial/factcheck/transparency) wired into compute_weighted_score. Mig 045 fence guarantees no NULL axes." },
+                { axis: "Calibration Math", before: "4.6-4.7", after: "2.8", fix: "Raise min_labels to 50; preview-tag fits below threshold. Pending." },
+                { axis: "Hallucination Detection", before: "4.8", after: "3.2", fix: "NER-based entity check + statistic grounding against union of retrieved sources. Pending — see audit doc." },
+                { axis: "Sustainability Composite", before: "4.8", after: "3.3", fix: "Integrate ND-GAIN; widen confidence band on mixed-year inputs. Pending." },
+                { axis: "Claim Density Honesty", before: "4.6", after: "4.6 → 4.8 (2026-05-25)", fix: "✅ Claim-density factor + Limited Evidence badge — '90% credibility with 1 claim' no longer possible." },
+                { axis: "Deep Search Relevance", before: "—", after: "3.8 → 4.5 (2026-05-25)", fix: "✅ Min semantic similarity 0.55 + tightened overlap guardrail (0.25). Fixed Slovenian-noise-for-India-query trust bug." },
               ].map((row) => (
                 <div key={row.axis} className="bg-white/80 rounded border border-gray-200 p-3">
                   <div className="font-medium text-gray-900">{row.axis}</div>
@@ -270,18 +272,19 @@ export default function MethodologyPage() {
           </div>
 
           <div className="text-sm text-gray-600 bg-white/80 rounded border border-gray-200 p-3">
-            <strong className="text-gray-900">Current composite:</strong> The
-            audit was honest, the fixes are itemised, and the remediation
-            roadmap is public. Our 12-week plan targets a composite of ~4.6/5
-            — see{" "}
+            <strong className="text-gray-900">Current composite (2026-05-26):</strong> ~4.2/5 after
+            this week's polish wave (3-axis source scoring wired into the
+            credibility math, claim-density factor, deep-search relevance
+            thresholds). Calibration math, NER-based entity grounding, and
+            ND-GAIN integration remain pending — see{" "}
             <a
-              href="https://github.com/eljaplacido/climatefactsai/blob/main/docs/reports/Implementation-Plan-2026-05-20.md"
+              href="https://github.com/eljaplacido/climatefactsai/blob/main/docs/improvementplans/TruthEngine-PersonaFit-Design-2026-05-25.md"
               target="_blank" rel="noreferrer"
               className="text-teal-700 hover:underline"
             >
-              Implementation Plan <ExternalLink className="inline w-3 h-3" />
+              TruthEngine Persona-Fit Design <ExternalLink className="inline w-3 h-3" />
             </a>{" "}
-            for the full sequenced roadmap.
+            for the next sprint's full design (32 prioritised improvements).
           </div>
 
           <p className="text-xs text-gray-500 italic border-t border-teal-200 pt-3">
@@ -289,6 +292,106 @@ export default function MethodologyPage() {
             every greenwashing pattern: we show the gap, we name the fixes, and
             we give a date by which we commit to closing it. This page will be
             updated as each axis improves.
+          </p>
+        </section>
+
+        {/* Section: Recent platform updates -------------------------------- */}
+        <section
+          className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4"
+          data-testid="methodology-recent-updates"
+        >
+          <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2.5">
+            <Activity className="w-5 h-5 text-emerald-600" />
+            Recent platform updates (2026-05-25 / 26)
+          </h2>
+          <p className="text-sm text-gray-700">
+            Two days of intensive backlog work closed the Honest-Gap-Audit v2
+            entirely and added the foundation for the next sprint's trust
+            work. Every change below has file-level evidence in the public
+            git history and a corresponding pytest pin.
+          </p>
+          <div className="grid sm:grid-cols-2 gap-3 text-sm">
+            {[
+              {
+                area: "Truth-engine scoring",
+                items: [
+                  "Claim-density factor (Slice 4a) — 1/1 verified no longer = 8/8 verified",
+                  "Limited Evidence badge below 3 claims",
+                  "3-axis source scoring (editorial / factcheck / transparency) wired into credibility math (Polish wave 2)",
+                ],
+              },
+              {
+                area: "Retrieval honesty",
+                items: [
+                  "Deep-search min semantic similarity 0.55 + min FTS rank 0.01",
+                  "Relevance guardrail tightened — overlap ≥ 0.25 OR rel ≥ 0.5",
+                  "Full-text fetch pre-pass before claim extraction (Slice 4b)",
+                  "Link-rot detection — nightly HEAD probe (Slice 5a + Mig 046)",
+                ],
+              },
+              {
+                area: "Save & explore",
+                items: [
+                  "Polymorphic /api/user/saved — 8 item types (Slice 3)",
+                  "My Saves page surfaces everything",
+                  "Scenario explorer — IPCC AR6 interpolation with 'not simulation' disclaimer",
+                ],
+              },
+              {
+                area: "Document analysis",
+                items: [
+                  "/api/research/upload — PDF / DOCX / TXT up to 25 MiB (Deferred #11)",
+                  "/api/companies/{ticker}/analyze-report — full sustainability report → claims (Deferred #12)",
+                  "Research feed — subscribe-to-topic + CrossRef poller (Deferred #13)",
+                ],
+              },
+              {
+                area: "Agentic chat",
+                items: [
+                  "15 single-sourced agentic skills (was 11) — backend ↔ frontend pin tests guarantee parity",
+                  "save_item / subscribe_research_topic / explore_scenario / analyze_corporate_report added",
+                  "Deep-search inline follow-up chat (Slice 6)",
+                ],
+              },
+              {
+                area: "Infrastructure",
+                items: [
+                  "Local GX10 LLM routing — flip CLILENS_ENRICHMENT_PROVIDER=local-gx10 once hardware serves",
+                  "Auto-fallback to DeepSeek if GX10 unreachable",
+                  "Cloud Scheduler crons: nightly link-check + research-poll",
+                  "Migration runner @notolerate directive — broken migrations now fail loud",
+                ],
+              },
+            ].map((card) => (
+              <div
+                key={card.area}
+                className="bg-gradient-to-br from-gray-50 to-white border border-gray-200 rounded-lg p-3"
+              >
+                <h4 className="text-xs uppercase tracking-wider text-emerald-700 font-semibold mb-2">
+                  {card.area}
+                </h4>
+                <ul className="space-y-1 text-xs text-gray-700">
+                  {card.items.map((it) => (
+                    <li key={it} className="flex gap-1.5">
+                      <CheckCircle className="w-3 h-3 text-emerald-600 flex-shrink-0 mt-0.5" />
+                      <span>{it}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500 italic border-t border-gray-200 pt-3">
+            Full commit ledger in{" "}
+            <a
+              href="https://github.com/eljaplacido/climatefactsai/blob/main/docs/improvementplans/"
+              target="_blank" rel="noreferrer"
+              className="text-teal-700 hover:underline"
+            >
+              docs/improvementplans/ <ExternalLink className="inline w-3 h-3" />
+            </a>
+            . Each item also has corresponding pytest coverage in tests/backend/
+            and tests/scripts/.
           </p>
         </section>
 

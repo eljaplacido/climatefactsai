@@ -81,6 +81,15 @@ export default function CompanyDetailPage() {
   const [loading, setLoading] = useState(true);
   const [analyzeText, setAnalyzeText] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
+  // Polish wave 2 (2026-05-26, deferred #12 UI) — analyze-report URL form
+  const [reportUrl, setReportUrl] = useState("");
+  const [reportAnalyzing, setReportAnalyzing] = useState(false);
+  const [reportResult, setReportResult] = useState<{
+    extracted_claims_count: number;
+    verdict_summary: Record<string, number>;
+    text_length: number;
+  } | null>(null);
+  const [reportError, setReportError] = useState<string | null>(null);
 
   // Phase 7 B3 (2026-05-24) — Business-decision-maker view toggle. Mirrors
   // the Country Passport pattern: ?view=business persists in the URL so a
@@ -143,6 +152,68 @@ export default function CompanyDetailPage() {
       // degrade
     }
     setAnalyzing(false);
+  };
+
+  // Polish wave 2 (2026-05-26, deferred #12 UI) — full corporate report
+  // analysis: paste a sustainability-report URL, get every claim
+  // extracted + graded against the disclosure ledger, persist them
+  // all on the company profile in one shot.
+  const handleAnalyzeReport = async () => {
+    if (!reportUrl.trim() || reportAnalyzing) return;
+    setReportAnalyzing(true);
+    setReportResult(null);
+    setReportError(null);
+    try {
+      const token =
+        typeof window !== "undefined" ? localStorage.getItem("clilens_token") : null;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(
+        `${API_BASE}/api/companies/${ticker}/analyze-report`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ report_url: reportUrl.trim() }),
+        }
+      );
+      if (res.status === 401) {
+        setReportError("Sign in to analyse corporate reports.");
+        return;
+      }
+      if (res.status === 422) {
+        const body = await res.json().catch(() => ({}));
+        setReportError(
+          typeof body?.detail === "string"
+            ? body.detail
+            : "Could not extract usable text from that URL. Try a different report or paste text via /api/research/analyze."
+        );
+        return;
+      }
+      if (!res.ok) {
+        setReportError(`Report analysis failed (HTTP ${res.status})`);
+        return;
+      }
+      const result = await res.json();
+      setReportResult({
+        extracted_claims_count: result.extracted_claims_count,
+        verdict_summary: result.verdict_summary,
+        text_length: result.text_length,
+      });
+      // Refresh the claims list so the new ones appear in the sidebar.
+      try {
+        const claimsRes = await fetch(`${API_BASE}/api/companies/${ticker}/claims`);
+        if (claimsRes.ok) {
+          const data = await claimsRes.json();
+          setClaims(data.claims || []);
+        }
+      } catch {
+        // non-fatal
+      }
+    } catch (e: any) {
+      setReportError(e?.message || "Network error");
+    } finally {
+      setReportAnalyzing(false);
+    }
   };
 
   if (loading) {
@@ -410,6 +481,68 @@ export default function CompanyDetailPage() {
                   {analyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify"}
                 </button>
               </div>
+            </section>
+
+            {/* Polish wave 2 (2026-05-26, deferred audit item #12 UI) —
+                full sustainability report analysis. Paste a public report
+                URL → extract every claim → grade each against the
+                disclosure ledger. methodology_version=corporate_report_v1.0
+                distinguishes these in the audit trail. */}
+            <section data-testid="analyze-report-section">
+              <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                Analyse a Full Sustainability Report
+              </h2>
+              <p className="text-sm text-gray-600 mb-3">
+                Paste a corporate sustainability or transition-plan report URL
+                (HTML or PDF). The platform fetches the text, extracts every
+                claim, and grades each against {company.name}'s disclosure
+                ledger (ECGT + SBTi + CDP/NZT rules). Heavier than the
+                single-claim Verify above — counts against analysis quota.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  value={reportUrl}
+                  onChange={(e) => setReportUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleAnalyzeReport()}
+                  placeholder="https://example.com/sustainability-report-2025.pdf"
+                  className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+                  disabled={reportAnalyzing}
+                  data-testid="analyze-report-url-input"
+                />
+                <button
+                  onClick={handleAnalyzeReport}
+                  disabled={!reportUrl.trim() || reportAnalyzing}
+                  className="px-4 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-500 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                  data-testid="analyze-report-submit"
+                >
+                  {reportAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : "Analyse report"}
+                </button>
+              </div>
+              {reportError && (
+                <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2" role="alert">
+                  {reportError}
+                </p>
+              )}
+              {reportResult && (
+                <div className="mt-3 p-3 bg-teal-50 border border-teal-200 rounded text-sm" data-testid="analyze-report-result">
+                  <p className="font-medium text-teal-800">
+                    {reportResult.extracted_claims_count} claim{reportResult.extracted_claims_count !== 1 ? "s" : ""} extracted from {(reportResult.text_length / 1000).toFixed(1)} KB of report text. New claims appear in the Verified Claims list →
+                  </p>
+                  {Object.keys(reportResult.verdict_summary).length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {Object.entries(reportResult.verdict_summary).map(([verdict, count]) => (
+                        <span
+                          key={verdict}
+                          className="px-2 py-0.5 text-xs bg-white border border-teal-300 rounded-full"
+                        >
+                          {verdict}: {count}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
           </div>
 

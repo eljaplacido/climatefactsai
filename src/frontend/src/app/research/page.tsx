@@ -16,6 +16,7 @@ import {
   MessageCircle,
   Activity,
 } from "lucide-react";
+import ResearchFeedPanel from "@/components/ResearchFeedPanel";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
 
@@ -51,10 +52,11 @@ interface AnalysisResult {
 }
 
 export default function ResearchPage() {
-  const [inputMode, setInputMode] = useState<"url" | "doi" | "text">("url");
+  const [inputMode, setInputMode] = useState<"url" | "doi" | "text" | "upload">("url");
   const [url, setUrl] = useState("");
   const [doi, setDoi] = useState("");
   const [text, setText] = useState("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,15 +76,35 @@ export default function ResearchPage() {
   async function handleAnalyze() {
     setLoading(true); setError(null); setResult(null);
     try {
-      const body: Record<string, string> = {};
-      if (inputMode === "url") body.url = url;
-      else if (inputMode === "doi") body.doi = doi;
-      else body.text = text;
       const token = localStorage.getItem("clilens_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const resp = await fetch(`${API_URL}/api/research/analyze`, { method: "POST", headers, body: JSON.stringify(body) });
-      if (!resp.ok) { const data = await resp.json(); throw new Error(data.detail || "Analysis failed"); }
+
+      // Polish wave 2 (2026-05-26) — Upload mode posts multipart to
+      // /api/research/upload (deferred #11). Other modes unchanged.
+      let resp: Response;
+      if (inputMode === "upload") {
+        if (!uploadFile) throw new Error("Pick a file to upload");
+        const form = new FormData();
+        form.append("file", uploadFile);
+        const headers: Record<string, string> = {};
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        resp = await fetch(`${API_URL}/api/research/upload`, {
+          method: "POST", headers, body: form,
+        });
+      } else {
+        const body: Record<string, string> = {};
+        if (inputMode === "url") body.url = url;
+        else if (inputMode === "doi") body.doi = doi;
+        else body.text = text;
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        resp = await fetch(`${API_URL}/api/research/analyze`, {
+          method: "POST", headers, body: JSON.stringify(body),
+        });
+      }
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.detail || `Analysis failed (HTTP ${resp.status})`);
+      }
       setResult(await resp.json());
     } catch (err: any) { setError(err.message || "Analysis failed"); }
     finally { setLoading(false); }
@@ -106,21 +128,41 @@ export default function ResearchPage() {
 
       <div className="max-w-5xl mx-auto px-4 py-8">
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-          <div className="flex gap-2 mb-4">
-            {(["url", "doi", "text"] as const).map((m) => (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {(["url", "doi", "text", "upload"] as const).map((m) => (
               <button key={m} onClick={() => setInputMode(m)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${inputMode === m ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
                 {m === "url" && <span className="flex items-center gap-1.5"><Link2 className="h-4 w-4" /> URL</span>}
                 {m === "doi" && <span className="flex items-center gap-1.5"><FileText className="h-4 w-4" /> DOI</span>}
-                {m === "text" && <span className="flex items-center gap-1.5"><Upload className="h-4 w-4" /> Paste text</span>}
+                {m === "text" && <span className="flex items-center gap-1.5"><FileText className="h-4 w-4" /> Paste text</span>}
+                {m === "upload" && <span className="flex items-center gap-1.5"><Upload className="h-4 w-4" /> Upload PDF/Word</span>}
               </button>
             ))}
           </div>
           {inputMode === "url" && <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/report.pdf" className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none" />}
           {inputMode === "doi" && <input type="text" value={doi} onChange={(e) => setDoi(e.target.value)} placeholder="10.1038/s41586-021-03984-4" className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none" />}
           {inputMode === "text" && <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Paste the research report text here..." rows={8} className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none resize-y" />}
+          {inputMode === "upload" && (
+            <div className="space-y-2">
+              <input
+                type="file"
+                accept=".pdf,.docx,.doc,.txt,.md,.html"
+                onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"
+              />
+              {uploadFile && (
+                <p className="text-xs text-gray-600">
+                  Selected: {uploadFile.name} ({(uploadFile.size / 1024).toFixed(1)} KB)
+                </p>
+              )}
+              <p className="text-xs text-gray-500">
+                Up to 25 MiB. PDF, Word (.docx/.doc), TXT, Markdown, HTML.
+                Sustainability reports + theses + working papers all welcome.
+              </p>
+            </div>
+          )}
           {error && <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>}
-          <button onClick={handleAnalyze} disabled={loading || (!url && !doi && !text)}
+          <button onClick={handleAnalyze} disabled={loading || (!url && !doi && !text && !uploadFile)}
             className="mt-4 w-full py-3 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
             {loading ? <><Loader2 className="h-5 w-5 animate-spin" /> Analyzing...</> : <><BarChart3 className="h-5 w-5" /> Analyze Report</>}
           </button>
@@ -135,6 +177,14 @@ export default function ResearchPage() {
               Get help with analysis inputs
             </button>
           </div>
+        </div>
+
+        {/* Polish wave 2 (2026-05-26, deferred audit item #13) — research
+            feed subscribe + topic-following + CrossRef-discovered papers.
+            Sits below the one-shot analyze form so the page now spans
+            both modes: ad-hoc document analysis AND ongoing topic feeds. */}
+        <div className="mt-6">
+          <ResearchFeedPanel />
         </div>
 
         {result && result.status === "completed" && (

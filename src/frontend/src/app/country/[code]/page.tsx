@@ -34,6 +34,7 @@ import SaveButton from "@/components/SaveButton";
 import MultiViewTabs from "@/components/MultiViewTabs";
 import AOISubscribeButton from "@/components/AOISubscribeButton";
 import ProjectionsPanel from "@/components/ProjectionsPanel";
+import ScenarioExplorerCard from "@/components/ScenarioExplorerCard";
 import CountryBiomeSummary from "@/components/CountryBiomeSummary";
 
 /**
@@ -503,10 +504,22 @@ export default function CountryPassportPage() {
         )}
         {tab === "projections" && (
           <Panel id="projections" testId="passport-panel-projections">
-            <ProjectionsPanel
-              countryCode={detail.country_code}
-              countryName={detail.country_name}
-            />
+            <div className="space-y-6">
+              <ProjectionsPanel
+                countryCode={detail.country_code}
+                countryName={detail.country_name}
+              />
+              {/* Polish wave 2 (2026-05-26, deferred #14 UI) — interactive
+                  scenario explorer drops directly into the Projections tab.
+                  Pre-canned SSP scenarios above; user-driven warming
+                  interpolation below. The disclaimer is rendered verbatim
+                  from the API so users always see "interpolation, not
+                  simulation". */}
+              <ScenarioExplorerCard
+                countryCode={detail.country_code}
+                countryName={detail.country_name}
+              />
+            </div>
           </Panel>
         )}
         {tab === "sources" && (
