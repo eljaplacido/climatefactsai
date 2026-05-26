@@ -442,14 +442,17 @@ class ReliabilityScorer:
                 a.extracted_text,
                 a.claims_count,
                 a.verified_claims_count,
-                sct.editorial_score,
-                sct.factcheck_score,
-                sct.transparency_score
+                a.source_name,
+                a.url
             FROM articles a
-            LEFT JOIN source_credibility_tiers sct
-                ON sct.source_name ILIKE a.source_name
             WHERE a.article_id = :article_id
         """
+        # End2End audit hotfix (2026-05-26) — replaced the brittle
+        # `LEFT JOIN ... ON sct.source_name ILIKE a.source_name` with
+        # an explicit lookup via source_tier_service.get_source_3axis_scores
+        # which does proper domain extraction. The JOIN matched <10% of
+        # articles in production because articles store source_name as
+        # "Reuters" while source_credibility_tiers stores "reuters.com".
 
         article_data = postgres_client.execute_query(
             article_query,
@@ -493,15 +496,31 @@ class ReliabilityScorer:
             # Ensure it's a float between 0-1
             content_relevance = float(content_relevance)
 
-        # 4. Calculate reliability score (with 3-axis when available)
+        # 4. Resolve 3-axis source scores via domain-keyed lookup
+        #    (the proper way — see source_tier_service.get_source_3axis_scores).
+        editorial_axis = factcheck_axis = transparency_axis = None
+        try:
+            from app.domains.trust.source_tier_service import get_source_3axis_scores
+            axes = get_source_3axis_scores(
+                postgres_client,
+                article.get('source_name') or '',
+                None,  # let helper extract domain from source_name/url
+            )
+            if axes:
+                editorial_axis, factcheck_axis, transparency_axis = axes
+        except Exception as exc:
+            if logger:
+                logger.debug(f"3-axis lookup failed for {article_id}: {exc}")
+
+        # 5. Calculate reliability score (with 3-axis when available)
         reliability_score, credibility_level = cls.calculate_reliability_score(
             source_credibility_score=article.get('source_credibility_score'),
             total_claims=article.get('claims_count', 0),
             verified_claims=factcheck.get('verified_count', 0),
             false_claims=factcheck.get('false_count', 0),
-            editorial_score=article.get('editorial_score'),
-            factcheck_score=article.get('factcheck_score'),
-            transparency_score=article.get('transparency_score'),
+            editorial_score=editorial_axis,
+            factcheck_score=factcheck_axis,
+            transparency_score=transparency_axis,
             misleading_claims=factcheck.get('misleading_count', 0),
             content_relevance_score=content_relevance
         )

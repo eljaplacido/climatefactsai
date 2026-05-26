@@ -65,6 +65,69 @@ def _db_lookup(db, domain: Optional[str], source_name: str) -> Optional[Tuple[in
         return None
 
 
+# Polish wave 2 hotfix (2026-05-26) — End2End audit found the
+# reliability_scorer.calculate_reliability_score 3-axis params were
+# silently ignored because none of the source_tier_service SELECTs
+# projected editorial_score / factcheck_score / transparency_score
+# from source_credibility_tiers. Mig 041 + 045 wrote them and fenced
+# them never-null, but the data layer never propagated to the scorer.
+# This helper closes the loop.
+
+@lru_cache(maxsize=1024)
+def _db_lookup_axes(
+    db, domain: Optional[str], source_name: str
+) -> Optional[Tuple[int, int, int]]:
+    """Query 3-axis source scores (editorial, factcheck, transparency).
+
+    Returns None when domain unknown or DB error — caller must treat
+    None as 'fall back to legacy single-score path'.
+    """
+    if domain is None:
+        return None
+    try:
+        rows = db.execute_query(
+            """
+            SELECT editorial_score, factcheck_score, transparency_score
+            FROM source_credibility_tiers
+            WHERE domain = :domain
+            LIMIT 1
+            """,
+            {"domain": domain},
+        )
+        if rows:
+            r = rows[0]
+            ed = r.get("editorial_score")
+            fc = r.get("factcheck_score")
+            tr = r.get("transparency_score")
+            if ed is None or fc is None or tr is None:
+                return None
+            return (int(ed), int(fc), int(tr))
+        return None
+    except Exception as exc:
+        _logger.debug(f"source_tier 3-axis lookup failed ({domain}): {exc}")
+        return None
+
+
+def get_source_3axis_scores(
+    db,
+    source_name: str,
+    domain: Optional[str] = None,
+) -> Optional[Tuple[int, int, int]]:
+    """Public helper: get (editorial, factcheck, transparency) for a source.
+
+    Pairs with reliability_scorer.calculate_reliability_score's three
+    new optional args. Caller passes the tuple's elements positionally
+    or as kwargs; None on this side means scorer falls back to legacy.
+
+    Domain extraction mirrors get_source_tier_prior. Cached via
+    _db_lookup_axes LRU.
+    """
+    effective_domain = domain or _extract_domain(source_name)
+    if effective_domain is None:
+        return None
+    return _db_lookup_axes(db, effective_domain, source_name)
+
+
 def get_source_tier_prior(
     db,
     source_name: str,
@@ -111,12 +174,20 @@ def clear_tier_cache() -> None:
 
 
 def get_source_tier_profile(db, domain: str) -> Optional[dict]:
-    """Full profile for a domain (for /api/methodology/source-tiers)."""
+    """Full profile for a domain (for /api/methodology/source-tiers).
+
+    Polish wave 2 hotfix (2026-05-26): now projects the 3-axis scores
+    (editorial / factcheck / transparency from mig 041/045) so the
+    /methodology page surfaces them. Without this fix the JSON response
+    omitted them entirely.
+    """
     try:
         rows = db.execute_query(
             """
             SELECT source_name, domain, tier, prior_bonus, evidence_url,
-                   classification, retracted_count, last_audited_at
+                   classification, retracted_count, last_audited_at,
+                   editorial_score, factcheck_score, transparency_score,
+                   scoring_rubric_url, scoring_last_reviewed_at
             FROM source_credibility_tiers
             WHERE domain = :domain
             LIMIT 1
@@ -134,6 +205,11 @@ def get_source_tier_profile(db, domain: str) -> Optional[dict]:
                 "classification": r.get("classification"),
                 "retracted_count": int(r.get("retracted_count") or 0),
                 "last_audited_at": str(r.get("last_audited_at")) if r.get("last_audited_at") else None,
+                "editorial_score": int(r["editorial_score"]) if r.get("editorial_score") is not None else None,
+                "factcheck_score": int(r["factcheck_score"]) if r.get("factcheck_score") is not None else None,
+                "transparency_score": int(r["transparency_score"]) if r.get("transparency_score") is not None else None,
+                "scoring_rubric_url": r.get("scoring_rubric_url"),
+                "scoring_last_reviewed_at": str(r["scoring_last_reviewed_at"]) if r.get("scoring_last_reviewed_at") else None,
             }
         return None
     except Exception as exc:
@@ -142,12 +218,16 @@ def get_source_tier_profile(db, domain: str) -> Optional[dict]:
 
 
 def list_all_source_tiers(db) -> list:
-    """All tiered sources (for /api/methodology/source-tiers)."""
+    """All tiered sources (for /api/methodology/source-tiers).
+
+    Polish wave 2 hotfix (2026-05-26): now projects 3-axis scores.
+    """
     try:
         rows = db.execute_query(
             """
             SELECT source_name, domain, tier, prior_bonus, evidence_url,
-                   classification, retracted_count
+                   classification, retracted_count,
+                   editorial_score, factcheck_score, transparency_score
             FROM source_credibility_tiers
             ORDER BY tier, source_name
             """,
@@ -162,6 +242,9 @@ def list_all_source_tiers(db) -> list:
                 "evidence_url": r.get("evidence_url"),
                 "classification": r.get("classification"),
                 "retracted_count": int(r.get("retracted_count") or 0),
+                "editorial_score": int(r["editorial_score"]) if r.get("editorial_score") is not None else None,
+                "factcheck_score": int(r["factcheck_score"]) if r.get("factcheck_score") is not None else None,
+                "transparency_score": int(r["transparency_score"]) if r.get("transparency_score") is not None else None,
             }
             for r in (rows or [])
         ]
