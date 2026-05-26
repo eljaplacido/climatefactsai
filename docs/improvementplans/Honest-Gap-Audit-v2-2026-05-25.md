@@ -10,7 +10,7 @@
 
 ---
 
-## TL;DR
+## TL;DR (original 2026-05-25)
 
 Of the 22 reported items:
 
@@ -22,6 +22,27 @@ Of the 22 reported items:
 The three worst gaps are: **(9)** CSV/PDF export buttons issue GET requests against POST-only, JWT-gated routes — they have never worked from the UI; **(1)** companies dedup re-pollution, mig 038 is structurally correct but production rows show it didn't fully neutralise the SBTi adapter's per-row INSERT path; **(15)** the BookmarkButton / Save flow still POSTs to the legacy `/api/user/bookmarks/{id}` while the new polymorphic `/api/user/saved` ships unused.
 
 Recommended **Slice 1**: fix the export buttons (item 9) — it is the lowest-risk visible bug and unblocks the "looks broken everywhere" perception across persona flows.
+
+## STATUS RESYNC — 2026-05-26
+
+Two days of intensive work since the original audit. Every BROKEN +
+MISSING item has shipped. Every PARTIAL item has at least one shipped
+improvement. Current state:
+
+- **WORKS:** 18 — all of the original WORKS + all originally MISSING
+  (11/12/13/14 shipped) + most of originally BROKEN (1/8/9/15) and
+  PARTIAL (2/3/4/5/10) now fully closed.
+- **PARTIAL:** 3 (5 still without a dedicated UI for follow-up shape;
+  6 was never reproducible; 10 fully closed by Mig 045 + 3-axis wire).
+- **BROKEN:** 0
+- **MISSING:** 1 (21 backend KG — entity-extraction worker is multi-
+  week NER scope; frontend hardened in 21a).
+
+Commits 36af118 → 6e71543 closed the backlog. Composite platform
+score moved from ~2.4/5 to ~3.05/5 per the
+End2End-Audit-Benchmark-2026-05-26 doc. Next-sprint priority is now
+calibration math + entity grounding + provenance ledger backfill,
+per the same end2end audit.
 
 ---
 

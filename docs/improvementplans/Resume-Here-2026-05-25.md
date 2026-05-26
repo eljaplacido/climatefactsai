@@ -1,5 +1,24 @@
 # Resume Here — Climatefacts.ai Session State 2026-05-25
 
+> ## ⚠️ SUPERSEDED — see 2026-05-26 update below
+>
+> Two more days of intensive work since this doc was written.
+> **Items 11 / 12 / 13 / 14 are now ALL SHIPPED** (e44a1a3, 12d9e9e,
+> 6c33165, 3a9171d). The "deferred" markers below are historical.
+> Latest fresh state in:
+>
+> - `docs/improvementplans/End2End-Audit-Benchmark-2026-05-26.md`
+>   (composite 3.05/5, top 3 risks, next-sprint priority)
+> - `docs/improvementplans/TruthEngine-PersonaFit-Design-2026-05-25.md`
+>   (32 designed improvements, persona-by-persona matrix)
+> - `docs/improvementplans/Alignment-Gap-Inventory-2026-05-25.md`
+>   (44 gaps catalogued, "Ship NOW" list mostly closed)
+> - Memory: `session_2026_05_25_full_autonomous_close.md` has the
+>   complete commit-by-commit ledger through 2026-05-26.
+>
+> Last commit on main as of resync: `6e71543` (3-axis lookup hotfix
+> + End2End audit doc).
+
 ## TL;DR
 
 - **Shipped this session:** 18 items across 11 commits (production-review
