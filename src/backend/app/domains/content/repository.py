@@ -542,6 +542,16 @@ class ArticleRepository:
             "insight_summary": row.get("insight_summary"),
             "analysis_article_html": row.get("analysis_article_html"),
             "analysis_article_generated_at": row.get("analysis_article_generated_at"),
+            # Golden Example fix follow-up (2026-05-27): the SELECT pulls
+            # these columns now, but the mapper was discarding them so the
+            # FE article-detail page still saw empty values. Explicitly
+            # forward enriched_excerpt + climate_context_summary +
+            # executive_brief + enrichment_metadata into the response.
+            "enriched_excerpt": row.get("enriched_excerpt"),
+            "climate_context_summary": row.get("climate_context_summary"),
+            "executive_brief": row.get("executive_brief"),
+            "enrichment_metadata": self._parse_json_field(row.get("enrichment_metadata")),
+            "content_category": row.get("content_category"),
         })
         return ArticleDetail(**detail_data)
 

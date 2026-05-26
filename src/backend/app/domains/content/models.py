@@ -182,6 +182,23 @@ class ArticleDetail(Article):
         default=None,
         description="Timestamp of when analysis article was last generated"
     )
+    # Golden Example fields (2026-05-27) — populated by
+    # ArticleEnrichmentService / GX10 Lane A worker. Were silently
+    # dropped from /api/v2/articles/{id} responses because the model
+    # didn't declare them, even after the SELECT was fixed to pull
+    # them. FE article-detail page already renders all three.
+    enriched_excerpt: Optional[str] = Field(
+        default=None,
+        description="400-800 word LLM-generated analytical excerpt with climate/weather context layered in"
+    )
+    climate_context_summary: Optional[str] = Field(
+        default=None,
+        description="2-3 sentence local-climate-context summary (weather + 5-yr trend)"
+    )
+    enrichment_metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Enrichment provenance: llm_provider, llm_model, credibility, weather/trend availability, duration"
+    )
     # CARF-inspired decomposed confidence
     decomposed_confidence: Optional[Dict[str, Any]] = Field(
         default=None,
