@@ -175,7 +175,54 @@ DEFAULTS = {
     "wave_timeout_minutes": 35,
     "pause_between_waves_sec": 30,
     "telegram_poll_interval_sec": 25,
+    "research_per_wave": 1,         # research paper analyses per article wave
+    "companies_per_wave": 3,        # company claim analyses per article wave
 }
+
+# Curated open-access climate research targets for the Phase 2 sweep.
+# /api/research/analyze accepts URL — these are public, scrape-friendly,
+# and represent the canonical climate-science evidence stack.
+CLIMATE_RESEARCH_TARGETS: list[dict] = [
+    # Global stocktake / canonical reports
+    {"label": "Global Carbon Budget 2023", "url": "https://essd.copernicus.org/articles/15/5301/2023/"},
+    {"label": "Global Carbon Budget 2022", "url": "https://essd.copernicus.org/articles/15/2295/2023/"},
+    {"label": "Forster et al. — Indicators of Global Climate Change 2024", "url": "https://essd.copernicus.org/articles/16/2625/2024/"},
+    {"label": "UNEP Emissions Gap Report 2024", "url": "https://www.unep.org/resources/emissions-gap-report-2024"},
+    {"label": "UNEP Production Gap Report 2023", "url": "https://productiongap.org/2023report/"},
+    {"label": "IEA World Energy Outlook 2024 — Key Findings", "url": "https://www.iea.org/reports/world-energy-outlook-2024/key-findings"},
+    {"label": "IEA Net Zero Roadmap Update 2023", "url": "https://www.iea.org/reports/net-zero-roadmap-a-global-pathway-to-keep-the-15-0c-goal-in-reach"},
+    {"label": "WMO State of the Global Climate 2023", "url": "https://wmo.int/publication-series/state-of-global-climate-2023"},
+    {"label": "Climate Action Tracker — Global Update Dec 2024", "url": "https://climateactiontracker.org/global/cat-emissions-gaps/"},
+    {"label": "IPCC AR6 Synthesis Report SPM", "url": "https://www.ipcc.ch/report/ar6/syr/summary-for-policymakers/"},
+    {"label": "IPCC AR6 WG1 Summary for Policymakers", "url": "https://www.ipcc.ch/report/ar6/wg1/chapter/summary-for-policymakers/"},
+    {"label": "IPCC AR6 WG2 Summary for Policymakers", "url": "https://www.ipcc.ch/report/ar6/wg2/chapter/summary-for-policymakers/"},
+    {"label": "IPCC AR6 WG3 Summary for Policymakers", "url": "https://www.ipcc.ch/report/ar6/wg3/chapter/summary-for-policymakers/"},
+    {"label": "IPCC Special Report on 1.5°C SPM", "url": "https://www.ipcc.ch/sr15/chapter/spm/"},
+    {"label": "IPCC Special Report on Oceans & Cryosphere SPM", "url": "https://www.ipcc.ch/srocc/chapter/summary-for-policymakers/"},
+    {"label": "IPCC Special Report on Land SPM", "url": "https://www.ipcc.ch/srccl/chapter/summary-for-policymakers/"},
+    # Frontier peer-reviewed climate science
+    {"label": "Hansen et al. 2023 — Global warming acceleration (OUP Climate)", "url": "https://academic.oup.com/oocc/article/3/1/kgad008/7335889"},
+    {"label": "Rockström et al. — Planetary boundaries 2023 update (Sci Adv)", "url": "https://www.science.org/doi/10.1126/sciadv.adh2458"},
+    {"label": "Trisos et al. — Abrupt biodiversity loss thresholds (Nature 2020)", "url": "https://www.nature.com/articles/s41586-020-2189-9"},
+    {"label": "Frame et al. 2017 — Attributable damages from extreme weather", "url": "https://www.nature.com/articles/nclimate3110"},
+    {"label": "Steffen et al. 2018 — Hothouse Earth trajectories (PNAS)", "url": "https://www.pnas.org/doi/10.1073/pnas.1810141115"},
+    {"label": "Wunderling et al. 2024 — Tipping point cascades (Earth Syst Dynam)", "url": "https://esd.copernicus.org/articles/14/41/2023/"},
+    {"label": "Lenton et al. 2008 — Tipping elements (PNAS)", "url": "https://www.pnas.org/doi/10.1073/pnas.0705414105"},
+    {"label": "Kemp et al. 2022 — Climate endgame (PNAS)", "url": "https://www.pnas.org/doi/10.1073/pnas.2108146119"},
+    {"label": "Lenton et al. 2023 — Earth system tipping cascades", "url": "https://esd.copernicus.org/articles/14/41/2023/"},
+    # Mitigation, energy systems, removal
+    {"label": "Net-zero pathways for major economies (Nature 2023)", "url": "https://www.nature.com/articles/s41558-023-01660-1"},
+    {"label": "Realmonte et al. — CO2 removal modelling (Nature Communications)", "url": "https://www.nature.com/articles/s41467-019-10842-5"},
+    {"label": "Smith et al. 2024 — State of CDR 2024", "url": "https://www.stateofcdr.org/resources"},
+    # Impacts, attribution, extreme events
+    {"label": "Otto et al. 2024 — Attribution methodology synthesis", "url": "https://www.worldweatherattribution.org/about/methodology/"},
+    {"label": "Carbon Brief — Mapped: Every climate attribution study", "url": "https://www.carbonbrief.org/mapped-how-climate-change-affects-extreme-weather-around-the-world/"},
+    # Policy, finance, justice
+    {"label": "World Bank — State and Trends of Carbon Pricing 2024", "url": "https://openknowledge.worldbank.org/entities/publication/b0d66765-299c-4fb8-921f-61f6bb979087"},
+    {"label": "Climate Bonds Initiative — Sustainable Debt Global Outlook 2024", "url": "https://www.climatebonds.net/2024/02/sustainable-debt-global-state-market-2023"},
+    {"label": "OECD — Climate Finance Provided & Mobilised 2023", "url": "https://www.oecd.org/climate-change/finance-usd-100-billion-goal/"},
+]
+
 
 
 # ---------------------------------------------------------------------------
@@ -429,6 +476,141 @@ def queue_for_gx10(article_ids: list[str], token: str) -> dict:
     )
 
 
+# ---------------------------------------------------------------------------
+# Phase 2 — research paper analyses (via /api/research/analyze)
+# ---------------------------------------------------------------------------
+
+def run_research_analysis(target: dict, state: dict, telegram: Telegram) -> dict:
+    """Call /api/research/analyze on one curated climate paper URL.
+
+    Validates the response shape: must have methodology_score,
+    citation_score, climate_relevance, and at least 1 key_claim.
+    Recorded in state['research_results'] for the audit report.
+    """
+    label = target["label"]
+    url = target["url"]
+    log(f"  [research] analyzing: {label}")
+    try:
+        result = http_post("/api/research/analyze", {"url": url})
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode()[:200]
+        except Exception:
+            pass
+        log(f"  [research] HTTP {e.code} for {label}: {body}")
+        return {"label": label, "url": url, "passes": False, "error": f"HTTP {e.code}: {body}"}
+    except Exception as exc:
+        log(f"  [research] error: {exc}")
+        return {"label": label, "url": url, "passes": False, "error": str(exc)}
+
+    analysis = result.get("analysis") or {}
+    credibility = result.get("credibility") or {}
+    posterior = credibility.get("posterior") or {}
+    errors: list[str] = []
+    if not analysis.get("summary"):
+        errors.append("no summary")
+    if (analysis.get("methodology_score") or 0) < 30:
+        errors.append(f"methodology_score {analysis.get('methodology_score')} < 30")
+    if not analysis.get("key_claims"):
+        errors.append("no key_claims")
+    if not analysis.get("climate_relevance"):
+        errors.append("no climate_relevance")
+
+    record = {
+        "label": label,
+        "url": url,
+        "title": (result.get("document") or {}).get("title", "")[:120],
+        "methodology_score": analysis.get("methodology_score"),
+        "citation_score": analysis.get("citation_score"),
+        "data_transparency_score": analysis.get("data_transparency_score"),
+        "climate_relevance": analysis.get("climate_relevance"),
+        "key_claims_count": len(analysis.get("key_claims") or []),
+        "posterior_score": posterior.get("posterior_score"),
+        "posterior_ci": posterior.get("confidence_interval"),
+        "recommendation": analysis.get("recommendation"),
+        "passes": not errors,
+        "errors": errors,
+    }
+    state.setdefault("research_results", []).append(record)
+    return record
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — company corporate-claim analyses (Cloud Run /companies/analyze)
+# ---------------------------------------------------------------------------
+
+# Sample corporate claims to verify against each company's disclosure context.
+# Mix of ECGT-prohibited offset claims, SBTi-aligned commitments, absolute
+# reductions, RE100 — tests the full verdict taxonomy.
+CORPORATE_CLAIM_TEMPLATES: list[dict] = [
+    {"label": "Net-zero by 2030", "claim_text": "We will achieve net-zero greenhouse gas emissions across all scopes by 2030."},
+    {"label": "Net-zero by 2050", "claim_text": "We will achieve net-zero emissions across our entire value chain by 2050."},
+    {"label": "50% absolute scope 1+2 by 2030", "claim_text": "We commit to a 50% absolute reduction in scope 1 and scope 2 emissions by 2030 against a 2019 baseline."},
+    {"label": "Offset-based climate neutral", "claim_text": "Our flagship product line is climate neutral through high-quality carbon offset purchases."},
+    {"label": "SBTi 1.5°C-aligned", "claim_text": "Our science-based targets are validated by SBTi and aligned with limiting warming to 1.5°C."},
+    {"label": "100% renewable electricity", "claim_text": "100% of our purchased electricity globally is sourced from renewable energy under RE100."},
+    {"label": "Scope 3 disclosure", "claim_text": "We disclose our full scope 3 value-chain emissions across all 15 categories with third-party assurance."},
+    {"label": "Nature-positive by 2030", "claim_text": "We commit to being nature-positive by 2030, restoring biodiversity in our operations."},
+]
+
+
+def fetch_top_companies(limit: int = 50) -> list[dict]:
+    """Pull the top SBTi-validated companies by data richness."""
+    try:
+        resp = http_get("/api/companies", {"sort": "richness", "limit": limit, "sbti_only": "true"})
+        return resp.get("companies", []) or []
+    except Exception as exc:
+        log(f"  [company] fetch failed: {exc}")
+        return []
+
+
+def run_company_analysis(company_id_or_ticker: str, name: str, claim_template: dict, state: dict) -> dict:
+    """Call POST /api/companies/{id}/analyze with a sample sustainability claim."""
+    log(f"  [company] {name} ({company_id_or_ticker[:8]}…) — {claim_template['label']}")
+    try:
+        result = http_post(
+            f"/api/companies/{urllib.parse.quote(company_id_or_ticker)}/analyze",
+            {"claim_text": claim_template["claim_text"]},
+        )
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode()[:200]
+        except Exception:
+            pass
+        return {
+            "company": name, "ticker": company_id_or_ticker,
+            "claim_label": claim_template["label"],
+            "passes": False, "error": f"HTTP {e.code}: {body}",
+        }
+    except Exception as exc:
+        return {
+            "company": name, "ticker": company_id_or_ticker,
+            "claim_label": claim_template["label"],
+            "passes": False, "error": str(exc),
+        }
+
+    verdict = result.get("verdict")
+    record = {
+        "company": name,
+        "ticker": company_id_or_ticker,
+        "claim_label": claim_template["label"],
+        "claim_text": claim_template["claim_text"][:200],
+        "claim_id": result.get("claim_id"),
+        "claim_type": result.get("claim_type"),
+        "verdict": verdict,
+        "flag_reason": result.get("flag_reason"),
+        "evidence": (result.get("evidence") or "")[:300] if result.get("evidence") else None,
+        "passes": verdict is not None and verdict != "error",
+        "errors": [] if (verdict and verdict != "error") else [f"verdict={verdict!r}"],
+    }
+    state.setdefault("company_results", []).append(record)
+    return record
+
+
+
+
 def wait_for_completion(article_ids: list[str], minutes: int, telegram: Telegram, state: dict) -> tuple[list[str], list[str]]:
     """Poll /api/articles/{id} until each article has enriched_excerpt > 100 chars.
 
@@ -501,16 +683,20 @@ def _handle_telegram_inbox(telegram: Telegram, state: dict) -> None:
 
 
 def _status_message(state: dict) -> str:
-    passed = sum(1 for r in state["validation_results"] if r["passes"])
-    total = len(state["validation_results"])
-    gx10 = sum(1 for r in state["validation_results"]
-               if "local-gx10" in (r.get("llm_provider") or ""))
+    art_results = state.get("validation_results", [])
+    art_passed = sum(1 for r in art_results if r["passes"])
+    art_total = len(art_results)
+    gx10 = sum(1 for r in art_results if "local-gx10" in (r.get("llm_provider") or ""))
+    res_results = state.get("research_results", [])
+    res_passed = sum(1 for r in res_results if r.get("passes"))
+    co_results = state.get("company_results", [])
+    co_passed = sum(1 for r in co_results if r.get("passes"))
     return (
         f"📊 *Golden Pipeline*\n"
         f"Wave: *{state['wave']}*\n"
-        f"Validated: *{total}* articles\n"
-        f"Passed gates: *{passed}* ({(100*passed/total) if total else 0:.0f}%)\n"
-        f"GX10-enriched: *{gx10}*/{total}\n"
+        f"📰 Articles: *{art_passed}*/{art_total} passed, GX10: {gx10}\n"
+        f"📄 Research: *{res_passed}*/{len(res_results)} passed\n"
+        f"🏢 Companies: *{co_passed}*/{len(co_results)} passed\n"
         f"Paused: {state['paused']}\n"
         f"Issues logged: {len(state['issues_reported'])}\n"
         f"Report: `{REPORT_PATH.relative_to(ROOT_DIR)}`"
@@ -574,6 +760,47 @@ def write_audit_report(state: dict) -> None:
         for r in failed[:30]:
             errs = "; ".join(r.get("errors", []))[:120]
             lines.append(f"| {(r.get('title') or '?')[:60]} | {r.get('source_name', '?')} | {errs} |")
+
+    # Research analyses section
+    research = state.get("research_results", [])
+    if research:
+        lines.extend([
+            "",
+            "## Research paper analyses",
+            "",
+            f"- Total: **{len(research)}**",
+            f"- Passed (valid response shape): **{sum(1 for r in research if r.get('passes'))}**",
+            "",
+            "| # | Paper | Meth. | Cit. | Transp. | Relevance | Claims | Posterior | Recommendation |",
+            "|---:|---|---:|---:|---:|:---:|---:|---:|---|",
+        ])
+        for i, r in enumerate(research, 1):
+            lines.append(
+                f"| {i} | [{r['label'][:60]}]({r['url']}) | "
+                f"{r.get('methodology_score','?')} | {r.get('citation_score','?')} | "
+                f"{r.get('data_transparency_score','?')} | {r.get('climate_relevance','?')} | "
+                f"{r.get('key_claims_count','?')} | {r.get('posterior_score','?')} | "
+                f"{(r.get('recommendation') or '?')[:30]} |"
+            )
+
+    # Company corporate-claim analyses section
+    companies = state.get("company_results", [])
+    if companies:
+        lines.extend([
+            "",
+            "## Corporate sustainability-claim analyses",
+            "",
+            f"- Total: **{len(companies)}**",
+            f"- Passed (verdict returned): **{sum(1 for r in companies if r.get('passes'))}**",
+            "",
+            "| # | Company | Claim | Verdict | Flag reason |",
+            "|---:|---|---|---|---|",
+        ])
+        for i, r in enumerate(companies, 1):
+            lines.append(
+                f"| {i} | {r.get('company','?')} | {r.get('claim_label','?')} | "
+                f"`{r.get('verdict','?')}` | {(r.get('flag_reason') or '—')[:60]} |"
+            )
 
     if state.get("issues_reported"):
         lines.extend(["", "## Issues reported via Telegram /fix", ""])
@@ -688,6 +915,57 @@ def main() -> int:
             f"Passed gates: {passed}/{len(wave_results)} • GX10: {gx10_n}\n"
             f"Total: {len(state['completed_ids'])}/{args.budget}"
         )
+
+        # Phase 2 — research paper analyses (per wave). Cycles through the
+        # 35+ curated climate-science targets; if exhausted, cycles again
+        # to broaden the per-target evidence base.
+        for _ in range(DEFAULTS["research_per_wave"]):
+            ri = state.get("research_index", 0)
+            target = CLIMATE_RESEARCH_TARGETS[ri % len(CLIMATE_RESEARCH_TARGETS)]
+            log(f"  [research] {ri+1}: {target['label'][:60]}")
+            try:
+                rec = run_research_analysis(target, state, telegram)
+                state["research_index"] = ri + 1
+                save_state(state)
+                msg = f"📄 Paper {ri+1}: {rec['label'][:55]}"
+                if rec["passes"]:
+                    msg += f" ✅ meth={rec.get('methodology_score')} rel={rec.get('climate_relevance')}"
+                else:
+                    msg += f" ❌ {(', '.join(rec.get('errors', []))[:60])}"
+                telegram.send(msg)
+            except Exception as exc:
+                log(f"research phase failed: {exc}\n{traceback.format_exc()}")
+                break
+
+        # Phase 3 — company corporate-claim analyses (per wave). 50 top
+        # companies × 8 claim templates = 400 unique analyses available.
+        if not state.get("top_companies"):
+            companies = fetch_top_companies(limit=50)
+            state["top_companies"] = [
+                {"id": c.get("company_id"), "ticker": c.get("ticker"), "name": c.get("name")}
+                for c in companies if c.get("company_id")
+            ]
+            log(f"  [company] hydrated top_companies: {len(state['top_companies'])}")
+        picks = state.get("top_companies") or []
+        if picks:
+            for _ in range(DEFAULTS["companies_per_wave"]):
+                ci = state.get("company_index", 0)
+                company = picks[ci % len(picks)]
+                template = CORPORATE_CLAIM_TEMPLATES[(ci // len(picks)) % len(CORPORATE_CLAIM_TEMPLATES)]
+                # Prefer ticker for human-readable URL when available, else company_id
+                lookup_id = company.get("ticker") or company.get("id")
+                try:
+                    rec = run_company_analysis(lookup_id, company["name"], template, state)
+                    state["company_index"] = ci + 1
+                    save_state(state)
+                    if rec["passes"]:
+                        flag = f" — {rec.get('flag_reason')}" if rec.get("flag_reason") else ""
+                        telegram.send(f"🏢 {company['name'][:30]} / {template['label'][:25]} → *{rec.get('verdict')}*{flag}")
+                    else:
+                        telegram.send(f"🏢 {company['name'][:30]} ❌ {(', '.join(rec.get('errors', []))[:60])}")
+                except Exception as exc:
+                    log(f"company phase failed: {exc}")
+                    break
 
         if state["stop_requested"]:
             break
