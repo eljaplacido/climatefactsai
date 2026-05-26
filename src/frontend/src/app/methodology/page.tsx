@@ -360,6 +360,9 @@ export default function MethodologyPage() {
                   "Auto-fallback to DeepSeek if GX10 unreachable",
                   "Cloud Scheduler crons: nightly link-check + research-poll",
                   "Migration runner @notolerate directive — broken migrations now fail loud",
+                  "claim_provenance ledger now written from article enrichment path (highest-volume LLM workload, was empty in prod)",
+                  "Chi-squared bias auditor live at /api/methodology/bias-audit — Cramér's V + critical-value gate at α=0.05",
+                  "Calibration refit default min_labels bumped 5→50 — production-grade Platt fits only",
                 ],
               },
             ].map((card) => (

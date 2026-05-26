@@ -531,6 +531,21 @@ Write the enriched excerpt now. Use flowing prose paragraphs, not bullet points 
             country_code=country_code,
             source_name=source_name,
         )
+        # End2End audit hotfix (2026-05-26) — the audit's top-1 priority
+        # was that claim_provenance ledger was empty in production. The
+        # 3 existing call sites (url_analysis, deep_search, cynefin) all
+        # write provenance, but article_enrichment_service — the HIGHEST
+        # VOLUME LLM path — did not. Wiring it here populates the ledger
+        # with one row per enrichment call, restoring the "every output
+        # traceable" promise at the right point in the pipeline.
+        self._record_enrichment_provenance(
+            task="enriched_excerpt",
+            provider=provider,
+            model=model,
+            prompt_name="article_enriched_excerpt",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+        )
         return text
 
     async def _generate_climate_context_summary(
@@ -613,7 +628,68 @@ Write 2-3 sentences only, in English. Be specific and data-driven."""
             country_code=country_code,
             source_name=None,
         )
+        self._record_enrichment_provenance(
+            task="climate_context_summary",
+            provider=provider,
+            model=model,
+            prompt_name="climate_context_summary",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+        )
         return text
+
+    def _record_enrichment_provenance(
+        self,
+        task: str,
+        provider: str,
+        model: str,
+        prompt_name: str,
+        system_prompt: str,
+        user_prompt: str,
+    ) -> None:
+        """Write one claim_provenance row per enrichment LLM call.
+
+        Best-effort: silently drops on any failure (missing db handle,
+        no current_article_id, missing migration). Pipeline NEVER breaks
+        because audit trail recording failed.
+
+        Added 2026-05-26 per End2End audit top-1 priority — the ledger
+        was empty in production because the highest-volume LLM path
+        (article enrichment, every ingested article) never wrote to it.
+        """
+        if not self._current_article_id or not self.db:
+            return
+        try:
+            import hashlib
+            from app.domains.intelligence.provenance import (
+                record_provenance,
+                ProvenanceRecord,
+                EXTRACTION_INGESTION,
+            )
+
+            # Fingerprint = first 16 hex chars of sha256(system + user)
+            # so prompt-diff replay can group provenance rows by template.
+            fp_raw = (system_prompt + "\n" + user_prompt).encode("utf-8", errors="ignore")
+            fingerprint = hashlib.sha256(fp_raw).hexdigest()[:16]
+
+            record_provenance(
+                self.db,
+                ProvenanceRecord(
+                    extraction_method=EXTRACTION_INGESTION,
+                    article_id=self._current_article_id,
+                    model_name=model,
+                    prompt_name=prompt_name,
+                    prompt_version="v1.0",
+                    prompt_fingerprint=fingerprint,
+                    retrieval_strategy=f"enrichment.{task}",
+                    raw_metadata={"provider": provider, "task": task},
+                ),
+            )
+        except Exception as exc:
+            logger.debug(
+                "enrichment record_provenance failed (non-fatal): %s",
+                exc,
+            )
 
     def _record_llm_call(self, provider: str, model: str) -> None:
         """Track which LLM produced output for the current article so

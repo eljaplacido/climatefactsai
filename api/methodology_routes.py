@@ -544,7 +544,7 @@ async def submit_calibration_label(
 @router.post("/calibration/refit")
 async def refit_calibration(
     signal: str = "reliability_score",
-    min_labels: int = 5,
+    min_labels: int = 50,
     x_admin_secret: Optional[str] = Header(None, alias="X-Admin-Secret"),
 ) -> Dict[str, Any]:
     """Recompute Brier + ECE + Platt parameters and persist into
@@ -552,8 +552,10 @@ async def refit_calibration(
     next GET — no restart required.
 
     Returns `status='insufficient_data'` when fewer than `min_labels`
-    rows exist for the signal (default 5). The fit is skipped, no row
-    written.
+    rows exist for the signal. Default raised from 5 → 50 on 2026-05-26
+    per End2End-Audit + TruthMachine strategy report: 5-label fits are
+    unstable Platt sigmoids; 50+ is the minimum for production-grade.
+    Callers wanting preview fits can pass min_labels=5 explicitly.
     """
     _verify_admin_secret(x_admin_secret)
 
@@ -562,6 +564,34 @@ async def refit_calibration(
     db = get_postgres()
     result = refit_and_persist(db, signal_name=signal, min_labels=int(min_labels))
     return result.as_dict()
+
+
+# =============================================================================
+# Chi-squared bias audit (Section III of TruthMachine strategy report)
+# =============================================================================
+# Tests whether claim_type is statistically independent of verdict over the
+# recent claim corpus. A significant association (p < 0.05) flags that the
+# source mix is shifting verdicts in a way that warrants editorial review.
+# Pure-numpy implementation in app.domains.intelligence.bias_auditor.
+
+@router.get("/bias-audit")
+async def get_bias_audit() -> Dict[str, Any]:
+    """Public read-only chi-squared bias auditor.
+
+    Builds a contingency table of (claim_type × verdict) over the last
+    180 days of claims and runs a chi-squared test of independence at
+    alpha=0.05. Reports chi², degrees of freedom, the critical value,
+    Cramér's V effect size, and a plain-language interpretation.
+
+    Reject_independence=true means the source/topic mix is producing
+    correlated verdicts in a statistically meaningful way — editorial
+    review recommended. Reject_independence=false is the desired state
+    (verdicts depend on claim content, not claim category).
+    """
+    from app.domains.intelligence.bias_auditor import audit_claim_type_verdict_bias
+
+    db = get_postgres()
+    return audit_claim_type_verdict_bias(db)
 
 
 # =============================================================================

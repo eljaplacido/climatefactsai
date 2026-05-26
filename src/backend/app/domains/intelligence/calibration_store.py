@@ -205,8 +205,14 @@ def _rows_to_pairs(
 # fit. Below STABLE_FIT_MIN the fit is marked is_preview=True so the UI can warn
 # users that this signal is calibrated on too-few labels. Above it the fit is
 # considered production-grade.
+#
+# End2End audit (2026-05-26) raised the DEFAULT min_labels for fits from 5 to 50
+# per the TruthMachine strategy report: "Raise min_labels to 50; preview-tag
+# fits below threshold." Callers can still opt in to PREVIEW_FIT_MIN explicitly
+# when they want a preview fit (e.g. dashboard "early signal" widget).
 PREVIEW_FIT_MIN = 5
 STABLE_FIT_MIN = 50
+DEFAULT_FIT_MIN = STABLE_FIT_MIN  # Hardened — was PREVIEW_FIT_MIN until 2026-05-26.
 
 
 @dataclass
@@ -242,7 +248,7 @@ def refit_and_persist(
     db,
     signal_name: str = "reliability_score",
     *,
-    min_labels: int = PREVIEW_FIT_MIN,
+    min_labels: int = DEFAULT_FIT_MIN,
 ) -> RefitResult:
     """Refit Platt scaling on the latest labels and write to `calibration_fits`.
 
