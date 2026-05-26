@@ -191,6 +191,12 @@ class ArticleEnrichmentService:
         Returns:
             dict with processed, failed, and skipped counts.
         """
+        # Lane A worker (GX10) prefers articles flagged
+        # enrichment_metadata.golden_priority=true — driven by the
+        # autonomous overnight pipeline at scripts/golden_pipeline_daemon.py
+        # which queues curated T1-source climate articles via the
+        # /api/admin/backfill/golden-queue endpoint. Falls back to the
+        # standard newest-first order when no priority articles are pending.
         rows = self.db.execute_query(
             """SELECT article_id, title, COALESCE(extracted_text, '') AS extracted_text,
                       COALESCE(source_name, '') AS source_name,
@@ -199,7 +205,9 @@ class ArticleEnrichmentService:
                FROM articles
                WHERE enriched_at IS NULL
                  AND is_synthetic = FALSE
-               ORDER BY created_at DESC
+               ORDER BY
+                   COALESCE((enrichment_metadata->>'golden_priority')::boolean, false) DESC,
+                   created_at DESC
                LIMIT :lim""",
             {"lim": limit},
         )

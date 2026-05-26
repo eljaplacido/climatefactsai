@@ -428,3 +428,72 @@ async def enrich_articles_by_id(
         "resolved": len(rows),
         "note": "Progress logged via 'enrich-articles complete' structured log.",
     }
+
+
+# ---------------------------------------------------------------------------
+# 5. Golden-priority queue for GX10 Lane A worker
+# ---------------------------------------------------------------------------
+
+class GoldenQueueRequest(BaseModel):
+    article_ids: list[str] = Field(..., min_length=1, max_length=200)
+
+
+@router.post("/backfill/golden-queue")
+async def golden_queue_articles(
+    payload: GoldenQueueRequest,
+    x_corporate_sync_token: Optional[str] = Header(default=None),
+    x_scheduler_secret: Optional[str] = Header(default=None),
+):
+    """Mark articles for GX10 Lane A worker golden-priority processing.
+
+    Use case: the autonomous overnight `golden_pipeline_daemon.py` selects
+    300-400 high-quality climate-journalism candidates and queues them
+    here. The Lane A worker on the GX10 polls Cloud SQL and processes
+    `enriched_at IS NULL` articles — this endpoint:
+
+      1. Resets enriched_at to NULL (so the worker picks them up again
+         even if they were previously enriched on a wrong path).
+      2. Stamps enrichment_metadata.golden_priority = true so the
+         modified batch_enrich SELECT pulls them BEFORE the rest of the
+         un-enriched corpus.
+
+    The Lane A worker uses qwen2.5:14b via local Ollama on the GX10 —
+    full privacy, no cloud LLM cost. Latency budget hours OK per the
+    Lane A pattern in docs/reports/asusgx10inferencestrategy.md.
+
+    Token-gated via CORPORATE_SYNC_TOKEN / SCHEDULER_SECRET, same as the
+    other admin backfill endpoints. Max 200 IDs per call.
+    """
+    _auth(x_corporate_sync_token, x_scheduler_secret)
+    db = get_postgres()
+
+    affected = db.execute_update(
+        """UPDATE articles
+           SET enriched_at = NULL,
+               enrichment_metadata = jsonb_set(
+                   COALESCE(enrichment_metadata, '{}'::jsonb),
+                   '{golden_priority}',
+                   'true'::jsonb,
+                   true
+               ),
+               updated_at = NOW()
+           WHERE article_id::text = ANY(:ids)
+             AND is_synthetic = FALSE""",
+        {"ids": payload.article_ids},
+    )
+
+    logger.info(
+        f"golden-queue: requested={len(payload.article_ids)} affected={affected}"
+    )
+
+    return {
+        "status": "queued",
+        "task": "golden_priority_queue",
+        "requested": len(payload.article_ids),
+        "affected_rows": affected,
+        "note": (
+            "Articles flagged with enrichment_metadata.golden_priority=true. "
+            "Lane A worker (qwen2.5:14b on GX10) will pull them ahead of the "
+            "standard newest-un-enriched queue on its next polling cycle."
+        ),
+    }
