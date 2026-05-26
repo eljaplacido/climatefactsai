@@ -165,8 +165,12 @@ def get_company(db, ticker_or_id: str) -> Optional[CompanyProfile]:
         is_uuid = True
     except (ValueError, AttributeError, TypeError):
         is_uuid = False
+    # CAST(:q AS uuid) instead of :q::uuid — the `::` PostgreSQL cast
+    # collides with SQLAlchemy text() param-name parsing on some
+    # versions, surfacing as a 500 on /api/companies/{uuid} even when
+    # the same row resolves fine via the ticker path.
     where_clause = (
-        "c.company_id = :q::uuid"
+        "c.company_id = CAST(:q AS uuid)"
         if is_uuid
         else "c.ticker = :q"
     )

@@ -35,6 +35,7 @@ import os
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from shared.database import get_postgres
 
@@ -330,4 +331,100 @@ async def trigger_enrich_pending(
         "task": "batch_enrich",
         "batch_size": batch_size,
         "note": "Progress logged via 'batch_enrich complete' structured log.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# 4. Targeted enrichment by article_id list (Golden Example evaluation set)
+# ---------------------------------------------------------------------------
+
+class EnrichByIdsRequest(BaseModel):
+    article_ids: list[str] = Field(..., min_length=1, max_length=50)
+
+
+@router.post("/backfill/enrich-articles")
+async def enrich_articles_by_id(
+    payload: EnrichByIdsRequest,
+    background_tasks: BackgroundTasks,
+    x_corporate_sync_token: Optional[str] = Header(default=None),
+    x_scheduler_secret: Optional[str] = Header(default=None),
+):
+    """Run ArticleEnrichmentService.enrich_article on a hand-picked list.
+
+    Companion to /scheduler/enrich-pending, which always pulls the next
+    25 un-enriched rows newest-first. This endpoint lets ops nominate the
+    exact article_ids to enrich — used to build the Golden Example set
+    after the End2End audit found `executive_brief` 0% populated despite
+    Golden #5 (b892f5b) shipping the code path.
+
+    Returns immediately with status=queued; per-article completion is
+    visible via the article-detail endpoint (`enriched_at` flips from
+    NULL to a timestamp, `executive_brief` populates).
+    """
+    _auth(x_corporate_sync_token, x_scheduler_secret)
+    db = get_postgres()
+
+    try:
+        from app.domains.content.article_enrichment_service import ArticleEnrichmentService
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"ArticleEnrichmentService unavailable: {type(exc).__name__}",
+        )
+
+    rows = db.execute_query(
+        """SELECT article_id, title,
+                  COALESCE(extracted_text, '') AS extracted_text,
+                  COALESCE(source_name, '') AS source_name,
+                  COALESCE(country_code, 'FI') AS country_code,
+                  content_category
+           FROM articles
+           WHERE article_id::text = ANY(:ids)
+             AND is_synthetic = FALSE""",
+        {"ids": payload.article_ids},
+    )
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail="No matching non-synthetic articles for the supplied IDs",
+        )
+
+    async def _run():
+        service = ArticleEnrichmentService(db)
+        processed = 0
+        failed = 0
+        skipped = 0
+        for r in rows:
+            text = r.get("extracted_text", "")
+            if not text or len(text.strip()) < 50:
+                skipped += 1
+                continue
+            try:
+                await service.enrich_article(
+                    article_id=str(r["article_id"]),
+                    title=r.get("title", ""),
+                    extracted_text=text,
+                    source_name=r.get("source_name", ""),
+                    country_code=r.get("country_code", "FI"),
+                    content_category=r.get("content_category"),
+                )
+                processed += 1
+            except Exception as exc:
+                failed += 1
+                logger.error(
+                    f"enrich-articles: {r.get('article_id')} failed: {exc}"
+                )
+        logger.info(
+            f"enrich-articles complete: processed={processed} "
+            f"failed={failed} skipped={skipped} requested={len(payload.article_ids)} "
+            f"resolved={len(rows)}"
+        )
+
+    background_tasks.add_task(_run)
+    return {
+        "status": "queued",
+        "task": "enrich_articles_by_id",
+        "requested": len(payload.article_ids),
+        "resolved": len(rows),
+        "note": "Progress logged via 'enrich-articles complete' structured log.",
     }

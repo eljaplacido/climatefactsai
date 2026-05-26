@@ -703,10 +703,8 @@ async def get_article_detail(article_id: str, db=Depends(get_db)):
             a.climate_context_summary,
             a.enrichment_metadata,
             a.executive_brief,
-            a.analysis_article_html,
             a.analysis_article_generated_at,
             a.decomposed_confidence,
-            a.reliability_breakdown,
             a.insight_summary
         FROM articles a
         WHERE a.article_id = :article_id
