@@ -32,6 +32,9 @@ ENV/
 .env.local
 .env.*.local
 
+# Golden pipeline daemon (overnight autonomous runs)
+data/golden_pipeline/
+
 # IDE
 .vscode/
 .idea/
