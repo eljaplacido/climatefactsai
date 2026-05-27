@@ -104,16 +104,31 @@ async def list_companies(
     )
 
     db = get_postgres()
+    # Resilience fix (2026-05-27 evening): the original try/except wrapped
+    # BOTH _list and _stats — when one failed, the OTHER got blanked too.
+    # ba69ff3 broke _stats with a bad column reference and the entire
+    # Corporate Tracker rendered empty even though _list was fine.
+    # Now: independent try/except per call so a stats hiccup doesn't
+    # erase the company list and vice-versa. Each surfaces zero/empty
+    # instead of taking the other down.
     try:
         rows = _list(
             db, limit=limit, offset=offset, sort=sort,
             has_climate_data=has_climate_data, sbti_only=sbti_only,
         )
+    except Exception as e:
+        logger.warning(f"list_companies list query failed: {e}")
+        rows = []
+    try:
         stats = _stats(db)
     except Exception as e:
-        logger.warning(f"list_companies failed: {e}")
-        rows = []
-        stats = {"total_companies": 0, "with_disclosures": 0, "sbti_validated": 0, "fully_disclosed": 0}
+        logger.warning(f"list_companies stats query failed: {e}")
+        stats = {
+            "total_companies": 0,
+            "with_disclosures": 0,
+            "sbti_validated": 0,
+            "fully_disclosed": 0,
+        }
     return {
         "companies": rows,
         "total": len(rows),
