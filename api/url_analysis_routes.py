@@ -1620,14 +1620,67 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
                 reliability_score = 55
                 overall_credibility = "MEDIUM"
 
+        # Step 7.5: Per-claim verification (gap §4-5, audit loop 4).
+        # The honest credibility comment above explicitly noted Sprint 2
+        # would wire the real fact-check pipeline. This is that wiring.
+        # Without it, url_analyses.fact_checks stays as `[]` forever
+        # (5 completed rows had jsonb_array_length=0 across all of them).
+        # Capped to top 5 claims by importance so a 30-claim article
+        # doesn't blow the latency budget. Opt-out: CLILENS_URL_VERIFY=0.
+        fact_checks_payload: list[dict] = []
+        if os.getenv("CLILENS_URL_VERIFY", "1") != "0" and claims:
+            try:
+                from app.domains.intelligence.services import (
+                    EvidenceRetriever, VerdictAdjudicator,
+                )
+                retriever = EvidenceRetriever()
+                adjudicator = VerdictAdjudicator()
+                # Pick top-5 by importance (with stable order on ties)
+                top_claims = sorted(
+                    claims,
+                    key=lambda c: (-(getattr(c, "importance_score", 0) or 0)),
+                )[:5]
+                for c in top_claims:
+                    try:
+                        evidence = await retriever.fetch_evidence(c)
+                        verdict = await adjudicator.adjudicate(c, evidence)
+                        fact_checks_payload.append({
+                            "claim_text": getattr(c, "claim_text", ""),
+                            "claim_type": str(getattr(c, "claim_type", "")),
+                            "verdict": getattr(verdict, "verdict", "unverified"),
+                            "confidence_score": float(
+                                getattr(verdict, "confidence_score", 0) or 0
+                            ),
+                            "justification": (
+                                getattr(verdict, "justification", "") or ""
+                            )[:500],
+                            "evidence_count": len(evidence) if evidence else 0,
+                        })
+                    except Exception as _claim_exc:
+                        logger.warning(
+                            f"Per-claim verification failed for {analysis_id}: "
+                            f"{type(_claim_exc).__name__}: {_claim_exc}"
+                        )
+                logger.info(
+                    f"URL analysis {analysis_id}: verified "
+                    f"{len(fact_checks_payload)}/{len(top_claims)} claims"
+                )
+            except Exception as _verify_exc:
+                logger.warning(
+                    f"Per-claim verification disabled for {analysis_id}: "
+                    f"{type(_verify_exc).__name__}: {_verify_exc}"
+                )
+
         # Step 8: Update with results
         processing_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        fact_checks_json_str = json.dumps(fact_checks_payload)
 
         db.execute_update(
             """
             UPDATE url_analyses
             SET status = 'completed',
                 extracted_claims = CAST(:claims AS jsonb),
+                fact_checks = CAST(:fact_checks AS jsonb),
                 reliability_score = :reliability,
                 overall_credibility = :credibility,
                 completed_at = NOW(),
@@ -1637,6 +1690,7 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
             """,
             {
                 "claims": claims_json_str,
+                "fact_checks": fact_checks_json_str,
                 "reliability": reliability_score,
                 "credibility": overall_credibility,
                 "time_ms": processing_time_ms,
