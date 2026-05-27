@@ -359,6 +359,69 @@ class EnrichByIdsRequest(BaseModel):
     article_ids: list[str] = Field(..., min_length=1, max_length=50)
 
 
+@router.post("/backfill/brief-from-excerpt")
+async def backfill_brief_from_excerpt(
+    batch_size: int = Query(default=200, ge=1, le=1000),
+    x_corporate_sync_token: Optional[str] = Header(default=None),
+    x_scheduler_secret: Optional[str] = Header(default=None),
+):
+    """Derive executive_brief from enriched_excerpt for articles that
+    have a substantial excerpt but no brief.
+
+    Audit loop 4 caught: 175 articles failed validation on the brief
+    gate even though their excerpt was 1.6-3k chars. These were
+    enriched BEFORE the brief-fallback shipped (commit 5d6ab0d).
+    Running this endpoint takes the first ~150 words of the excerpt
+    and stamps them into executive_brief — same fallback logic the
+    live enrichment service uses, just applied retroactively.
+
+    Idempotent — only touches rows where brief is NULL or empty
+    string AND excerpt is present.
+    """
+    _auth(x_corporate_sync_token, x_scheduler_secret)
+    db = get_postgres()
+    rows = db.execute_query(
+        """SELECT article_id, enriched_excerpt
+           FROM articles
+           WHERE (executive_brief IS NULL OR octet_length(executive_brief) < 50)
+             AND enriched_excerpt IS NOT NULL
+             AND octet_length(enriched_excerpt) >= 200
+             AND is_synthetic = FALSE
+           ORDER BY enriched_at DESC NULLS LAST
+           LIMIT :lim""",
+        {"lim": batch_size},
+    ) or []
+    if not rows:
+        return {"scanned": 0, "updated": 0, "note": "No articles need brief backfill."}
+    updated = 0
+    for r in rows:
+        excerpt = r.get("enriched_excerpt") or ""
+        words = excerpt.split()
+        fallback = " ".join(words[:150])
+        if len(words) > 150:
+            fallback = fallback.rstrip(".,;:") + "…"
+        if len(fallback) < 50:
+            continue
+        try:
+            n = db.execute_update(
+                """UPDATE articles
+                   SET executive_brief = :brief,
+                       updated_at = NOW()
+                   WHERE article_id = :id
+                     AND (executive_brief IS NULL OR octet_length(executive_brief) < 50)""",
+                {"brief": fallback, "id": r["article_id"]},
+            )
+            if n:
+                updated += 1
+        except Exception as exc:
+            logger.debug(f"brief backfill failed for {r['article_id']}: {exc}")
+    return {
+        "scanned": len(rows),
+        "updated": updated,
+        "note": "Run again until 'scanned' returns 0 to converge.",
+    }
+
+
 @router.post("/backfill/enrich-articles")
 async def enrich_articles_by_id(
     payload: EnrichByIdsRequest,

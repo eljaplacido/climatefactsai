@@ -265,7 +265,31 @@ class ArticleEnrichmentService:
             text = row.get("extracted_text", "")
 
             if not text or len(text.strip()) < 50:
+                # Permanently-skip these — without marking them
+                # 'processed' the daemon keeps re-queueing the same
+                # article every wave, Lane A skips it again, infinite
+                # 35-min-timeout loops. Stamp enriched_at + metadata
+                # so the WHERE enriched_at IS NULL filter excludes
+                # them on future polls.
                 skipped += 1
+                try:
+                    self.db.execute_update(
+                        """UPDATE articles
+                           SET enriched_at = NOW(),
+                               enrichment_metadata = jsonb_set(
+                                   COALESCE(enrichment_metadata, '{}'::jsonb),
+                                   '{skipped_reason}',
+                                   '"text_too_short"'::jsonb,
+                                   true
+                               )
+                           WHERE article_id = :id""",
+                        {"id": article_id},
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        f"batch_enrich: failed to stamp skipped article "
+                        f"{article_id}: {exc}"
+                    )
                 continue
 
             try:

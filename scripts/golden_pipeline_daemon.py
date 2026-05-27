@@ -1090,6 +1090,22 @@ def main() -> int:
             state["validation_results"].extend(wave_results)
             state["completed_ids"].extend(done_ids)
             completed_ids.update(done_ids)
+            # CRITICAL FIX (2026-05-27 audit loop 4): pending articles
+            # (those that timed out without an enrichment) need to be
+            # tracked too — otherwise the next wave re-picks them via
+            # select_candidates, Lane A skips them again (text < 50 chars
+            # is now stamped enriched_at=NOW so it won't re-pick, but
+            # other failures could recur). Add them to a 'permanently
+            # skipped' set after 2 timeout cycles.
+            state.setdefault("timeout_count", {})
+            for pid in pending:
+                state["timeout_count"][pid] = state["timeout_count"].get(pid, 0) + 1
+                if state["timeout_count"][pid] >= 2:
+                    # Two-strikes-and-out — add to completed_ids so
+                    # selection skips it on future waves.
+                    completed_ids.add(pid)
+                    state["completed_ids"].append(pid)
+                    log(f"  PERMANENT-SKIP article {pid} after 2 timeouts")
             state["in_progress_ids"] = []
             save_state(state)
 
