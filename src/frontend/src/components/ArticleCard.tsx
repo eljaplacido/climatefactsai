@@ -24,7 +24,13 @@ const TAG_LABELS: Record<string, string> = {
   esg: "ESG",
 };
 
-const formatTagLabel = (tag: string) => {
+const formatTagLabel = (tag: unknown): string => {
+  // Defensive — some articles arrive with null/undefined entries in
+  // their tags array (legacy ingest path, JSONB array w/ NULL).
+  // Calling .toLowerCase() on undefined was crashing the WHOLE feed
+  // page during Array.map() because one bad tag tore down the
+  // entire ArticleCard render tree.
+  if (typeof tag !== "string" || !tag) return "";
   const lower = tag.toLowerCase();
   if (TAG_LABELS[lower]) {
     return TAG_LABELS[lower];
@@ -131,13 +137,16 @@ function ArticleCard({ article }: ArticleCardProps) {
           </div>
         )}
 
-        {article.tags.length > 0 && (
+        {Array.isArray(article.tags) && article.tags.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-4">
-            {article.tags.slice(0, 4).map((tag) => (
-              <span key={tag} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full border border-gray-200">
-                {formatTagLabel(tag)}
-              </span>
-            ))}
+            {article.tags
+              .filter((t): t is string => typeof t === "string" && !!t)
+              .slice(0, 4)
+              .map((tag) => (
+                <span key={tag} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full border border-gray-200">
+                  {formatTagLabel(tag)}
+                </span>
+              ))}
           </div>
         )}
 
