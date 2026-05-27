@@ -332,6 +332,12 @@ app.include_router(og_image_router)
 from api.map_routes import router as map_router
 app.include_router(map_router)
 
+# Public platform-status endpoints (2026-05-27) — answers "what is
+# GX10 doing right now?" and "how big is the corpus?" without an
+# admin token. Aggregate counts only; no PII.
+from api.status_routes import router as status_router
+app.include_router(status_router)
+
 # Include infographic routes (SVG infographic generation)
 from api.infographic_routes import router as infographic_router
 app.include_router(infographic_router)
