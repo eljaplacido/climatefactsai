@@ -59,28 +59,44 @@ async def get_artifacts_for_goal(
     goal = SDG_BY_ID[goal_id]
     db = get_postgres()
 
-    # Build a SQL OR of the keyword tokens — single-pass scan.
-    from app.domains.content.sdg import SDG_KEYWORDS
+    # Two-stage scan: SQL ILIKE for cheap candidate-set (broad), then
+    # the Python tag_text() word-boundary tagger as a post-filter so
+    # 'amazon' (as in 'Amazon rainforest') doesn't substring-match in
+    # 'amazonas' or '70-year-old amazon motorist'. The audit caught
+    # a Slovenian motorcycle-accident article slipping through under
+    # SDG 13 because of plain LIKE matching.
+    from app.domains.content.sdg import SDG_KEYWORDS, tag_to_goal_ids
     keywords = SDG_KEYWORDS[goal_id]
-    # ILIKE search on title + excerpt + executive_brief (any of the keywords)
     where_terms = " OR ".join(
         f"(lower(coalesce(a.title,'') || ' ' || coalesce(a.excerpt,'') || ' ' || coalesce(a.executive_brief,'')) LIKE :kw{i})"
         for i in range(len(keywords))
     )
     params = {f"kw{i}": f"%{kw.lower()}%" for i, kw in enumerate(keywords)}
-    params["alim"] = article_limit
+    # Over-fetch from SQL so the post-filter can drop false-positives
+    # and still return a healthy result set.
+    params["alim"] = article_limit * 4
 
     try:
         article_rows = db.execute_query(
             f"""SELECT a.article_id, a.title, a.source_name, a.country_code,
-                       a.overall_credibility, a.published_date
+                       a.overall_credibility, a.published_date,
+                       coalesce(a.title,'') || ' ' || coalesce(a.excerpt,'') || ' '
+                         || coalesce(a.executive_brief,'') AS scan_text
                 FROM articles a
                 WHERE ({where_terms})
                   AND a.is_synthetic = FALSE
                 ORDER BY a.published_date DESC NULLS LAST
                 LIMIT :alim""",
             params,
-        )
+        ) or []
+        # Post-filter: keep only rows where the WORD-BOUNDARY tagger
+        # actually confirms a match for this specific goal. Drops
+        # false-positive substring matches like 'amazon' in
+        # 'amazonas' or 'climate' in 'acclimate'.
+        article_rows = [
+            r for r in article_rows
+            if goal_id in tag_to_goal_ids(r.get("scan_text") or "")
+        ][:article_limit]
     except Exception as exc:
         logger.debug(f"sdg article scan failed: {exc}")
         article_rows = []
