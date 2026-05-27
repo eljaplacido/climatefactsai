@@ -359,6 +359,91 @@ class EnrichByIdsRequest(BaseModel):
     article_ids: list[str] = Field(..., min_length=1, max_length=50)
 
 
+@router.post("/backfill/claim-extraction")
+async def backfill_claim_extraction(
+    background_tasks: BackgroundTasks,
+    batch_size: int = Query(default=20, ge=1, le=50),
+    min_text_chars: int = Query(default=400, ge=100),
+    x_corporate_sync_token: Optional[str] = Header(default=None),
+    x_scheduler_secret: Optional[str] = Header(default=None),
+):
+    """Run claim extraction + verification on articles missing claims.
+
+    Audit loop 4 caught: 296 of 475 validation failures were on the
+    claims < 2 gate. The claims pipeline ran at ingest-time but
+    produced 0-1 claims for many articles. This endpoint reruns the
+    full VerificationService.verify_article pipeline on those rows.
+
+    Background-task pattern (long-running) — returns 202 immediately
+    with task summary; progress visible via the per-article
+    claims_status column flipping from pending to completed.
+
+    Targets articles where:
+      - claims_count IS NULL OR claims_count < 2
+      - extracted_text is at least min_text_chars (claim extractor
+        requires ≥100 chars; we set 400 default for quality floor)
+      - is_synthetic = FALSE
+    Ordered by enriched_at DESC so high-quality recently-enriched
+    articles get claims first.
+    """
+    _auth(x_corporate_sync_token, x_scheduler_secret)
+    db = get_postgres()
+
+    try:
+        from app.domains.intelligence.services import VerificationService
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"VerificationService unavailable: {type(exc).__name__}",
+        )
+
+    rows = db.execute_query(
+        """SELECT article_id
+           FROM articles
+           WHERE (claims_count IS NULL OR claims_count < 2)
+             AND length(coalesce(extracted_text,'')) >= :min_chars
+             AND is_synthetic = FALSE
+             AND claims_status NOT IN ('processing', 'completed')
+           ORDER BY enriched_at DESC NULLS LAST
+           LIMIT :lim""",
+        {"min_chars": min_text_chars, "lim": batch_size},
+    ) or []
+
+    if not rows:
+        return {"scanned": 0, "queued": 0, "note": "No articles need claim backfill."}
+
+    article_ids = [str(r["article_id"]) for r in rows]
+
+    async def _run():
+        service = VerificationService(db)
+        processed = 0
+        failed = 0
+        for aid in article_ids:
+            try:
+                import uuid as _uuid
+                await service.verify_article(_uuid.UUID(aid))
+                processed += 1
+            except Exception as exc:
+                failed += 1
+                logger.warning(f"claim-extract backfill failed for {aid}: {exc}")
+        logger.info(
+            f"claim-extraction backfill complete: processed={processed} "
+            f"failed={failed} requested={len(article_ids)}"
+        )
+
+    background_tasks.add_task(_run)
+    return {
+        "status": "queued",
+        "queued": len(article_ids),
+        "min_text_chars": min_text_chars,
+        "note": (
+            "Background task running. Each article ~10-30s for full "
+            "extract + adjudicate cycle. Re-run this endpoint until "
+            "'queued' returns 0 to converge."
+        ),
+    }
+
+
 @router.post("/backfill/brief-from-excerpt")
 async def backfill_brief_from_excerpt(
     batch_size: int = Query(default=200, ge=1, le=1000),
