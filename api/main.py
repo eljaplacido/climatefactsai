@@ -233,6 +233,13 @@ app.include_router(url_analysis_router)
 from api.topic_feedback_routes import router as topic_feedback_router
 app.include_router(topic_feedback_router)
 
+# Stage 4 / M5 (2026-05-27) — semantic layer for the "why are these
+# connected" drill-down the user has been asking for. Reads the
+# clilens-lane-a-entity knowledge graph and adds an LLM-explained
+# "explain the bridge" endpoint.
+from api.semantic_routes import router as semantic_router
+app.include_router(semantic_router)
+
 # Phase 1A (2026-05-23) — quota dashboard endpoint (3/3/2 freemium).
 from api.quota_routes import router as quota_router
 app.include_router(quota_router)

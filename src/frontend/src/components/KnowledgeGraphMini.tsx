@@ -191,17 +191,20 @@ export default function KnowledgeGraphMini({ articleId }: Props) {
 
       {expanded && (
         <div className="px-6 pb-6 space-y-5">
-          {/* Entities */}
+          {/* Entities — click any pill to drill into its full
+              neighborhood + cross-article connections via M5
+              /explore/entity/{id} page. */}
           <div>
             <h3 className="text-sm font-semibold text-gray-700 mb-2">
               Entities mentioned
             </h3>
             <div className="flex flex-wrap gap-2">
               {entities.map((e) => (
-                <div
+                <Link
                   key={e.entity_id}
-                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border ${typeStyle(e.type)}`}
-                  title={e.description || e.type}
+                  href={`/explore/entity/${e.entity_id}`}
+                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border transition-shadow hover:shadow-sm ${typeStyle(e.type)}`}
+                  title={`${e.description || e.type} — click to explore connections`}
                 >
                   <span>{e.name}</span>
                   <span className="opacity-60">·{e.type}</span>
@@ -210,7 +213,7 @@ export default function KnowledgeGraphMini({ articleId }: Props) {
                       in {e.article_count}
                     </span>
                   )}
-                </div>
+                </Link>
               ))}
             </div>
           </div>
