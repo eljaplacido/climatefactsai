@@ -32,8 +32,16 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className="bg-gray-50 dark:bg-gray-900" suppressHydrationWarning>
+    // Pin color-scheme to light: the platform's dark-mode support is
+    // partial (some components have `dark:` variants, most don't, and
+    // no toggle wires `html.dark` to OS preference). Without this meta,
+    // user OS dark mode + a stray `dark:text-gray-300` on a card with
+    // no `dark:bg-...` partner produces 'light text on white' bug the
+    // user reported. Forcing color-scheme=light gives every component
+    // a known background to render against until a real theme system
+    // ships. Audit loop 4 / slice S14 / gap §user-dashboard.
+    <html lang="en" className="light" style={{ colorScheme: "light" }} suppressHydrationWarning>
+      <body className="bg-gray-50" suppressHydrationWarning>
         <AuthProvider>
           <I18nProvider>
             <ViewContextProvider>
