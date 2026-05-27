@@ -54,18 +54,24 @@ const MODE_LABELS: Record<string, { label: string; icon: typeof MapPin }> = {
   general: { label: "General", icon: MessageCircle },
 };
 
+// Slice 3 / chat-as-heart (2026-05-27) — context-aware prompts.
+// Each page exposes 3-5 starter prompts; some intentionally nudge the
+// LLM to invoke the 7 newly-wired skills (flag_off_topic, explore_entity,
+// explain_connection, explore_sdg, tag_sdgs, promote_golden_example,
+// suggest_company) so the agentic surface is actually discoverable.
 const EXAMPLE_QUERIES: Record<string, string[]> = {
   map: [
     "Biggest climate risks in Southeast Asia?",
     "Compare renewable energy: Europe vs Asia",
     "Countries with rising temperature anomalies",
-    "African nations with most climate coverage?",
+    "Which UN SDGs is this country aligned with?",      // -> explore_sdg / tag_sdgs
   ],
   articles: [
-    "How does this compare to other findings?",
     "What are the key scientific claims here?",
-    "Is this source reliable for climate reporting?",
-    "Explain the transparency scores for this article",
+    "Why is this source rated this way?",
+    "How does this article connect to others on the topic?", // -> explain_connection
+    "Flag this article as off-topic",                    // -> flag_off_topic
+    "This is a great example — mark it as golden",       // -> promote_golden_example
   ],
   "deep-search": [
     "Compare drought in southern vs northern Europe",
@@ -76,20 +82,65 @@ const EXAMPLE_QUERIES: Record<string, string[]> = {
   feed: [
     "What source types should I follow?",
     "Help me set up my feed preferences",
-    "What are the most reliable climate sources?",
-    "Explain the different update frequencies",
+    "Subscribe me to new IPCC papers",                   // -> subscribe_research_topic
+    "Save this filter as a custom feed",                 // -> save_item
   ],
   transparency: [
     "Explain these credibility scores",
     "Why are some metrics not yet analyzed?",
-    "How is the reliability score calculated?",
-    "What does the evidence chain show?",
+    "What evidence supports the high-credibility verdict?",
+    "Submit a calibration rating for this analysis",     // -> start_calibration_label
   ],
   sources: [
     "Which sources have the highest credibility?",
-    "How can I suggest a new source?",
-    "What types of sources does the platform use?",
     "Compare source reliability across regions",
+    "Suggest a new climate-news source",
+    "What does T1 / T2 / T3 actually mean?",
+  ],
+  // Slice 3 additions — pages that previously had no suggestions
+  companies: [
+    "Show me SBTi-validated companies in Europe",
+    "Verify Apple's 100% renewable electricity claim",   // -> verify_corporate_claim
+    "Suggest a new company for the Tracker",             // -> suggest_company
+    "Analyze Shell's latest sustainability report",      // -> analyze_corporate_report
+  ],
+  research: [
+    "Subscribe me to new papers on CBAM compliance",     // -> subscribe_research_topic
+    "Compare conclusions across recent ocean-warming papers",
+    "Which papers have the highest methodology scores?",
+    "Mark this analysis as a golden example",            // -> promote_golden_example
+  ],
+  saves: [
+    "What have I saved this week?",
+    "Help me organize my saved articles",
+    "Which of my saves are no longer current?",
+  ],
+  sdg: [
+    "Show me every article tagged Climate Action (SDG 13)", // -> explore_sdg
+    "What does Goal 7 cover?",
+    "Tag this text with the relevant SDGs",              // -> tag_sdgs
+  ],
+  explore: [
+    "Show me every article that mentions this entity",
+    "Why are these entities connected?",                 // -> explain_connection
+    "What companies are linked to this concept?",
+  ],
+  country: [
+    "What climate projections does IPCC AR6 give this country?", // -> explore_scenario
+    "Show all SDGs this country is aligned with",        // -> explore_sdg
+    "Compare this country to its regional peers",
+    "What's the temperature anomaly here?",
+  ],
+  analyze: [
+    "Explain what credibility means for this URL",
+    "Submit a calibration label for this analysis",      // -> start_calibration_label
+    "Help me interpret the per-claim verdicts",
+  ],
+  methodology: [
+    "Explain the 3-axis source scoring",
+    "How are claims extracted from articles?",
+    "What's the ECGT rule for corporate offset claims?",
+    "How does the LoRA training pipeline work?",
   ],
   default: [
     "Latest climate trends globally?",

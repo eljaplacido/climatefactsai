@@ -75,8 +75,11 @@ describe('AgenticAssistant', () => {
   it('shows different chips for the articles page', () => {
     render(<AgenticAssistant currentPage="articles" />)
     expand()
+    // Slice 3 / chat-as-heart (2026-05-27) — articles-page chips were
+    // expanded to nudge users toward the newly-wired skills
+    // (explain_connection / flag_off_topic / promote_golden_example).
     expect(
-      screen.getByText('How does this compare to other findings?')
+      screen.getByText('What are the key scientific claims here?')
     ).toBeInTheDocument()
   })
 
