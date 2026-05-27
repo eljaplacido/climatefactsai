@@ -62,7 +62,9 @@ echo "Installing worker dependencies (api/requirements.txt covers the shared.* c
     'tenacity>=8.2' \
     'feedparser>=6.0' \
     'langdetect>=1.0' \
-    'anthropic>=0.39'
+    'anthropic>=0.39' \
+    'markdown>=3.5' \
+    'svgwrite>=1.4'
 
 # --- 3. Write env template if missing ------------------------------------
 mkdir -p "$(dirname "$ENV_FILE")"
