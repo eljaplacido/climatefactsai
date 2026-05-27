@@ -236,9 +236,12 @@ def list_companies(
         # Previously the filter only checked scope1/sbti/net-zero, so a
         # company with only scope3 disclosed got hidden — diverging from
         # what the headline badge counted.
+        # NOTE: scope2 in the schema is split into market vs location
+        # variants (mig 029) — match either.
         where_clauses.append(
             "(MAX(CASE WHEN cd.scope1_tco2e IS NOT NULL THEN 1 ELSE 0 END) = 1 "
-            "OR MAX(CASE WHEN cd.scope2_tco2e IS NOT NULL THEN 1 ELSE 0 END) = 1 "
+            "OR MAX(CASE WHEN cd.scope2_tco2e_market IS NOT NULL THEN 1 ELSE 0 END) = 1 "
+            "OR MAX(CASE WHEN cd.scope2_tco2e_location IS NOT NULL THEN 1 ELSE 0 END) = 1 "
             "OR MAX(CASE WHEN cd.scope3_tco2e IS NOT NULL THEN 1 ELSE 0 END) = 1 "
             "OR BOOL_OR(cd.sbti_validated) = TRUE "
             "OR MAX(cd.net_zero_target_year) IS NOT NULL "
@@ -320,7 +323,8 @@ def companies_stats(db) -> dict:
         """SELECT COUNT(DISTINCT c.company_id) AS total_companies,
                   COUNT(DISTINCT CASE
                       WHEN cd.scope1_tco2e IS NOT NULL
-                        OR cd.scope2_tco2e IS NOT NULL
+                        OR cd.scope2_tco2e_market IS NOT NULL
+                        OR cd.scope2_tco2e_location IS NOT NULL
                         OR cd.scope3_tco2e IS NOT NULL
                         OR cd.sbti_validated = TRUE
                         OR cd.net_zero_target_year IS NOT NULL
