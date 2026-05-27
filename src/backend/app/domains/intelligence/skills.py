@@ -432,6 +432,33 @@ SKILLS_REGISTRY: dict[str, Skill] = {
         ),
         target_surfaces=("/api/golden-examples",),
     ),
+    # ----- Stage 6 / M7 — UN SDG layer -----
+    "explore_sdg": Skill(
+        name="explore_sdg",
+        description="Browse all articles, research analyses, and companies tagged to a specific UN Sustainable Development Goal (1-17). E.g. goal_id=13 surfaces every Climate Action artifact in the corpus.",
+        mode="auto",
+        parameters=(
+            SkillParameter(
+                name="goal_id",
+                type="number",
+                description="SDG goal number, 1-17",
+            ),
+        ),
+        target_surfaces=("/api/sdg/[goal_id]", "/sdg/[goal_id]"),
+    ),
+    "tag_sdgs": Skill(
+        name="tag_sdgs",
+        description="Tag arbitrary text (or article body / company disclosure / research excerpt) with the UN SDGs it most likely relates to. Returns goal_ids + per-goal confidence (matched_keywords / total).",
+        mode="auto",
+        parameters=(
+            SkillParameter(
+                name="text",
+                type="string",
+                description="Text to tag (10-20000 chars)",
+            ),
+        ),
+        target_surfaces=("/api/sdg/tag",),
+    ),
 }
 
 

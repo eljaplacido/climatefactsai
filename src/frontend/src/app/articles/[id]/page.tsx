@@ -18,6 +18,7 @@ import FullArticlePanel from "@/components/FullArticlePanel";
 import WeatherTrendCard from "@/components/WeatherTrendCard";
 import KnowledgeGraphMini from "@/components/KnowledgeGraphMini";
 import TopicFeedbackButton from "@/components/TopicFeedbackButton";
+import SDGChips from "@/components/SDGChips";
 import ReanalyzeButton from "@/components/ReanalyzeButton";
 import ArgumentationGraph from "@/components/ArgumentationGraph";
 import Link from "next/link";
@@ -480,6 +481,22 @@ export default async function ArticlePage({ params }: { params: { id: string } }
               Powered by clilens-lane-a-entity worker on GX10. */}
           {(article as any).article_id && (
             <KnowledgeGraphMini articleId={(article as any).article_id} />
+          )}
+
+          {/* Stage 6 (M7) — UN SDG chips. Calls /api/sdg/tag against
+              the brief + excerpt, links each chip to /sdg/[goal_id]
+              for cross-artifact browse. */}
+          {(article.executive_brief || (article as any).enriched_excerpt) && (
+            <div className="px-1">
+              <SDGChips
+                text={[
+                  article.title,
+                  article.executive_brief,
+                  (article as any).enriched_excerpt,
+                ].filter(Boolean).join(" ")}
+                maxChips={6}
+              />
+            </div>
           )}
 
           {/* Stage 3 (M4) — topic feedback. User flags slip-through

@@ -248,6 +248,13 @@ app.include_router(semantic_router)
 from api.golden_examples_routes import router as golden_examples_router
 app.include_router(golden_examples_router)
 
+# Stage 6 / M7 (2026-05-27) — UN SDG layer (17 goals taxonomy +
+# cross-artifact browse). User: "platform entirely misses insights on
+# progress towards UN's sustainable development goals, which I believe
+# should span all categories of analysis."
+from api.sdg_routes import router as sdg_router
+app.include_router(sdg_router)
+
 # Phase 1A (2026-05-23) — quota dashboard endpoint (3/3/2 freemium).
 from api.quota_routes import router as quota_router
 app.include_router(quota_router)
