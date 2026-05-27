@@ -158,7 +158,24 @@ def get_source_credibility_score(
     was collapsing to 50 for every article before this helper).
     """
     bonus, tier = get_source_tier_prior(db, source_name, domain)
-    base = _TIER_BASE_SCORE.get((tier or "unknown").lower(), 50)
+    # CASE BUG (caught 2026-05-27 by axis-4 measurement): the dict has
+    # uppercase keys ("T1": 90, "T2": 75, "T3": 60, "unknown": 50,
+    # "retracted": 20) but this code used .lower() before lookup, so
+    # *every* T1/T2/T3 lookup silently fell through to the default 50.
+    # This is why /api/articles?limit=100 returned source_credibility_score
+    # NULL across 100/100 articles after the mig 049 + LRU-clear fixes —
+    # the table HAD the right tiers; the lookup mapped them all to 50.
+    # Normalize to the same case as the dict keys.
+    key = (tier or "unknown")
+    if key in _TIER_BASE_SCORE:
+        base = _TIER_BASE_SCORE[key]
+    else:
+        # Backwards-compat: also try lowercase + uppercase fallbacks.
+        base = (
+            _TIER_BASE_SCORE.get(key.upper())
+            or _TIER_BASE_SCORE.get(key.lower())
+            or 50
+        )
     # The prior_bonus is additive (T1=30/T2=15/T3=5) but we already encode
     # the band in base; clamp the final score into [0, 100].
     return max(0, min(100, base))
