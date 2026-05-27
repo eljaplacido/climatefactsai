@@ -131,6 +131,9 @@ async def get_company(ticker: str):
         get_company_claims,
         get_company_disclosures,
     )
+    from app.domains.content.corporate.standards import (
+        assess_disclosure_against_standards,
+    )
 
     db = get_postgres()
     profile = get_company(db, ticker)
@@ -138,6 +141,11 @@ async def get_company(ticker: str):
         raise HTTPException(status_code=404, detail=f"Company not found: {ticker}")
     disclosures = get_company_disclosures(db, profile.company_id)
     claims = get_company_claims(db, profile.company_id)
+    # Stage 5 (M6) — per-standard compliance assessment across the 5
+    # globally-recognized frameworks (CSRD, SBTi, TCFD, IFRS S2, GRI).
+    # Heuristic-based for the MVP; the full machine-readable mapping is
+    # in app/domains/content/corporate/standards.py.
+    standards = assess_disclosure_against_standards(disclosures)
     return {
         "company": {
             "company_id": profile.company_id,
@@ -152,6 +160,7 @@ async def get_company(ticker: str):
         },
         "disclosures": disclosures,
         "claims": claims,
+        "standards_compliance": standards,
     }
 
 
@@ -550,4 +559,125 @@ async def get_adapter_sync_status(source: str):
         "source": source, "status": "never_run",
         "started_at": None, "finished_at": None,
         "upserted": 0, "errors": [], "warning": None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Stage 5 (M6) — company suggestions + standards index
+# ---------------------------------------------------------------------------
+
+class CompanySuggestionRequest(BaseModel):
+    company_name: str = Field(..., min_length=2, max_length=200)
+    ticker: Optional[str] = Field(None, max_length=20)
+    country_code: Optional[str] = Field(None, min_length=2, max_length=2)
+    website: Optional[str] = Field(None, max_length=500)
+    report_url: Optional[str] = Field(
+        None,
+        max_length=500,
+        description=(
+            "Optional URL to a corporate sustainability report (e.g. "
+            "https://www.fazer.com/.../fazer-annual-report-2025.pdf). When "
+            "matched, the analyst can run /companies/{id}/analyze-report on it."
+        ),
+    )
+    reason: Optional[str] = Field(
+        None,
+        max_length=1000,
+        description="Why this company should be analyzed (e.g. claims to verify)",
+    )
+
+
+@router.post("/suggestions")
+async def suggest_company(
+    payload: CompanySuggestionRequest,
+    current_user: Optional[dict] = Depends(get_current_user),
+):
+    """Suggest a new company for analysis (Stage 5 / M6).
+
+    Advanced-user endpoint — anyone authenticated can submit. The
+    submission goes into the company_suggestions queue (mig 051) for
+    analyst review. If a matching company already exists in
+    `companies`, the response includes its company_id so the user
+    can navigate straight there.
+    """
+    db = get_postgres()
+    reporter_id = (current_user or {}).get("user_id")
+
+    # Cheap dedup: did we already see this name?
+    existing = db.execute_query(
+        """SELECT suggestion_id::text AS sid, status, matched_company_id::text AS mcid
+           FROM company_suggestions
+           WHERE lower(company_name) = lower(:n)
+           ORDER BY created_at DESC
+           LIMIT 1""",
+        {"n": payload.company_name.strip()},
+    )
+
+    # And: is there already a matching row in `companies`?
+    matched = db.execute_query(
+        """SELECT company_id::text AS cid, name
+           FROM companies
+           WHERE lower(name) = lower(:n)
+              OR (ticker IS NOT NULL AND :t IS NOT NULL AND lower(ticker) = lower(:t))
+           LIMIT 1""",
+        {"n": payload.company_name.strip(), "t": payload.ticker or None},
+    )
+    matched_cid = matched[0]["cid"] if matched else None
+
+    suggestion_id = str(uuid4())
+    db.execute_update(
+        """INSERT INTO company_suggestions (
+               suggestion_id, company_name, ticker, country_code, website,
+               report_url, reason, reporter_id, matched_company_id, status
+           ) VALUES (
+               :sid, :name, :ticker, :cc, :web, :rurl, :reason, :rep, :mcid,
+               CASE WHEN :mcid IS NOT NULL THEN 'matched' ELSE 'queued' END
+           )""",
+        {
+            "sid": suggestion_id,
+            "name": payload.company_name.strip(),
+            "ticker": payload.ticker,
+            "cc": payload.country_code,
+            "web": payload.website,
+            "rurl": payload.report_url,
+            "reason": payload.reason,
+            "rep": reporter_id,
+            "mcid": matched_cid,
+        },
+    )
+    return {
+        "suggestion_id": suggestion_id,
+        "status": "matched" if matched_cid else "queued",
+        "matched_company_id": matched_cid,
+        "matched_company_name": matched[0]["name"] if matched else None,
+        "duplicate_of": existing[0]["sid"] if existing else None,
+        "note": (
+            "Company already in tracker — navigate to /companies/{matched_company_id}"
+            if matched_cid
+            else "Queued for analyst review. Status: queued."
+        ),
+    }
+
+
+@router.get("/standards")
+async def list_standards():
+    """Public listing of the 5 reporting standards the platform checks
+    company claims against. Used by the /companies page to render the
+    'Standards we check' explainer panel.
+    """
+    from app.domains.content.corporate.standards import STANDARDS
+    return {
+        "standards": [
+            {
+                "id": s["id"],
+                "name": s["name"],
+                "jurisdiction": s["jurisdiction"],
+                "effective_from": s["effective_from"],
+                "scope": s["scope"],
+                "mandatory_disclosure": s["mandatory_disclosure"],
+                "evidence_url": s["evidence_url"],
+            }
+            for s in STANDARDS
+        ],
+        "total": len(STANDARDS),
     }
