@@ -4,6 +4,7 @@ import GlobalNav from '@/components/GlobalNav'
 import ContextualAssistant from '@/components/ContextualAssistant'
 import PageTranslator from '@/components/PageTranslator'
 import ErrorBoundary from '@/components/ErrorBoundary'
+import FirstTimerTour from '@/components/FirstTimerTour'
 import { AuthProvider } from '@/lib/auth'
 import { I18nProvider } from '@/lib/i18n-context'
 import { ViewContextProvider } from '@/lib/view-context'
@@ -54,6 +55,7 @@ export default function RootLayout({
               </ErrorBoundary>
               <PageTranslator />
               <ContextualAssistant />
+              <FirstTimerTour />
             </ViewContextProvider>
           </I18nProvider>
         </AuthProvider>
