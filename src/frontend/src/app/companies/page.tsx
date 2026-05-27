@@ -12,6 +12,8 @@ import {
   Factory,
   TrendingDown,
 } from "lucide-react";
+import StandardsPanel from "@/components/StandardsPanel";
+import SuggestCompanyForm from "@/components/SuggestCompanyForm";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -144,6 +146,12 @@ export default function CompaniesPage() {
             />
           </div>
         )}
+
+        {/* Stage 5 (M6) — standards we check + suggest a company */}
+        <StandardsPanel />
+        <div className="flex justify-end mb-4">
+          <SuggestCompanyForm />
+        </div>
 
         {/* Controls: search + sort + filter */}
         <div className="mb-6 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">

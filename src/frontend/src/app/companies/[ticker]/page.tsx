@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   Building2, Loader2, CheckCircle, AlertTriangle, XCircle,
-  HelpCircle, FileText, ExternalLink, ArrowLeft,
+  HelpCircle, FileText, ExternalLink, ArrowLeft, ShieldCheck,
 } from "lucide-react";
 import { useUrlState } from "@/lib/useUrlState";
 import { type ViewMode } from "@/lib/plainLanguage";
@@ -72,12 +72,25 @@ interface Claim {
   created_at?: string;
 }
 
+// Stage 5 / M6 — per-standard compliance verdict from
+// /api/companies/{id} → standards_compliance.
+interface StandardCompliance {
+  id: string;
+  name: string;
+  jurisdiction: string;
+  status: "aligned" | "partial" | "gap" | "unknown";
+  covered_points: string[];
+  missing_points: string[];
+  evidence_url: string;
+}
+
 export default function CompanyDetailPage() {
   const params = useParams<{ ticker: string }>();
   const ticker = params?.ticker;
   const [company, setCompany] = useState<CompanyDetail | null>(null);
   const [disclosures, setDisclosures] = useState<Disclosure[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
+  const [standardsCompliance, setStandardsCompliance] = useState<StandardCompliance[]>([]);
   const [loading, setLoading] = useState(true);
   const [analyzeText, setAnalyzeText] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
@@ -116,6 +129,7 @@ export default function CompanyDetailPage() {
         setCompany(data.company);
         setDisclosures(data.disclosures || []);
         setClaims(data.claims || []);
+        setStandardsCompliance(data.standards_compliance || []);
       } catch {
         setCompany(null);
       }
@@ -368,6 +382,75 @@ export default function CompanyDetailPage() {
 
         <div className="grid lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-8">
+            {/* Stage 5 / M6 — per-standard compliance matrix */}
+            {standardsCompliance.length > 0 && (
+              <section>
+                <h2 className="text-xl font-bold text-gray-900 mb-3 flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-teal-600" />
+                  Compliance against 5 reporting standards
+                </h2>
+                <p className="text-xs text-gray-600 mb-3">
+                  Heuristic assessment of this company&apos;s disclosed data
+                  against CSRD, SBTi, TCFD, IFRS S2, and GRI mandatory points.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-3">
+                  {standardsCompliance.map((s) => {
+                    const color =
+                      s.status === "aligned" ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                      : s.status === "partial" ? "bg-amber-50 border-amber-200 text-amber-800"
+                      : s.status === "gap" ? "bg-rose-50 border-rose-200 text-rose-800"
+                      : "bg-gray-50 border-gray-200 text-gray-600";
+                    return (
+                      <div key={s.id} className={`border rounded-md px-2.5 py-2 ${color}`}>
+                        <div className="text-xs font-semibold">{s.id}</div>
+                        <div className="text-[10px] mt-0.5 uppercase tracking-wide">
+                          {s.status}
+                        </div>
+                        <div className="text-[10px] opacity-70 mt-1">
+                          {s.covered_points.length}/{s.covered_points.length + s.missing_points.length} points
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <details className="text-xs">
+                  <summary className="cursor-pointer text-gray-700 hover:text-gray-900 font-medium">
+                    Show detailed point-by-point breakdown
+                  </summary>
+                  <div className="mt-2 space-y-2">
+                    {standardsCompliance.map((s) => (
+                      <div key={s.id} className="bg-white border border-gray-200 rounded-md p-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <div>
+                            <span className="font-semibold text-gray-900">{s.id}</span>
+                            <span className="ml-2 text-gray-500">— {s.jurisdiction}</span>
+                          </div>
+                          <a
+                            href={s.evidence_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-teal-700 hover:underline"
+                          >
+                            source ↗
+                          </a>
+                        </div>
+                        {s.covered_points.length > 0 && (
+                          <div className="text-emerald-700">
+                            ✓ Covered: {s.covered_points.join(", ")}
+                          </div>
+                        )}
+                        {s.missing_points.length > 0 && (
+                          <div className="text-rose-700 mt-1">
+                            ✗ Missing: {s.missing_points.join(", ")}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              </section>
+            )}
+
             <section>
               <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <FileText className="w-5 h-5 text-teal-600" />

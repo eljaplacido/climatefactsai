@@ -240,6 +240,14 @@ app.include_router(topic_feedback_router)
 from api.semantic_routes import router as semantic_router
 app.include_router(semantic_router)
 
+# Stage 5 follow-up (2026-05-27) — golden examples corpus. Curated
+# "best of" set across all artifact kinds; doubles as the LoRA
+# training-data seed for the GX10 specialist fine-tunes
+# (claim-extractor-7B, context-summarizer-7B, verdict-adjudicator-7B
+# per docs/reports/asusgx10inferencestrategy.md).
+from api.golden_examples_routes import router as golden_examples_router
+app.include_router(golden_examples_router)
+
 # Phase 1A (2026-05-23) — quota dashboard endpoint (3/3/2 freemium).
 from api.quota_routes import router as quota_router
 app.include_router(quota_router)

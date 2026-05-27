@@ -305,6 +305,133 @@ SKILLS_REGISTRY: dict[str, Skill] = {
         ),
         target_surfaces=("/api/companies/[ticker]/analyze-report",),
     ),
+    # ----- Stage 4 / M5 — semantic layer skills -----
+    "explore_entity": Skill(
+        name="explore_entity",
+        description="Drill into a knowledge-graph entity to see its full neighborhood — connected entities, relationships, every article that mentions it, and the cross-article connections that emerge.",
+        mode="auto",
+        parameters=(
+            SkillParameter(
+                name="entity_id",
+                type="string",
+                description="UUID of the entity to explore",
+            ),
+        ),
+        target_surfaces=("/explore/entity/[id]", "/api/semantic/entity/[id]"),
+    ),
+    "explain_connection": Skill(
+        name="explain_connection",
+        description="LLM-driven 'why are these connected' for a small set of articles or entities. Computes shared bridge entities + asks the LLM to write a 100-200 word paragraph citing them. Powers cross-artifact systemic insights.",
+        mode="confirm",
+        parameters=(
+            SkillParameter(
+                name="article_ids",
+                type="string",
+                description="Comma-separated article UUIDs (2-5). Use this OR entity_ids.",
+                required=False,
+            ),
+            SkillParameter(
+                name="entity_ids",
+                type="string",
+                description="Comma-separated entity UUIDs (2-5). Use this OR article_ids.",
+                required=False,
+            ),
+        ),
+        target_surfaces=("/api/semantic/explain",),
+    ),
+    # ----- Stage 3 / M4 — evolving validation corpus -----
+    "flag_off_topic": Skill(
+        name="flag_off_topic",
+        description="Mark an article as off-topic / on-topic / borderline. Feeds the platform's evolving validation corpus — flagged articles are excluded from future enrichment selection so slop doesn't recirculate.",
+        mode="confirm",
+        parameters=(
+            SkillParameter(
+                name="article_id",
+                type="string",
+                description="UUID of the article to flag",
+            ),
+            SkillParameter(
+                name="verdict",
+                type="string",
+                description="One of: on_topic, off_topic, borderline",
+            ),
+            SkillParameter(
+                name="off_topic_category",
+                type="string",
+                description="If off_topic: politics, sports, finance, crime, celebrity, general_news, other",
+                required=False,
+            ),
+        ),
+        target_surfaces=("/api/feedback/topic/[article_id]",),
+    ),
+    # ----- Stage 5 / M6 — corporate suggestions -----
+    "suggest_company": Skill(
+        name="suggest_company",
+        description="Suggest a company for the Corporate Climate Tracker — submission goes into the review queue. Auto-matches against existing companies and returns matched_company_id when found.",
+        mode="confirm",
+        parameters=(
+            SkillParameter(
+                name="company_name",
+                type="string",
+                description="Legal or common company name",
+            ),
+            SkillParameter(
+                name="ticker",
+                type="string",
+                description="Stock ticker if listed",
+                required=False,
+            ),
+            SkillParameter(
+                name="country_code",
+                type="string",
+                description="ISO-2 country code (e.g. FI, DE)",
+                required=False,
+            ),
+            SkillParameter(
+                name="report_url",
+                type="string",
+                description="URL to a corporate sustainability report PDF for follow-up analyze-report run",
+                required=False,
+            ),
+            SkillParameter(
+                name="reason",
+                type="string",
+                description="Why this company should be tracked (claims to verify, news to follow, etc.)",
+                required=False,
+            ),
+        ),
+        target_surfaces=("/api/companies/suggestions",),
+    ),
+    # ----- Golden examples corpus (post-Stage-5) -----
+    "promote_golden_example": Skill(
+        name="promote_golden_example",
+        description="Mark an artifact (article enrichment, research analysis, company verdict, semantic explanation, map insight, KG drill-down) as a golden example. Feeds the curated 'best of' corpus that doubles as LoRA training-data seeds for GX10 specialist fine-tunes.",
+        mode="confirm",
+        parameters=(
+            SkillParameter(
+                name="artifact_kind",
+                type="string",
+                description="One of: article_enrichment, research_analysis, company_verdict, semantic_explanation, map_insight, kg_drill_down",
+            ),
+            SkillParameter(
+                name="artifact_ref",
+                type="string",
+                description="UUID or composite reference of the artifact being promoted",
+            ),
+            SkillParameter(
+                name="why_golden",
+                type="string",
+                description="Short curator note explaining why this is golden",
+            ),
+            SkillParameter(
+                name="quality_score",
+                type="number",
+                description="Quality rating 1-5 (default 4). LoRA exporter filters to >= 4.",
+                required=False,
+            ),
+        ),
+        target_surfaces=("/api/golden-examples",),
+    ),
 }
 
 
