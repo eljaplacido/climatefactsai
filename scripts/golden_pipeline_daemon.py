@@ -221,6 +221,51 @@ CLIMATE_RESEARCH_TARGETS: list[dict] = [
     {"label": "World Bank — State and Trends of Carbon Pricing 2024", "url": "https://openknowledge.worldbank.org/entities/publication/b0d66765-299c-4fb8-921f-61f6bb979087"},
     {"label": "Climate Bonds Initiative — Sustainable Debt Global Outlook 2024", "url": "https://www.climatebonds.net/2024/02/sustainable-debt-global-state-market-2023"},
     {"label": "OECD — Climate Finance Provided & Mobilised 2023", "url": "https://www.oecd.org/climate-change/finance-usd-100-billion-goal/"},
+    # 2026-05-27 expansion (+30 papers for 8h GX10 load).
+    # Selected for: (1) scrape-friendly hosts that historically pass the
+    # research-analysis methodology + key_claims gates, (2) coverage of
+    # under-represented domains in the prior 33-paper set (oceans,
+    # agriculture, health, finance taxonomy, mitigation tech).
+    # Carbon cycle + atmospheric science
+    {"label": "Friedlingstein et al. 2023 — Global Carbon Budget methodology", "url": "https://essd.copernicus.org/articles/15/5301/2023/"},
+    {"label": "Canadell et al. — Permafrost carbon vulnerability (Nature Climate)", "url": "https://www.nature.com/articles/s41558-019-0451-7"},
+    {"label": "Schuur et al. — Permafrost carbon feedback (Nature 2015)", "url": "https://www.nature.com/articles/nature14338"},
+    {"label": "Le Quéré et al. — Drivers of declining CO2 emissions (Nature Climate)", "url": "https://www.nature.com/articles/s41558-019-0419-7"},
+    # Oceans + cryosphere
+    {"label": "Slater et al. 2021 — Earth's ice imbalance (The Cryosphere)", "url": "https://tc.copernicus.org/articles/15/233/2021/"},
+    {"label": "Cheng et al. 2024 — Ocean heat content (Adv Atmos Sci)", "url": "https://link.springer.com/article/10.1007/s00376-024-3378-5"},
+    {"label": "Rignot et al. 2019 — Antarctic ice loss (PNAS)", "url": "https://www.pnas.org/doi/10.1073/pnas.1812883116"},
+    {"label": "Boers 2021 — AMOC slowdown indicators (Nature Climate)", "url": "https://www.nature.com/articles/s41558-021-01097-4"},
+    # Biodiversity + ecosystems
+    {"label": "IPBES Global Assessment SPM 2019", "url": "https://www.ipbes.net/global-assessment"},
+    {"label": "Trisos et al. 2020 — Climate-biodiversity collapse (Nature)", "url": "https://www.nature.com/articles/s41586-020-2189-9"},
+    {"label": "Pörtner et al. — Biodiversity and climate (IPBES-IPCC report 2021)", "url": "https://www.ipbes.net/events/launch-ipbes-ipcc-co-sponsored-workshop-report-biodiversity-and-climate-change"},
+    # Health + climate
+    {"label": "Lancet Countdown 2024 — Health and climate change", "url": "https://www.thelancet.com/journals/lancet/article/PIIS0140-6736(24)01822-1/fulltext"},
+    {"label": "Romanello et al. 2023 — Lancet Countdown report", "url": "https://www.thelancet.com/journals/lancet/article/PIIS0140-6736(23)01859-7/fulltext"},
+    # Agriculture, food, land
+    {"label": "IPCC SRCCL — Climate Change and Land SPM", "url": "https://www.ipcc.ch/srccl/chapter/summary-for-policymakers/"},
+    {"label": "Springmann et al. — Food system mitigation (Nature 2018)", "url": "https://www.nature.com/articles/s41586-018-0594-0"},
+    {"label": "Clark et al. 2020 — Global food system emissions (Science)", "url": "https://www.science.org/doi/10.1126/science.aba7357"},
+    # Energy transition + mitigation tech
+    {"label": "IRENA World Energy Transitions Outlook 2024", "url": "https://www.irena.org/Publications/2024/Nov/World-Energy-Transitions-Outlook-2024"},
+    {"label": "REN21 Renewables 2024 Global Status Report", "url": "https://www.ren21.net/reports/global-status-report/"},
+    {"label": "BNEF New Energy Outlook 2024 (executive summary)", "url": "https://about.bnef.com/new-energy-outlook/"},
+    {"label": "IEA — Critical Minerals Outlook 2024", "url": "https://www.iea.org/reports/global-critical-minerals-outlook-2024"},
+    # Climate finance + taxonomy
+    {"label": "EU Sustainable Finance Disclosure Regulation summary", "url": "https://finance.ec.europa.eu/sustainable-finance/disclosures/sustainability-related-disclosure-financial-services-sector_en"},
+    {"label": "TCFD Final Status Report 2023", "url": "https://www.fsb-tcfd.org/publications/"},
+    {"label": "NGFS Climate Scenarios Phase IV 2023", "url": "https://www.ngfs.net/en/publications-and-statistics/publications/ngfs-climate-scenarios-phase-iv"},
+    # Attribution + extremes
+    {"label": "World Weather Attribution — Methodology overview 2024", "url": "https://www.worldweatherattribution.org/about/methodology/"},
+    {"label": "Stott et al. 2016 — Attribution methodologies (Climatic Change)", "url": "https://link.springer.com/article/10.1007/s10584-016-1644-y"},
+    {"label": "van Oldenborgh et al. 2021 — Pacific Northwest heatwave attribution", "url": "https://esd.copernicus.org/articles/13/1689/2022/"},
+    # Solar geoengineering + frontiers
+    {"label": "Keith et al. 2017 — Stratospheric aerosol injection (Environ Res Lett)", "url": "https://iopscience.iop.org/article/10.1088/1748-9326/aa951f"},
+    {"label": "MacMartin et al. 2018 — SAI mission design (Phil Trans R Soc A)", "url": "https://royalsocietypublishing.org/doi/10.1098/rsta.2016.0455"},
+    # Justice + adaptation
+    {"label": "Climate Action Network — Loss and Damage briefing 2024", "url": "https://climatenetwork.org/resource/"},
+    {"label": "Adaptation Gap Report 2024 — UNEP", "url": "https://www.unep.org/resources/adaptation-gap-report-2024"},
 ]
 
 
@@ -658,9 +703,22 @@ CORPORATE_CLAIM_TEMPLATES: list[dict] = [
 
 
 def fetch_top_companies(limit: int = 50) -> list[dict]:
-    """Pull the top SBTi-validated companies by data richness."""
+    """Pull the top climate-disclosing companies by data richness.
+
+    2026-05-27 fix: previously filtered to sbti_only=true which yielded
+    only 9 companies in the current corpus — every wave the daemon
+    cycled the same 9 × 8-template matrix (72 combos total) and the
+    user reported endless looping. Now uses has_climate_data=true which
+    returns ~50+ companies with at least one substance disclosure field
+    (scope1/2/3 OR SBTi OR net-zero OR target%). 50 × 8 = 400 unique
+    combos, enough for ~7-8h of meaningful corporate-claim analysis
+    before the matrix completes.
+    """
     try:
-        resp = http_get("/api/companies", {"sort": "richness", "limit": limit, "sbti_only": "true"})
+        resp = http_get(
+            "/api/companies",
+            {"sort": "richness", "limit": limit, "has_climate_data": "true"},
+        )
         return resp.get("companies", []) or []
     except Exception as exc:
         log(f"  [company] fetch failed: {exc}")
