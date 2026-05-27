@@ -124,6 +124,30 @@ async def list_companies(
     }
 
 
+@router.get("/standards")
+async def list_standards_index():
+    """Public listing of the 5 reporting standards. Must be declared
+    BEFORE the /{ticker} catch-all or FastAPI treats "standards" as a
+    ticker value. The duplicate definition near the bottom of this
+    file is kept for backwards-import-safety but never matched."""
+    from app.domains.content.corporate.standards import STANDARDS
+    return {
+        "standards": [
+            {
+                "id": s["id"],
+                "name": s["name"],
+                "jurisdiction": s["jurisdiction"],
+                "effective_from": s["effective_from"],
+                "scope": s["scope"],
+                "mandatory_disclosure": s["mandatory_disclosure"],
+                "evidence_url": s["evidence_url"],
+            }
+            for s in STANDARDS
+        ],
+        "total": len(STANDARDS),
+    }
+
+
 @router.get("/{ticker}")
 async def get_company(ticker: str):
     from app.domains.content.corporate.repository import (
