@@ -255,6 +255,13 @@ app.include_router(golden_examples_router)
 from api.sdg_routes import router as sdg_router
 app.include_router(sdg_router)
 
+# Stage 7 / M8 (2026-05-27) — map sync. Cross-artifact coverage so
+# the map can render articles + companies + research per country
+# instead of a single layer at a time. Builds on the 16 existing
+# /api/map/* endpoints with a unified aggregator + country drill-down.
+from api.map_sync_routes import router as map_sync_router
+app.include_router(map_sync_router)
+
 # Phase 1A (2026-05-23) — quota dashboard endpoint (3/3/2 freemium).
 from api.quota_routes import router as quota_router
 app.include_router(quota_router)
