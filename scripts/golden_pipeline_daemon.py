@@ -1139,18 +1139,33 @@ def main() -> int:
                 except Exception as exc:
                     log(f"  [retro-eval] re-queue failed: {exc}")
 
-        # Phase 2 — research paper analyses (per wave). Cycles through the
-        # 35+ curated climate-science targets; if exhausted, cycles again
-        # to broaden the per-target evidence base.
-        for _ in range(DEFAULTS["research_per_wave"]):
-            ri = state.get("research_index", 0)
-            target = CLIMATE_RESEARCH_TARGETS[ri % len(CLIMATE_RESEARCH_TARGETS)]
-            log(f"  [research] {ri+1}: {target['label'][:60]}")
+        # Phase 2 — research paper analyses (per wave).
+        # 2026-05-27 fix: was cycling the curated list infinitely, producing
+        # Telegram noise "Paper 93" / "Paper 94" while re-analyzing the
+        # SAME papers — the user reported this as "loops same updates,
+        # doesn't look it's progressing". Now: track completed labels in
+        # state, skip already-done papers, terminate the phase entirely
+        # after one full pass with a single "research corpus complete"
+        # notification.
+        research_done = set(state.setdefault("research_completed_labels", []))
+        research_remaining = [
+            t for t in CLIMATE_RESEARCH_TARGETS if t["label"] not in research_done
+        ]
+        if not research_remaining and not state.get("_research_corpus_complete_notified"):
+            telegram.send(
+                f"🔬 Research corpus complete — {len(research_done)}/"
+                f"{len(CLIMATE_RESEARCH_TARGETS)} papers processed. "
+                f"Skipping research phase in future waves."
+            )
+            state["_research_corpus_complete_notified"] = True
+        for target in research_remaining[: DEFAULTS["research_per_wave"]]:
+            log(f"  [research] {target['label'][:60]}")
             try:
                 rec = run_research_analysis(target, state, telegram)
-                state["research_index"] = ri + 1
+                state["research_completed_labels"].append(target["label"])
+                ri = len(state["research_completed_labels"])
                 save_state(state)
-                msg = f"📄 Paper {ri+1}: {rec['label'][:55]}"
+                msg = f"📄 Paper {ri}/{len(CLIMATE_RESEARCH_TARGETS)}: {rec['label'][:55]}"
                 if rec["passes"]:
                     msg += f" ✅ meth={rec.get('methodology_score')} rel={rec.get('climate_relevance')}"
                 else:
@@ -1160,8 +1175,13 @@ def main() -> int:
                 log(f"research phase failed: {exc}\n{traceback.format_exc()}")
                 break
 
-        # Phase 3 — company corporate-claim analyses (per wave). 50 top
-        # companies × 8 claim templates = 400 unique analyses available.
+        # Phase 3 — company corporate-claim analyses.
+        # 2026-05-27 fix: was cycling (company_index % N) × (templates)
+        # infinitely, re-running the SAME (company, claim) pairs each
+        # wave. Now: track completed (company_id, claim_label) tuples,
+        # skip already-done combos, terminate the phase after the full
+        # matrix is exhausted with a single "company matrix complete"
+        # notification.
         if not state.get("top_companies"):
             companies = fetch_top_companies(limit=50)
             state["top_companies"] = [
@@ -1170,25 +1190,69 @@ def main() -> int:
             ]
             log(f"  [company] hydrated top_companies: {len(state['top_companies'])}")
         picks = state.get("top_companies") or []
+        company_done = set(
+            tuple(p) for p in state.setdefault("company_completed_pairs", [])
+        )
         if picks:
-            for _ in range(DEFAULTS["companies_per_wave"]):
-                ci = state.get("company_index", 0)
-                company = picks[ci % len(picks)]
-                template = CORPORATE_CLAIM_TEMPLATES[(ci // len(picks)) % len(CORPORATE_CLAIM_TEMPLATES)]
-                # Prefer ticker for human-readable URL when available, else company_id
+            # Build the list of (company, template) combos still to do
+            remaining_combos = [
+                (c, t)
+                for c in picks
+                for t in CORPORATE_CLAIM_TEMPLATES
+                if (c.get("id"), t["label"]) not in company_done
+            ]
+            if not remaining_combos and not state.get("_company_matrix_complete_notified"):
+                telegram.send(
+                    f"🏢 Company matrix complete — {len(company_done)}/"
+                    f"{len(picks) * len(CORPORATE_CLAIM_TEMPLATES)} (company, claim) "
+                    f"pairs analyzed. Skipping company phase in future waves."
+                )
+                state["_company_matrix_complete_notified"] = True
+            for company, template in remaining_combos[: DEFAULTS["companies_per_wave"]]:
                 lookup_id = company.get("ticker") or company.get("id")
                 try:
                     rec = run_company_analysis(lookup_id, company["name"], template, state)
-                    state["company_index"] = ci + 1
+                    state["company_completed_pairs"].append(
+                        [company.get("id"), template["label"]]
+                    )
                     save_state(state)
+                    progress = (
+                        f"{len(state['company_completed_pairs'])}/"
+                        f"{len(picks) * len(CORPORATE_CLAIM_TEMPLATES)}"
+                    )
                     if rec["passes"]:
                         flag = f" — {rec.get('flag_reason')}" if rec.get("flag_reason") else ""
-                        telegram.send(f"🏢 {company['name'][:30]} / {template['label'][:25]} → *{rec.get('verdict')}*{flag}")
+                        telegram.send(
+                            f"🏢 [{progress}] {company['name'][:30]} / "
+                            f"{template['label'][:25]} → *{rec.get('verdict')}*{flag}"
+                        )
                     else:
-                        telegram.send(f"🏢 {company['name'][:30]} ❌ {(', '.join(rec.get('errors', []))[:60])}")
+                        telegram.send(
+                            f"🏢 [{progress}] {company['name'][:30]} ❌ "
+                            f"{(', '.join(rec.get('errors', []))[:60])}"
+                        )
                 except Exception as exc:
                     log(f"company phase failed: {exc}")
                     break
+
+        # 2026-05-27 fix: if ALL three phases are idle (no article candidates,
+        # research corpus complete, company matrix complete), there's nothing
+        # for the daemon to do this wave. Auto-pause instead of spinning
+        # noisily — the user can /resume after triggering new ingestion or
+        # extending the research/company target lists.
+        article_phase_idle = not candidates
+        research_phase_idle = state.get("_research_corpus_complete_notified", False)
+        company_phase_idle = state.get("_company_matrix_complete_notified", False)
+        if article_phase_idle and research_phase_idle and company_phase_idle:
+            if not state.get("_all_phases_idle_notified"):
+                telegram.send(
+                    "💤 All phases idle: article corpus exhausted, research "
+                    "corpus complete, company matrix complete. Daemon paused. "
+                    "/resume after extending targets or adding new ingestion."
+                )
+                state["_all_phases_idle_notified"] = True
+                state["paused"] = True
+                save_state(state)
 
         if state["stop_requested"]:
             break
