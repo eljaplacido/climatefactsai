@@ -39,7 +39,18 @@ export type ChatActionType =
   | "save_item"
   | "subscribe_research_topic"
   | "explore_scenario"
-  | "analyze_corporate_report";
+  | "analyze_corporate_report"
+  // Slice 3 / chat-as-heart (2026-05-27) — wire the 7 backend-only
+  // skills that were in SKILLS_REGISTRY but not dispatchable from chat.
+  // Without these the chat couldn't actually invoke KG drill-down,
+  // off-topic flagging, suggestion submission, or SDG exploration.
+  | "explore_entity"            // semantic — drill into a KG entity neighborhood
+  | "explain_connection"        // semantic — LLM "why are these connected" across articles/entities
+  | "flag_off_topic"            // corpus feedback — mark article on_topic/off_topic/borderline
+  | "suggest_company"           // corporate — propose a company for the Tracker
+  | "promote_golden_example"    // curation — mark an artifact as golden (LoRA seed)
+  | "explore_sdg"               // SDG layer — browse all artifacts under a goal
+  | "tag_sdgs";                 // SDG layer — tag arbitrary text with relevant SDGs
 
 export interface ChatActionSpec {
   type: ChatActionType;
@@ -73,6 +84,14 @@ export const ACTION_MODES: Record<ChatActionType, ActionMode> = {
   subscribe_research_topic: "confirm", // mutates server state + tier quota
   explore_scenario: "auto",        // read-only IPCC AR6 interpolation
   analyze_corporate_report: "confirm", // heavy LLM + persists claims
+  // Slice 3 / chat-as-heart (2026-05-27)
+  explore_entity: "auto",          // read-only KG drill-down — pure navigation
+  explain_connection: "confirm",   // heavy LLM run + records reasoning
+  flag_off_topic: "confirm",       // writes topic_feedback row (mutates corpus state)
+  suggest_company: "confirm",      // submits to review queue (writes DB row)
+  promote_golden_example: "confirm", // writes golden_examples row (LoRA training seed)
+  explore_sdg: "auto",             // navigation to /sdg/[id]
+  tag_sdgs: "auto",                // read-only classifier call
 };
 
 /**
@@ -134,6 +153,34 @@ export const ACTION_CONFIRM_COPY: Record<
     message: (p) =>
       `This will fetch "${p.report_url}", extract every claim, and grade each against ${p.ticker}'s disclosure ledger. Heavy LLM work — counts against quotas. Continue?`,
     cta: "Analyse report",
+  },
+  // Slice 3 / chat-as-heart (2026-05-27)
+  explore_entity: { title: "", message: () => "", cta: "" }, // auto-mode nav
+  explore_sdg: { title: "", message: () => "", cta: "" }, // auto-mode nav
+  tag_sdgs: { title: "", message: () => "", cta: "" }, // auto-mode read
+  explain_connection: {
+    title: "Explain how these connect?",
+    message: () =>
+      "We'll compute shared entities and ask the LLM to write a short paragraph citing the bridge. Counts against your deep-search quota.",
+    cta: "Run explanation",
+  },
+  flag_off_topic: {
+    title: "Flag this article?",
+    message: (p) =>
+      `This will record a "${p.verdict}" verdict on the article and feed our evolving validation corpus. The daemon will exclude off-topic flags from future enrichment.`,
+    cta: "Submit flag",
+  },
+  suggest_company: {
+    title: "Suggest this company?",
+    message: (p) =>
+      `${p.company_name} will be added to the Corporate Tracker review queue. We'll auto-match against existing companies and follow up if a sustainability report URL was provided.`,
+    cta: "Submit suggestion",
+  },
+  promote_golden_example: {
+    title: "Promote to golden examples?",
+    message: (p) =>
+      `Marking this ${p.artifact_kind?.toString().replace(/_/g, " ") ?? "artifact"} as golden seeds our LoRA training corpus and surfaces it in the platform's "best of" gallery. Continue?`,
+    cta: "Promote",
   },
 };
 
@@ -234,6 +281,29 @@ const NAV_DISPATCHERS: Record<ChatActionType, (params: Record<string, any>) => v
     }
   },
   analyze_corporate_report: () => {},
+  // Slice 3 / chat-as-heart (2026-05-27) — 7 newly-wired skills.
+  explore_entity: ({ entity_id }: any) => {
+    if (typeof entity_id === "string" && entity_id.length > 0) {
+      window.location.assign(
+        `/explore/entity/${encodeURIComponent(entity_id)}`,
+      );
+    }
+  },
+  explore_sdg: ({ goal_id }: any) => {
+    const id = typeof goal_id === "number" ? goal_id : parseInt(goal_id, 10);
+    if (!isNaN(id) && id >= 1 && id <= 17) {
+      window.location.assign(`/sdg/${id}`);
+    }
+  },
+  tag_sdgs: () => {
+    // tag_sdgs is the only `auto` skill that does an API call rather than
+    // a nav. Handled via the async path below; the nav-side stub is a no-op
+    // so the dispatcher map stays uniform.
+  },
+  explain_connection: () => {},
+  flag_off_topic: () => {},
+  suggest_company: () => {},
+  promote_golden_example: () => {},
 };
 
 /**
@@ -466,6 +536,185 @@ const ASYNC_DISPATCHERS: Partial<
         window.location.assign(
           `/companies/${encodeURIComponent(ticker.toUpperCase())}`,
         );
+      }
+      return { status: "executed" };
+    } catch (e: any) {
+      return { status: "error", message: e?.message || "Network error" };
+    }
+  },
+  // Slice 3 / chat-as-heart (2026-05-27) — async-path handlers for the
+  // 5 confirm-mode + 1 auto-mode-with-API skills newly wired this slice.
+  //
+  // explain_connection: POST /api/semantic/explain with article_ids OR entity_ids
+  explain_connection: async ({ article_ids, entity_ids }: any) => {
+    const article_id_list =
+      typeof article_ids === "string"
+        ? article_ids.split(",").map((s: string) => s.trim()).filter(Boolean)
+        : [];
+    const entity_id_list =
+      typeof entity_ids === "string"
+        ? entity_ids.split(",").map((s: string) => s.trim()).filter(Boolean)
+        : [];
+    if (article_id_list.length < 2 && entity_id_list.length < 2) {
+      return {
+        status: "error",
+        message: "Need at least 2 article_ids OR 2 entity_ids to explain a connection.",
+      };
+    }
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || "";
+      const resp = await fetch(`${base}/api/semantic/explain`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${
+            typeof window !== "undefined"
+              ? localStorage.getItem("clilens_token") || ""
+              : ""
+          }`,
+        },
+        body: JSON.stringify({
+          article_ids: article_id_list,
+          entity_ids: entity_id_list,
+        }),
+      });
+      if (resp.status === 429) {
+        const body = await resp.json().catch(() => ({}));
+        return {
+          status: "error",
+          message: body?.detail?.message || "Deep-search quota reached. Upgrade for more.",
+          quotaExceeded: true,
+        };
+      }
+      if (!resp.ok) {
+        return { status: "error", message: `Explain failed (HTTP ${resp.status})` };
+      }
+      return { status: "executed" };
+    } catch (e: any) {
+      return { status: "error", message: e?.message || "Network error" };
+    }
+  },
+  // flag_off_topic: POST /api/feedback/topic/{article_id} with verdict
+  flag_off_topic: async ({ article_id, verdict, off_topic_category }: any) => {
+    if (typeof article_id !== "string" || typeof verdict !== "string") {
+      return { status: "error", message: "Missing article_id or verdict" };
+    }
+    if (!["on_topic", "off_topic", "borderline"].includes(verdict)) {
+      return { status: "error", message: `Invalid verdict: ${verdict}` };
+    }
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || "";
+      const resp = await fetch(
+        `${base}/api/feedback/topic/${encodeURIComponent(article_id)}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${
+              typeof window !== "undefined"
+                ? localStorage.getItem("clilens_token") || ""
+                : ""
+            }`,
+          },
+          body: JSON.stringify({
+            verdict,
+            off_topic_category: off_topic_category ?? null,
+          }),
+        },
+      );
+      if (resp.status === 404) {
+        return { status: "error", message: "Article not found" };
+      }
+      if (!resp.ok) {
+        return { status: "error", message: `Flag failed (HTTP ${resp.status})` };
+      }
+      return { status: "executed" };
+    } catch (e: any) {
+      return { status: "error", message: e?.message || "Network error" };
+    }
+  },
+  // suggest_company: POST /api/companies/suggestions
+  suggest_company: async (params: any) => {
+    const { company_name, ticker, country_code, report_url, reason } = params || {};
+    if (typeof company_name !== "string" || company_name.length < 2) {
+      return { status: "error", message: "company_name is required (min 2 chars)" };
+    }
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || "";
+      const resp = await fetch(`${base}/api/companies/suggestions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${
+            typeof window !== "undefined"
+              ? localStorage.getItem("clilens_token") || ""
+              : ""
+          }`,
+        },
+        body: JSON.stringify({
+          company_name,
+          ticker: ticker ?? null,
+          country_code: country_code ?? null,
+          report_url: report_url ?? null,
+          reason: reason ?? null,
+        }),
+      });
+      if (!resp.ok) {
+        return { status: "error", message: `Suggest failed (HTTP ${resp.status})` };
+      }
+      return { status: "executed" };
+    } catch (e: any) {
+      return { status: "error", message: e?.message || "Network error" };
+    }
+  },
+  // promote_golden_example: POST /api/golden-examples
+  promote_golden_example: async (params: any) => {
+    const { artifact_kind, artifact_ref, why_golden, quality_score } = params || {};
+    if (typeof artifact_kind !== "string" || typeof artifact_ref !== "string") {
+      return { status: "error", message: "Missing artifact_kind or artifact_ref" };
+    }
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || "";
+      const resp = await fetch(`${base}/api/golden-examples`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${
+            typeof window !== "undefined"
+              ? localStorage.getItem("clilens_token") || ""
+              : ""
+          }`,
+        },
+        body: JSON.stringify({
+          artifact_kind,
+          artifact_ref,
+          why_golden: why_golden ?? null,
+          quality_score: quality_score ?? 4,
+        }),
+      });
+      if (!resp.ok) {
+        return { status: "error", message: `Promote failed (HTTP ${resp.status})` };
+      }
+      return { status: "executed" };
+    } catch (e: any) {
+      return { status: "error", message: e?.message || "Network error" };
+    }
+  },
+  // tag_sdgs: POST /api/sdg/tag with arbitrary text. AUTO mode but
+  // routes through async because it's an API call rather than nav.
+  tag_sdgs: async ({ text }: any) => {
+    if (typeof text !== "string" || text.length < 10) {
+      return { status: "error", message: "text is required (min 10 chars)" };
+    }
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || "";
+      const resp = await fetch(`${base}/api/sdg/tag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!resp.ok) {
+        return { status: "error", message: `SDG tag failed (HTTP ${resp.status})` };
       }
       return { status: "executed" };
     } catch (e: any) {
