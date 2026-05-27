@@ -87,12 +87,19 @@ async def backfill_source_credibility_score(
         from app.domains.trust.source_tier_service import (
             get_source_credibility_score,
             _extract_domain,
+            clear_tier_cache,
         )
     except Exception as exc:
         raise HTTPException(
             status_code=500,
             detail=f"source_tier_service import failed: {type(exc).__name__}",
         )
+
+    # Stage-1 B3 follow-up (2026-05-27): _db_lookup has @lru_cache so
+    # Cloud Run instances retain stale 'domain unknown' entries from
+    # before mig 049 / the hotfix expanded the tier table. Clearing
+    # here forces a fresh lookup against the now-populated table.
+    clear_tier_cache()
 
     rows = db.execute_query(
         """SELECT article_id, source_name, url
