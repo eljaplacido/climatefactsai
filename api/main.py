@@ -226,6 +226,13 @@ app.include_router(auth_router)
 from api.url_analysis_routes import router as url_analysis_router
 app.include_router(url_analysis_router)
 
+# Stage 3 / M4 (2026-05-27) — topic-feedback table (mig 050) for the
+# evolving validation corpus. Lets users mark articles as off-topic
+# from the article-detail page; daemon excludes flagged IDs from
+# future selection.
+from api.topic_feedback_routes import router as topic_feedback_router
+app.include_router(topic_feedback_router)
+
 # Phase 1A (2026-05-23) — quota dashboard endpoint (3/3/2 freemium).
 from api.quota_routes import router as quota_router
 app.include_router(quota_router)

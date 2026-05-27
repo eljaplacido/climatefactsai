@@ -17,6 +17,7 @@ import ArticleExportButtons from "@/components/ArticleExportButtons";
 import FullArticlePanel from "@/components/FullArticlePanel";
 import WeatherTrendCard from "@/components/WeatherTrendCard";
 import KnowledgeGraphMini from "@/components/KnowledgeGraphMini";
+import TopicFeedbackButton from "@/components/TopicFeedbackButton";
 import ReanalyzeButton from "@/components/ReanalyzeButton";
 import ArgumentationGraph from "@/components/ArgumentationGraph";
 import Link from "next/link";
@@ -479,6 +480,16 @@ export default async function ArticlePage({ params }: { params: { id: string } }
               Powered by clilens-lane-a-entity worker on GX10. */}
           {(article as any).article_id && (
             <KnowledgeGraphMini articleId={(article as any).article_id} />
+          )}
+
+          {/* Stage 3 (M4) — topic feedback. User flags slip-through
+              off-topic articles; daemon excludes flagged IDs from
+              future selection waves. Feeds the evolving validation
+              corpus. */}
+          {(article as any).article_id && (
+            <div className="flex justify-end">
+              <TopicFeedbackButton articleId={(article as any).article_id} />
+            </div>
           )}
 
           {/* Insight Summary (fallback if no executive brief) */}

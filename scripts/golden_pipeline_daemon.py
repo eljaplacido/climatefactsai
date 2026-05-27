@@ -408,17 +408,40 @@ class Telegram:
 # Article selection (quality gates)
 # ---------------------------------------------------------------------------
 
+def fetch_off_topic_ids() -> set[str]:
+    """Fetch the user-flagged off-topic article IDs (Stage 3 / M4).
+
+    The article-detail page's Flag-as-off-topic button POSTs to
+    /api/feedback/topic/{article_id}. This endpoint returns the
+    accumulated set. The daemon excludes them from selection so a
+    flagged article doesn't keep re-appearing in future waves.
+    """
+    try:
+        resp = http_get("/api/feedback/topic/off-topic-ids", {"limit": 5000})
+        return set(resp.get("off_topic_ids") or [])
+    except Exception as exc:
+        log(f"  [topic-feedback] fetch failed (continuing): {exc}")
+        return set()
+
+
 def select_candidates(target: int, exclude_ids: set[str]) -> list[dict]:
     """Page through /api/articles, apply gates, score, return top N.
 
-    Relaxed selection (2026-05-26 fix after corpus exhaustion at ~140
-    articles): source allowlist is no longer a hard gate — it's a
-    scoring bonus. Hard gates are now climate-relevant title +
-    climate content_category + country_code set. This expands the
-    candidate pool from ~150 to ~1500+ across the 14k-article corpus
-    while still defending against off-topic slop via the title-keyword
-    requirement.
+    Hard gates (in order):
+      1. Not already processed (exclude_ids — successful past waves)
+      2. Not flagged off-topic by users (Stage 3 / M4 corpus feedback)
+      3. country_code set + non-XX
+      4. language supported
+      5. Climate keyword in title — WORD-BOUNDARY match (deforest must
+         not substring-match Forestalia; this exact bug slipped a
+         Spanish corruption piece into Stage-1 review)
+
+    Source allowlist is a scoring bonus, NOT a hard gate, so the
+    candidate pool stays at 1500+ across the 14k-article corpus.
     """
+    off_topic = fetch_off_topic_ids()
+    if off_topic:
+        log(f"  [selection] excluding {len(off_topic)} user-flagged off-topic articles")
     seen: set[str] = set()
     out: list[dict] = []
     for page in range(80):  # up to 8000 articles scanned per selection
@@ -430,7 +453,7 @@ def select_candidates(target: int, exclude_ids: set[str]) -> list[dict]:
             break
         for a in batch:
             aid = a.get("article_id") or a.get("id")
-            if not aid or aid in seen or aid in exclude_ids:
+            if not aid or aid in seen or aid in exclude_ids or aid in off_topic:
                 continue
             seen.add(aid)
             src = (a.get("source_name") or "").strip()
@@ -442,8 +465,15 @@ def select_candidates(target: int, exclude_ids: set[str]) -> list[dict]:
             if lang is not None and lang not in SUPPORTED_LANGS:
                 continue
             title_lower = (a.get("title") or "").lower()
-            # HARD gate 1: climate keyword in title (anti-slop)
-            if not any(kw in title_lower for kw in CLIMATE_TITLE_KEYWORDS):
+            # HARD gate 1: climate keyword in title (anti-slop).
+            # Word-boundary match — "deforest" must not substring-match
+            # "Forestalia" (the Stage-1 review caught a Spanish corruption
+            # piece slipping through because of this exact bug).
+            import re
+            if not any(
+                re.search(r"\b" + re.escape(kw) + r"\b", title_lower)
+                for kw in CLIMATE_TITLE_KEYWORDS
+            ):
                 continue
             # HARD gate 2: climate content_category OR title implies climate
             # (some legit climate articles are mis-categorised as 'policy'
