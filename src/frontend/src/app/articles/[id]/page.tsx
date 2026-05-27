@@ -323,11 +323,19 @@ export default async function ArticlePage({ params }: { params: { id: string } }
         </header>
 
         <div className="p-6 space-y-8">
-          {/* Verification warning: some claims have error justifications */}
+          {/* Verification warning: some claims have error justifications.
+              Defensive null-guard: justification can be undefined for
+              claims with no fact_check OR with a fact_check that's
+              still pending — calling .toLowerCase() on undefined was
+              crashing the whole page render with "Cannot read
+              properties of undefined (reading 'toLowerCase')". */}
           {article.claims_status === "completed" && article.claims?.some(
-            (c: any) => c.fact_check?.justification &&
-              (c.fact_check.justification.toLowerCase().includes("error") ||
-               c.fact_check.justification.toLowerCase().includes("unavailable"))
+            (c: any) => {
+              const j = c?.fact_check?.justification;
+              if (typeof j !== "string") return false;
+              const lower = j.toLowerCase();
+              return lower.includes("error") || lower.includes("unavailable");
+            }
           ) && (
             <div className="flex items-center space-x-2 px-4 py-3 rounded-lg border bg-amber-50 border-amber-200">
               <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0" />

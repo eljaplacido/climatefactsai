@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { BookOpen, ChevronDown, ChevronUp } from "lucide-react";
+import { stripHtml } from "@/lib/stripHtml";
 
 // Polish wave 1 / Audit item 2 (2026-05-25) — the Executive Brief +
 // Enriched In-Depth panels are intentional 200-400-word summaries.
@@ -24,33 +25,6 @@ interface FullArticlePanelProps {
 }
 
 const PREVIEW_LIMIT = 600;
-
-function stripHtml(text: string): string {
-  if (!text) return "";
-  // Quick probe — only do the work if we actually see tags.
-  if (!/<[a-zA-Z!/]/.test(text)) return text;
-  // Strip script/style blocks entirely.
-  let out = text.replace(/<(script|style|iframe)[\s\S]*?<\/\1>/gi, "");
-  // Drop self-closing media/asset tags.
-  out = out.replace(/<(img|br|hr|input|source|track|meta|link)[^>]*\/?>/gi, "\n");
-  // Convert block tag boundaries to paragraph breaks.
-  out = out.replace(/<\/(p|div|section|article|h[1-6]|li|tr)>/gi, "\n\n");
-  // Strip every remaining tag.
-  out = out.replace(/<[^>]+>/g, " ");
-  // Decode the handful of entities we care about.
-  out = out
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
-  // "The post X appeared first on Y" footer that WordPress feeds inject.
-  out = out.replace(/\n*The post\s+[\s\S]+?\s+appeared first on\s+[\s\S]+?\.\s*$/i, "");
-  // Collapse whitespace.
-  out = out.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-  return out;
-}
 
 export default function FullArticlePanel({
   extractedText,

@@ -6,6 +6,7 @@ import DOMPurify from "isomorphic-dompurify";
 import type { ClaimDetail } from "@/types";
 import ClaimCard from "./ClaimCard";
 import Markdown from "./Markdown";
+import { stripHtml } from "@/lib/stripHtml";
 import { FileText, Shield, Search, ChevronDown, ChevronRight } from "lucide-react";
 
 // Regex sanitizer was bypassable (newline-injected on-handlers, SVG <use href="data:...">,
@@ -76,7 +77,11 @@ export default function ArticleDetailTabs({
         </section>
       )}
 
-      {/* If no analysis HTML, show excerpt/full text as primary content */}
+      {/* If no analysis HTML, show excerpt/full text as primary content.
+          Defensive HTML strip for both — backend html_cleaner sometimes
+          misses InfoAmazonia/WordPress feed bodies that arrive as
+          `<figure><img...><p>real text...</p>` blocks; render-time strip
+          keeps the UI clean even when the column wasn't backfilled. */}
       {!analysisHtml && (excerpt || fullText) && (
         <section>
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -85,9 +90,9 @@ export default function ArticleDetailTabs({
           </h2>
           <div className="prose prose-sm max-w-none text-gray-700">
             {fullText ? (
-              <Markdown content={fullText} />
+              <Markdown content={stripHtml(fullText)} />
             ) : excerpt ? (
-              <Markdown content={excerpt} />
+              <Markdown content={stripHtml(excerpt)} />
             ) : null}
           </div>
         </section>
@@ -198,9 +203,9 @@ export default function ArticleDetailTabs({
           {originalTextOpen && (
             <div className="mt-3 prose prose-sm max-w-none text-gray-600">
               {fullText ? (
-                <Markdown content={fullText} />
+                <Markdown content={stripHtml(fullText)} />
               ) : excerpt ? (
-                <Markdown content={excerpt} />
+                <Markdown content={stripHtml(excerpt)} />
               ) : null}
             </div>
           )}
