@@ -28,8 +28,10 @@ function mockFetchOnce(payload: Record<string, any>, ok = true, status = 200) {
 }
 
 function expand() {
-  // Click the collapsed bar to expand.
-  const collapsedHint = screen.getByText('Ask about climate news, data, or trends...')
+  // Click the collapsed bar to expand. Slice 3 (2026-05-27) replaced
+  // the static hint "Ask about climate news, data, or trends..." with
+  // a rotating page-aware example, so target by testid instead.
+  const collapsedHint = screen.getByTestId('chat-rotating-example')
   fireEvent.click(collapsedHint)
 }
 
@@ -47,10 +49,10 @@ function typeAndSend(text: string) {
 describe('AgenticAssistant', () => {
   it('renders the collapsed bar by default', () => {
     const { container } = render(<AgenticAssistant />)
-    // Collapsed-state hint text is visible
-    expect(
-      screen.getByText('Ask about climate news, data, or trends...')
-    ).toBeInTheDocument()
+    // Slice 3 (2026-05-27): the collapsed bar now shows a rotating
+    // page-aware example via the chat-rotating-example testid (replaces
+    // the old static "Ask about climate news..." hint).
+    expect(screen.getByTestId('chat-rotating-example')).toBeInTheDocument()
     // The expanded panel wrapper has opacity-0 + max-h-0 by default
     const expandedWrapper = container.querySelector('.max-h-0.opacity-0')
     expect(expandedWrapper).toBeInTheDocument()
@@ -62,14 +64,16 @@ describe('AgenticAssistant', () => {
   it('shows example chips matching currentPage when expanded', () => {
     render(<AgenticAssistant currentPage="map" />)
     expand()
-
-    // map example queries from EXAMPLE_QUERIES.map should render as chips
+    // Slice 3 (2026-05-27) — the rotating-example label in the collapsed
+    // bar contains the SAME text as one of the expanded chips, so
+    // getByText finds multiples. Asserting at least one rendered button
+    // chip with each expected query.
     expect(
-      screen.getByText('Biggest climate risks in Southeast Asia?')
-    ).toBeInTheDocument()
+      screen.getAllByText('Biggest climate risks in Southeast Asia?').length
+    ).toBeGreaterThan(0)
     expect(
-      screen.getByText('Compare renewable energy: Europe vs Asia')
-    ).toBeInTheDocument()
+      screen.getAllByText('Compare renewable energy: Europe vs Asia').length
+    ).toBeGreaterThan(0)
   })
 
   it('shows different chips for the articles page', () => {
@@ -79,8 +83,8 @@ describe('AgenticAssistant', () => {
     // expanded to nudge users toward the newly-wired skills
     // (explain_connection / flag_off_topic / promote_golden_example).
     expect(
-      screen.getByText('What are the key scientific claims here?')
-    ).toBeInTheDocument()
+      screen.getAllByText('What are the key scientific claims here?').length
+    ).toBeGreaterThan(0)
   })
 
   it('POSTs to /api/chat with view_context including article_id / country / analysis_id (research mode)', async () => {

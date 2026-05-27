@@ -260,6 +260,22 @@ export default function AgenticAssistant({
     return () => window.removeEventListener("climatenews:assistant-prefill", onPrefill);
   }, []);
 
+  // Slice 3 / chat-as-heart (2026-05-27) — when arriving via #chat
+  // (e.g. from the FirstTimerTour CTA), auto-expand the assistant so
+  // the user lands inside the chat instead of having to discover the
+  // bottom bar. Also listen for hash changes during the session.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const checkHash = () => {
+      if (window.location.hash === "#chat" || window.location.hash === "#assistant") {
+        setIsExpanded(true);
+      }
+    };
+    checkHash();
+    window.addEventListener("hashchange", checkHash);
+    return () => window.removeEventListener("hashchange", checkHash);
+  }, []);
+
   // Close on click outside when expanded
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -287,6 +303,22 @@ export default function AgenticAssistant({
 
   const mode = determineMode();
   const modeInfo = MODE_LABELS[mode] || MODE_LABELS.general;
+
+  // Slice 3 / chat-as-heart (2026-05-27) — rotate one page-aware example
+  // in the collapsed bar every 4s so users see what they can ask.
+  const pageExamples = useMemo(
+    () => EXAMPLE_QUERIES[currentPage] || EXAMPLE_QUERIES.default,
+    [currentPage],
+  );
+  const [rotatingExampleIdx, setRotatingExampleIdx] = useState(0);
+  useEffect(() => {
+    if (isExpanded) return; // only rotate while collapsed
+    const id = setInterval(() => {
+      setRotatingExampleIdx((i) => (i + 1) % pageExamples.length);
+    }, 4000);
+    return () => clearInterval(id);
+  }, [isExpanded, pageExamples.length]);
+  const rotatingExample = pageExamples[rotatingExampleIdx % pageExamples.length];
   const ModeIcon = modeInfo.icon;
 
   const contextSummary = useMemo(() => {
@@ -748,8 +780,16 @@ export default function AgenticAssistant({
       >
         <div className="h-12 bg-slate-900/95 backdrop-blur-xl border-t-2 border-teal-500/60 rounded-t-xl flex items-center px-4 gap-3 cursor-pointer hover:bg-slate-800/95 transition-colors shadow-lg shadow-black/20">
           <Sparkles className="h-4 w-4 text-teal-400 flex-shrink-0" />
-          <span className="flex-1 text-sm text-slate-400 truncate">
-            Ask about climate news, data, or trends...
+          {/* Slice 3 / chat-as-heart (2026-05-27) — rotating page-aware
+              example so users see what they can ask without clicking. */}
+          <span
+            key={rotatingExample}
+            className="flex-1 text-sm text-slate-400 truncate animate-fadeIn"
+            data-testid="chat-rotating-example"
+            title="Ask the assistant"
+          >
+            <span className="text-slate-500">Try: </span>
+            <span className="text-slate-300">{rotatingExample}</span>
           </span>
           <div className="flex items-center gap-2 flex-shrink-0">
             {/* Context badge on the bar */}
