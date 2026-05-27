@@ -84,7 +84,10 @@ async def backfill_source_credibility_score(
     db = get_postgres()
 
     try:
-        from app.domains.trust.source_tier_service import get_source_credibility_score
+        from app.domains.trust.source_tier_service import (
+            get_source_credibility_score,
+            _extract_domain,
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -111,8 +114,15 @@ async def backfill_source_credibility_score(
         article_id = r["article_id"]
         source = r.get("source_name") or ""
         url = r.get("url") or ""
+        # Bug from Stage-3 review (2026-05-27): backfill was passing the
+        # full URL as the `domain` parameter, so get_source_tier_prior's
+        # `domain or _extract_domain(source_name)` short-circuited on the
+        # URL string and the DB lookup queried `WHERE domain="https://..."`
+        # instead of "carbonbrief.org". Pre-extract the domain so the
+        # lookup actually matches the mig 027/033/049 seeds.
+        extracted = _extract_domain(url) if url else None
         try:
-            score = get_source_credibility_score(db, source, url)
+            score = get_source_credibility_score(db, source, extracted)
         except Exception as exc:
             logger.debug(f"credibility lookup failed for {article_id}: {exc}")
             continue
