@@ -231,10 +231,18 @@ def list_companies(
     """
     where_clauses = []
     if has_climate_data:
+        # Match the `with_disclosures` stat definition: any substance
+        # field non-null (scope1/2/3 OR sbti OR net-zero OR target%).
+        # Previously the filter only checked scope1/sbti/net-zero, so a
+        # company with only scope3 disclosed got hidden — diverging from
+        # what the headline badge counted.
         where_clauses.append(
             "(MAX(CASE WHEN cd.scope1_tco2e IS NOT NULL THEN 1 ELSE 0 END) = 1 "
+            "OR MAX(CASE WHEN cd.scope2_tco2e IS NOT NULL THEN 1 ELSE 0 END) = 1 "
+            "OR MAX(CASE WHEN cd.scope3_tco2e IS NOT NULL THEN 1 ELSE 0 END) = 1 "
             "OR BOOL_OR(cd.sbti_validated) = TRUE "
-            "OR MAX(cd.net_zero_target_year) IS NOT NULL)"
+            "OR MAX(cd.net_zero_target_year) IS NOT NULL "
+            "OR MAX(cd.target_pct_reduction) IS NOT NULL)"
         )
     if sbti_only:
         where_clauses.append("BOOL_OR(cd.sbti_validated) = TRUE")
@@ -297,10 +305,27 @@ def list_companies(
 
 
 def companies_stats(db) -> dict:
-    """Top-line stats for the /companies index banner."""
+    """Top-line stats for the /companies index banner.
+
+    `with_disclosures` previously counted any joined row in
+    company_climate_disclosures, but every imported company gets a
+    placeholder row at import time — so the stat was always equal to
+    total_companies and the badge read "14,797 / 14,797" misleadingly.
+    Honest definition: a company "has climate disclosures" only when
+    at least one substance field (scope1/2/3, sbti, net-zero, target%)
+    is non-null. This makes the headline match the `has_climate_data`
+    filter the user toggles in the UI.
+    """
     rows = db.execute_query(
         """SELECT COUNT(DISTINCT c.company_id) AS total_companies,
-                  COUNT(DISTINCT cd.company_id) AS with_disclosures,
+                  COUNT(DISTINCT CASE
+                      WHEN cd.scope1_tco2e IS NOT NULL
+                        OR cd.scope2_tco2e IS NOT NULL
+                        OR cd.scope3_tco2e IS NOT NULL
+                        OR cd.sbti_validated = TRUE
+                        OR cd.net_zero_target_year IS NOT NULL
+                        OR cd.target_pct_reduction IS NOT NULL
+                      THEN cd.company_id END) AS with_disclosures,
                   COUNT(DISTINCT CASE WHEN cd.sbti_validated THEN cd.company_id END) AS sbti_validated,
                   COUNT(DISTINCT CASE WHEN cd.net_zero_target_year IS NOT NULL
                                        AND cd.scope1_tco2e IS NOT NULL

@@ -200,11 +200,43 @@ export default function CompaniesPage() {
             <Loader2 className="w-5 h-5 animate-spin" /> Loading companies...
           </div>
         ) : filtered.length === 0 ? (
-          <div className="text-gray-500 py-8 text-sm bg-white border border-gray-200 rounded-lg p-6 text-center">
-            <p>No companies match the current filters.</p>
-            <p className="text-xs mt-1">
-              {stats?.total_companies ? `${stats.total_companies.toLocaleString()} companies tracked — try clearing filters or search.` : null}
+          <div className="text-gray-500 py-8 text-sm bg-white border border-gray-200 rounded-lg p-6 text-center space-y-2">
+            <p className="font-medium text-gray-700">
+              No companies match the current filters.
             </p>
+            {stats && (
+              <p className="text-xs text-gray-500">
+                {stats.total_companies.toLocaleString()} companies in the
+                corpus, of which{" "}
+                <strong>{stats.with_disclosures.toLocaleString()}</strong>{" "}
+                have meaningful climate data and{" "}
+                <strong>{stats.sbti_validated.toLocaleString()}</strong>{" "}
+                are SBTi-validated.
+              </p>
+            )}
+            <div className="flex gap-2 justify-center pt-1">
+              {q && (
+                <button
+                  type="button"
+                  onClick={() => setQ("")}
+                  className="text-xs px-3 py-1 border border-gray-300 rounded hover:bg-gray-50"
+                >
+                  Clear search
+                </button>
+              )}
+              {(sbtiOnly || hasClimateData) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSbtiOnly(false);
+                    setHasClimateData(false);
+                  }}
+                  className="text-xs px-3 py-1 border border-gray-300 rounded hover:bg-gray-50"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="grid gap-3">
