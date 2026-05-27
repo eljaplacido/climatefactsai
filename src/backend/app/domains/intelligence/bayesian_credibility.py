@@ -132,7 +132,13 @@ class WeightedCredibilityService:
         upper = min(100, round(posterior_pct + margin, 1))
 
         return {
+            # Honesty contract — gap §4-8 of the master-prompt audit
+            # noted that this looks Bayesian (posterior_score key) but
+            # is a weighted average. Adding `weighted_score` as the
+            # accurate synonym; `posterior_score` stays for FE
+            # backwards-compat until consumers are migrated.
             "posterior_score": posterior_pct,
+            "weighted_score": posterior_pct,
             "confidence_interval": [lower, upper],
             "evidence_count": n,
             "prior_score": prior_score,
@@ -144,7 +150,8 @@ class WeightedCredibilityService:
         self, article_id: str
     ) -> Optional[Dict[str, Any]]:
         """
-        Recompute article reliability using Bayesian update.
+        Recompute article reliability via a weighted-average combine
+        (not a Bayesian update — the legacy docstring was inaccurate).
 
         Pulls source credibility as prior, verification results as evidence,
         computes posterior, and updates articles.reliability_score.
