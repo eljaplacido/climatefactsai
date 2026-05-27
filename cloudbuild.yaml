@@ -66,6 +66,11 @@ steps:
         export MIGRATIONS_FROM="009"
         export MIGRATIONS_TOLERATE_ERRORS="true"
         python3 scripts/run_migrations.py
+        # Verify critical post-migration state — fails the deploy if a
+        # migration silently no-op'd (catches the mig-049-class bug
+        # where ON CONFLICT DO NOTHING masked an intended upgrade).
+        # See scripts/verify_migration_state.py for the invariant list.
+        python3 scripts/verify_migration_state.py
         kill $$PROXY_PID || true
 
   # -------------------------------------------------------------------------
