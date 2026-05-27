@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import ResearchFeedPanel from "@/components/ResearchFeedPanel";
 import DefaultTopicsBrowser from "@/components/DefaultTopicsBrowser";
+import RecentResearchAnalyses from "@/components/RecentResearchAnalyses";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
 
@@ -177,6 +178,12 @@ export default function ResearchPage() {
       </header>
 
       <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
+        {/* Slice 3 — Recent worked analyses (closes user complaint:
+            'researches show just release feed but no insights reports').
+            Lists every completed url_analyses run with score + audit
+            trail link, surfaced above the feed/upload sections. */}
+        <RecentResearchAnalyses />
+
         {/* 1 — Default topics browser: PRIMARY surface */}
         <section className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
           <DefaultTopicsBrowser

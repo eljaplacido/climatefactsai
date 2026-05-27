@@ -43,6 +43,58 @@ class WeatherEnrichRequest(BaseModel):
     article_id: str
 
 
+@router.get("/analyses")
+async def list_recent_research_analyses(
+    limit: int = 20,
+    status_filter: str = "completed",
+):
+    """List recent research-analysis runs. Powers the /research page
+    'Recent worked analyses' panel — the user complaint was that the
+    research surface showed feed subscriptions but no actual analytical
+    output like the article surface.
+
+    Returns each url_analyses row with its top-level scores so the FE
+    can render a scorecard per analysis.
+    """
+    db = get_postgres()
+    try:
+        rows = db.execute_query(
+            """SELECT analysis_id::text AS analysis_id,
+                      submitted_url,
+                      status,
+                      overall_credibility,
+                      reliability_score,
+                      processing_time_ms,
+                      created_at,
+                      completed_at
+               FROM url_analyses
+               WHERE status = :s
+               ORDER BY completed_at DESC NULLS LAST, created_at DESC
+               LIMIT :n""",
+            {"s": status_filter, "n": max(1, min(limit, 100))},
+        ) or []
+    except Exception as exc:
+        logger.warning(f"research/analyses query failed: {exc}")
+        rows = []
+    return {
+        "analyses": [
+            {
+                "analysis_id": r["analysis_id"],
+                "submitted_url": r.get("submitted_url"),
+                "status": r.get("status"),
+                "overall_credibility": r.get("overall_credibility"),
+                "reliability_score": r.get("reliability_score"),
+                "processing_time_ms": r.get("processing_time_ms"),
+                "created_at": str(r["created_at"]) if r.get("created_at") else None,
+                "completed_at": str(r["completed_at"]) if r.get("completed_at") else None,
+            }
+            for r in rows
+        ],
+        "total": len(rows),
+        "status_filter": status_filter,
+    }
+
+
 @router.post("/analyze")
 async def analyze_research_report(
     request: ResearchAnalysisRequest,
