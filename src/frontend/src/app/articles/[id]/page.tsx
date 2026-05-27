@@ -15,6 +15,8 @@ import ShareButton from "@/components/ShareButton";
 import BookmarkButton from "@/components/BookmarkButton";
 import ArticleExportButtons from "@/components/ArticleExportButtons";
 import FullArticlePanel from "@/components/FullArticlePanel";
+import WeatherTrendCard from "@/components/WeatherTrendCard";
+import KnowledgeGraphMini from "@/components/KnowledgeGraphMini";
 import ReanalyzeButton from "@/components/ReanalyzeButton";
 import ArgumentationGraph from "@/components/ArgumentationGraph";
 import Link from "next/link";
@@ -457,6 +459,26 @@ export default async function ArticlePage({ params }: { params: { id: string } }
                 </div>
               </div>
             </div>
+          )}
+
+          {/* Stage 2 (M2) — Weather + 5-yr temperature trend card.
+              Reads enrichment_metadata.weather + .temperature_trend
+              (populated by ArticleEnrichmentService at enrichment time).
+              Renders nothing for older articles without the metadata. */}
+          {(article as any).enrichment_metadata && (
+            <WeatherTrendCard
+              weather={(article as any).enrichment_metadata.weather}
+              trend={(article as any).enrichment_metadata.temperature_trend}
+              countryCode={(article as any).country_code}
+            />
+          )}
+
+          {/* Stage 2 (M1) — Knowledge graph mini-view. Fetches
+              /api/carf/entity-graph/{article_id} and renders entities,
+              relationships, and articles connected via shared entities.
+              Powered by clilens-lane-a-entity worker on GX10. */}
+          {(article as any).article_id && (
+            <KnowledgeGraphMini articleId={(article as any).article_id} />
           )}
 
           {/* Insight Summary (fallback if no executive brief) */}

@@ -91,6 +91,27 @@ class ArticleEnrichmentService:
             "trend_available": temperature_trend is not None,
             "started_at": started_at.isoformat(),
         }
+        # Stage 2 (M2): persist the actual weather + trend data points so
+        # the FE WeatherTrendCard can render a sparkline + current
+        # conditions card. Previously we fetched this data, used it in
+        # the LLM prompt, then threw it away — meaning the FE could only
+        # show a yes/no boolean instead of the actual numbers. Now stored
+        # in enrichment_metadata.weather / .temperature_trend.
+        if weather_context:
+            metadata["weather"] = {
+                "current_temp_c": weather_context.get("current_temp_c"),
+                "current_humidity_pct": weather_context.get("current_humidity_pct"),
+                "current_precipitation_mm": weather_context.get("current_precipitation_mm"),
+                "weather_code": weather_context.get("weather_code"),
+                "forecast_7day": weather_context.get("forecast_7day"),
+            }
+        if temperature_trend:
+            metadata["temperature_trend"] = {
+                "direction": temperature_trend.get("direction"),
+                "total_change_c": temperature_trend.get("total_change_c"),
+                "period": temperature_trend.get("period"),
+                "annual_averages": temperature_trend.get("annual_averages") or {},
+            }
 
         # Generate enriched excerpt via LLM
         enriched_excerpt = await self._generate_enriched_excerpt(
