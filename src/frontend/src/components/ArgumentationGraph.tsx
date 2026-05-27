@@ -164,7 +164,7 @@ export default function ArgumentationGraph({ articleId }: ArgumentationGraphProp
             }`}
           >
             <span>{entity.entity_name}</span>
-            <span className="text-[10px] opacity-60">{entity.entity_type.toLowerCase()}</span>
+            <span className="text-[10px] opacity-60">{(entity.entity_type || "").toLowerCase()}</span>
           </button>
         ))}
       </div>
@@ -177,7 +177,7 @@ export default function ArgumentationGraph({ articleId }: ArgumentationGraphProp
           </h3>
           {filteredRelationships.slice(0, expandedConnections ? undefined : 8).map((rel, i) => {
             const relInfo = RELATIONSHIP_LABELS[rel.relationship_type] || {
-              label: rel.relationship_type.toLowerCase().replace(/_/g, " "),
+              label: (rel.relationship_type || "").toLowerCase().replace(/_/g, " "),
               color: "text-gray-600",
             };
             return (

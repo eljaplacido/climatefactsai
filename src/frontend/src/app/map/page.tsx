@@ -320,12 +320,20 @@ function MapPageInner() {
   const filteredStats =
     filters.keyword && !loading
       ? countryStats.filter((s) => {
-          const lc = filters.keyword.toLowerCase();
+          // Defensive — country_name / country_code can be null in
+          // some rows, and top_topics can contain null entries.
+          const lc = (filters.keyword || "").toLowerCase();
+          const name = (s.country_name || "").toLowerCase();
+          const code = (s.country_code || "").toLowerCase();
+          const region = (s.region || "").toLowerCase();
+          const topics = (s.top_topics || []).filter(
+            (t): t is string => typeof t === "string"
+          );
           return (
-            s.country_name.toLowerCase().includes(lc) ||
-            s.country_code.toLowerCase().includes(lc) ||
-            (s.top_topics || []).some((t) => t.toLowerCase().includes(lc)) ||
-            (s.region || "").toLowerCase().includes(lc)
+            name.includes(lc) ||
+            code.includes(lc) ||
+            topics.some((t) => t.toLowerCase().includes(lc)) ||
+            region.includes(lc)
           );
         })
       : countryStats;
