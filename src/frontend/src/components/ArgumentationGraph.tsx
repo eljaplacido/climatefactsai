@@ -81,9 +81,17 @@ export default function ArgumentationGraph({ articleId }: ArgumentationGraphProp
   }, [articleId]);
 
   const filteredRelationships = useMemo(() => {
-    if (!data?.relationships || !selectedEntity) return data?.relationships || [];
-    return data.relationships.filter(
-      (r) => r.source.entity_id === selectedEntity || r.target.entity_id === selectedEntity
+    // 2026-05-28 hotfix: backend KG payload sometimes returns
+    // relationships where source/target entity lookups failed (deleted
+    // entity, race during enrichment, etc.) leaving them undefined.
+    // Filter those out FIRST so the .map() below never crashes on
+    // `r.source.entity_name`.
+    const rels = (data?.relationships || []).filter(
+      (r) => r && r.source && r.target && r.source.entity_id && r.target.entity_id,
+    );
+    if (!selectedEntity) return rels;
+    return rels.filter(
+      (r) => r.source.entity_id === selectedEntity || r.target.entity_id === selectedEntity,
     );
   }, [data, selectedEntity]);
 
