@@ -118,13 +118,34 @@ function FactCheckDetail({ claim, status, confidence, justification, evidence }:
 
           <p className="text-sm text-gray-700 line-clamp-2">{claim}</p>
 
-          <button
-            onClick={() => setShowModal(true)}
-            className="mt-2 inline-flex items-center text-sm text-clilens-primary hover:text-clilens-teal-600 font-medium"
-          >
-            <HelpCircle className="h-4 w-4 mr-1" />
-            View verification details
-          </button>
+          <div className="mt-2 flex items-center gap-3 flex-wrap">
+            <button
+              onClick={() => setShowModal(true)}
+              className="inline-flex items-center text-sm text-clilens-primary hover:text-clilens-teal-600 font-medium"
+            >
+              <HelpCircle className="h-4 w-4 mr-1" />
+              View verification details
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(
+                  new CustomEvent("climatenews:assistant-prefill", {
+                    detail: {
+                      prompt: `Explain this fact-check verdict in plain language — claim was "${claim.slice(0, 200)}", verdict is ${config.label}, confidence ${formatConfidence(confidence)}%. What does this mean and how confident should I be?`,
+                    },
+                  }),
+                );
+              }}
+              className="inline-flex items-center text-xs text-gray-500 hover:text-clilens-primary"
+              title="Ask the assistant to explain this verdict"
+              data-testid="ask-about-factcheck"
+            >
+              <HelpCircle className="h-3.5 w-3.5 mr-1" />
+              Ask the assistant
+            </button>
+          </div>
         </div>
       </div>
 

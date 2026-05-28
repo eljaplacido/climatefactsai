@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Loader2, GitBranch, CheckCircle2, XCircle, MinusCircle, ChevronRight } from "lucide-react";
 import type { KnowledgeEntity, EntityRelationship, ArticleEntityGraph } from "../types";
+import AskAboutButton from "./AskAboutButton";
 
 interface ArgumentationGraphProps {
   articleId: string;
@@ -143,6 +144,11 @@ export default function ArgumentationGraph({ articleId }: ArgumentationGraphProp
         <span className="text-xs text-gray-400">
           {data.entities.length} entities, {data.relationships.length} relationships
         </span>
+        <AskAboutButton
+          prompt="Walk me through this argumentation graph — which entities are most central and how are the relationships shaping the article's argument?"
+          ariaLabel="Ask the assistant: explain this argumentation graph"
+          className="ml-auto"
+        />
       </div>
 
       {/* Entity nodes */}

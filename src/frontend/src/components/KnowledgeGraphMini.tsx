@@ -19,6 +19,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import AskAboutButton from "./AskAboutButton";
 import {
   Network,
   ExternalLink,
@@ -176,7 +177,13 @@ export default function KnowledgeGraphMini({ articleId }: Props) {
             <Network className="h-5 w-5 text-white" />
           </div>
           <div className="text-left">
-            <h2 className="text-lg font-bold text-gray-900">Knowledge Graph</h2>
+            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-1">
+              Knowledge Graph
+              <AskAboutButton
+                prompt="Explain what the knowledge graph shows for this article and why these entities are connected"
+                ariaLabel="Ask the assistant: explain this knowledge graph"
+              />
+            </h2>
             <p className="text-sm text-gray-600">
               {entities.length} entities · {relationships.length} relationships · {connected.length} connected articles
             </p>

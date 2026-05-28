@@ -3,6 +3,7 @@
 import clsx from "clsx";
 import { Shield, ExternalLink, FileText, AlertTriangle, CheckCircle } from "lucide-react";
 import type { SourceProfile } from "../types";
+import AskAboutButton from "./AskAboutButton";
 
 interface SourceProfileCardProps {
   profile: SourceProfile;
@@ -62,7 +63,13 @@ function SourceProfileCard({ profile, compact = false }: SourceProfileCardProps)
           </div>
         </div>
         <div className="mt-1 flex items-center justify-between gap-2 flex-wrap">
-          <p className={clsx("text-xs", band.color)}>{band.label}</p>
+          <p className={clsx("text-xs flex items-center gap-1", band.color)}>
+            {band.label}
+            <AskAboutButton
+              prompt={`Explain why ${profile.source_name} is rated ${profile.credibility_score}/100 — what factors went into this credibility score and how is the tier (T1/T2/T3) decided?`}
+              ariaLabel={`Ask the assistant: explain ${profile.source_name}'s credibility rating`}
+            />
+          </p>
           {/* Phase 0 day 2 (2026-05-23): tier badge from source_credibility_tiers
               (migration 027). Renders only when the profile has been tier-classified
               — sources without a tier match show only the band label so we don't

@@ -18,6 +18,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, TrendingUp, ExternalLink } from "lucide-react";
+import AskAboutButton from "./AskAboutButton";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -116,6 +117,10 @@ export default function ProjectionsPanel({
           <h3 className="font-semibold text-gray-900 flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-teal-600" />
             Warming projections — {countryName}
+            <AskAboutButton
+              prompt={`Explain what these IPCC AR6 warming projections mean for ${countryName} — what should I take from the SSP scenarios shown here?`}
+              ariaLabel="Ask the assistant: explain these projections"
+            />
           </h3>
           <p className="text-xs text-gray-500 mt-1">{data.baseline_note}</p>
         </div>
