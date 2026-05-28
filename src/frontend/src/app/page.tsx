@@ -255,6 +255,29 @@ export default function Home() {
             </svg>
             <p className="text-gray-500 text-lg mb-2">No articles found</p>
             <p className="text-gray-400 text-sm">Try adjusting your filters or check back later for new reports.</p>
+            <div className="mt-4 flex justify-center">
+              <button
+                type="button"
+                onClick={() => {
+                  const params = []
+                  if (filterCountry) params.push(`country: ${filterCountry}`)
+                  if (filterCredibility !== 'all') params.push(`credibility: ${filterCredibility}`)
+                  if (filterTag) params.push(`tag: ${filterTag}`)
+                  const filterDesc = params.length > 0 ? ` with filters [${params.join(', ')}]` : ''
+                  window.dispatchEvent(
+                    new CustomEvent('climatenews:assistant-prefill', {
+                      detail: {
+                        prompt: `I'm looking at the home feed${filterDesc} and getting zero articles. Help me find what I'm looking for — should I broaden a filter, change the country, or pick a different topic?`,
+                      },
+                    }),
+                  )
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full bg-clilens-teal-50 hover:bg-clilens-teal-100 text-clilens-teal-700 border border-clilens-teal-200"
+                data-testid="empty-feed-ask-assistant"
+              >
+                Ask the assistant to help me find articles
+              </button>
+            </div>
           </div>
         ) : null}
       </main>

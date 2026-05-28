@@ -158,6 +158,12 @@ export default function KnowledgeGraphMini({ articleId }: Props) {
         {data?.reason && (
           <p className="text-xs text-gray-400 mt-2 italic">{data.reason}</p>
         )}
+        <div className="mt-3">
+          <AskAboutButton
+            prompt="Why is this article missing from the knowledge graph, and when will the entity-extraction worker process it?"
+            variant="chip"
+          />
+        </div>
       </section>
     );
   }

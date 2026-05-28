@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { ArticleWeatherContext, LocationWeatherContext } from "@/types";
 import { Cloud, Thermometer, Droplets, Wind, AlertTriangle, MapPin } from "lucide-react";
+import AskAboutButton from "./AskAboutButton";
 
 interface Props {
   articleId: string;
@@ -229,13 +230,17 @@ export default function WeatherContext({ articleId }: Props) {
   if (state.kind === "empty") {
     return (
       <div
-        className="bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700 rounded-lg p-3"
+        className="bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700 rounded-lg p-3 space-y-2"
         data-testid="weather-empty"
       >
         <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
           <Cloud className="h-3.5 w-3.5" />
           No geographic locations detected in this article — weather context unavailable.
         </p>
+        <AskAboutButton
+          prompt="Why couldn't we detect geographic locations in this article, and what would help surface weather context for it?"
+          variant="chip"
+        />
       </div>
     );
   }

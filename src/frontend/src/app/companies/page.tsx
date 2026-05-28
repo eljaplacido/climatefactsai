@@ -214,7 +214,7 @@ export default function CompaniesPage() {
                 are SBTi-validated.
               </p>
             )}
-            <div className="flex gap-2 justify-center pt-1">
+            <div className="flex gap-2 justify-center pt-1 flex-wrap">
               {q && (
                 <button
                   type="button"
@@ -236,6 +236,29 @@ export default function CompaniesPage() {
                   Clear filters
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => {
+                  const ctx = [
+                    q ? `search "${q}"` : null,
+                    sbtiOnly ? "SBTi-only" : null,
+                    hasClimateData ? "with-climate-data" : null,
+                  ]
+                    .filter(Boolean)
+                    .join(", ");
+                  window.dispatchEvent(
+                    new CustomEvent("climatenews:assistant-prefill", {
+                      detail: {
+                        prompt: `I'm on the Corporate Climate Tracker filtering by [${ctx || "(no filters)"}] and getting zero results. Which filters should I relax, and which companies in the corpus best match what I might be looking for?`,
+                      },
+                    }),
+                  );
+                }}
+                className="text-xs px-3 py-1 rounded bg-clilens-teal-50 hover:bg-clilens-teal-100 text-clilens-teal-700 border border-clilens-teal-200"
+                data-testid="companies-empty-ask-assistant"
+              >
+                Ask the assistant
+              </button>
             </div>
           </div>
         ) : (
