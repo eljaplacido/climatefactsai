@@ -168,18 +168,27 @@ steps:
         # the build instead of continuing with a broken API. This catches
         # the "Container import failed" class of error that previously
         # produced cloud_build status=SUCCESS with no running new code.
-        REVISION=$(gcloud run services describe ${_API_SERVICE} \
+        #
+        # Approach: compare latestCreatedRevisionName vs
+        # latestReadyRevisionName on the service. When they match, the
+        # newly created revision is also the latest ready one, meaning
+        # the deploy succeeded end-to-end. Simpler + more reliable than
+        # trying to filter conditions[?type=Ready] in gcloud's format
+        # expression (which silently returned empty and broke the build).
+        LATEST_CREATED=$(gcloud run services describe ${_API_SERVICE} \
           --region=${_REGION} \
           --project=${_PROJECT_ID} \
           --format='value(status.latestCreatedRevisionName)')
-        READY=$(gcloud run revisions describe $$REVISION \
+        LATEST_READY=$(gcloud run services describe ${_API_SERVICE} \
           --region=${_REGION} \
           --project=${_PROJECT_ID} \
-          --format='value(status.conditions[?type=Ready].status)')
-        echo "Latest revision: $$REVISION (Ready=$$READY)"
-        if [ "$$READY" != "True" ]; then
-          echo "ERROR: Revision $$REVISION is not Ready. Aborting build."
-          gcloud run revisions describe $$REVISION \
+          --format='value(status.latestReadyRevisionName)')
+        echo "Latest created: $$LATEST_CREATED"
+        echo "Latest ready:   $$LATEST_READY"
+        if [ "$$LATEST_CREATED" != "$$LATEST_READY" ]; then
+          echo "ERROR: Latest created revision ($$LATEST_CREATED) is not the latest ready one ($$LATEST_READY)."
+          echo "This means the new deploy failed to become healthy. Conditions:"
+          gcloud run revisions describe $$LATEST_CREATED \
             --region=${_REGION} \
             --project=${_PROJECT_ID} \
             --format='value(status.conditions)'
