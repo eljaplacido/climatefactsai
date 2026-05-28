@@ -128,6 +128,27 @@ function CredibilityGauge({ score, level, decomposedConfidence, size = "md" }: C
             <p className="text-[10px] text-gray-400 dark:text-slate-500">
               Radar: Model + Source + Evidence + Cross-ref + Temporal. Scores computed from evidence quality, source diversity, and multi-LLM agreement.
             </p>
+            {/* Slice 3+ extension (2026-05-28) — ask-the-assistant
+                affordance inside the breakdown popover. Curious users
+                who clicked here get a one-step path to a plain-language
+                explanation tied to THIS article's scores. */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(
+                  new CustomEvent("climatenews:assistant-prefill", {
+                    detail: {
+                      prompt: `Explain this article's credibility breakdown — overall ${score}/100 (${getLevelLabel(level)}). Walk through the 5 axes (Model, Source, Evidence, Cross-ref, Temporal) in plain language and tell me which to trust most.`,
+                    },
+                  }),
+                );
+              }}
+              className="mt-2 w-full inline-flex items-center justify-center gap-1 px-2 py-1 text-[11px] rounded bg-clilens-teal-50 hover:bg-clilens-teal-100 text-clilens-teal-700 border border-clilens-teal-200"
+              data-testid="credibility-ask-assistant"
+            >
+              Ask the assistant to explain
+            </button>
           </div>
           {/* Arrow pointing up */}
           <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white dark:bg-slate-800 border-l border-t border-gray-200 dark:border-slate-700 rotate-45" />

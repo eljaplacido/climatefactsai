@@ -492,7 +492,38 @@ function SearchPageInner() {
           {!loading && !error && articles.length === 0 && (
             <div className="text-center py-12">
               <SearchIcon className="h-8 w-8 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500">No results found. Try adjusting your filters.</p>
+              <p className="text-gray-500 mb-4">No results found. Try adjusting your filters.</p>
+              {/* Slice 3 extension (2026-05-28) — ask-the-assistant chip
+                  for the search-page empty state. Captures every active
+                  filter into the prompt so the LLM can suggest concrete
+                  next steps (broaden, swap country, drop credibility
+                  floor, etc.). */}
+              <button
+                type="button"
+                onClick={() => {
+                  const filters = [
+                    q ? `query "${q}"` : null,
+                    country ? `country ${country}` : null,
+                    credibility !== "all" ? `credibility ${credibility}` : null,
+                    tags.length > 0 ? `tags [${tags.join(", ")}]` : null,
+                    dateFrom ? `from ${dateFrom}` : null,
+                    dateTo ? `to ${dateTo}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(", ");
+                  window.dispatchEvent(
+                    new CustomEvent("climatenews:assistant-prefill", {
+                      detail: {
+                        prompt: `I'm searching with filters [${filters || "(no filters)"}] and getting zero results. Which filter should I broaden or swap to find what I'm looking for?`,
+                      },
+                    }),
+                  );
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full bg-clilens-teal-50 hover:bg-clilens-teal-100 text-clilens-teal-700 border border-clilens-teal-200"
+                data-testid="search-empty-ask-assistant"
+              >
+                Ask the assistant to help me find articles
+              </button>
             </div>
           )}
         </div>
