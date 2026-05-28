@@ -13,6 +13,7 @@ import EvidenceTimeline from "@/components/EvidenceTimeline";
 import dynamic from "next/dynamic";
 import ShareButton from "@/components/ShareButton";
 import BookmarkButton from "@/components/BookmarkButton";
+import AskAboutButton from "@/components/AskAboutButton";
 import ArticleExportButtons from "@/components/ArticleExportButtons";
 import FullArticlePanel from "@/components/FullArticlePanel";
 import WeatherTrendCard from "@/components/WeatherTrendCard";
@@ -201,23 +202,20 @@ export default async function ArticlePage({ params }: { params: { id: string } }
                 {/* chat-as-heart (2026-05-28) — article-level ask
                     button. Most prominent placement on the page so
                     users see "I can ask about this article" the
-                    moment they land. Pre-fills with title + source. */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.dispatchEvent(
-                      new CustomEvent("climatenews:assistant-prefill", {
-                        detail: {
-                          prompt: `Explain this article in plain language and tell me what to take from it. Title: "${article.title}". Source: ${article.source_name || "unknown"}. Walk me through the key claims, their credibility, and whether I should trust this reporting.`,
-                        },
-                      }),
-                    );
-                  }}
-                  className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full bg-clilens-teal-50 hover:bg-clilens-teal-100 text-clilens-teal-700 border border-clilens-teal-200"
-                  data-testid="article-ask-assistant"
-                >
-                  Ask the assistant about this article
-                </button>
+                    moment they land. Pre-fills with title + source.
+                    2026-05-28 hotfix: switched from inline <button onClick>
+                    to AskAboutButton component because this is a SERVER
+                    component — Next.js 13+ app router disallows passing
+                    onClick to native buttons in server components. The
+                    AskAboutButton is "use client" so it works. Was
+                    crashing the entire article page with HTTP 500. */}
+                <div className="ml-auto">
+                  <AskAboutButton
+                    prompt={`Explain this article in plain language and tell me what to take from it. Title: "${article.title}". Source: ${article.source_name || "unknown"}. Walk me through the key claims, their credibility, and whether I should trust this reporting.`}
+                    ariaLabel="Ask the assistant about this article"
+                    variant="chip"
+                  />
+                </div>
               </div>
 
               {/* Prominent original article link */}
