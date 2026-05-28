@@ -248,7 +248,12 @@ async def ask_general_question(
     except Exception:
         pass
 
-        return ChatResponse(
+    # 2026-05-28 hotfix: this `return ChatResponse(...)` was previously
+    # indented inside the `except: pass` block above — so on the happy
+    # path (UsageTracker.log_usage succeeds, no exception), the function
+    # fell through to implicit `return None` and FastAPI 500'd trying
+    # to validate None against ChatResponse. Dedented to function level.
+    return ChatResponse(
         session_id=session_id,
         question=request.question,
         answer=answer_data["answer"],
@@ -896,17 +901,16 @@ async def _generate_answer(
     view_context: Optional[dict] = None,
     cynefin: Optional[dict] = None,
 ) -> dict:
-    """Generate an answer using the LLM with article context."""
-    try:
-        from app.domains.intelligence.llm_client import get_llm_client
-        client, model = get_llm_client()
+    """Generate an answer using the LLM with article context.
 
-        if not client:
-            return {
-                "answer": "Chat service unavailable: no LLM API key configured.",
-                "confidence": 0.0,
-                "error": "no_api_key",
-            }
+    2026-05-28 refactor: was DeepSeek-only — if DeepSeek hiccupped, chat
+    500'd. Now uses llm_chat_with_fallback which walks
+    deepseek -> openai -> anthropic -> local-gx10 until one succeeds.
+    The returned `model` field tells the UI which provider actually
+    produced the answer so observability stays honest.
+    """
+    try:
+        from app.domains.intelligence.llm_client import llm_chat_with_fallback
 
         # Build conversation history
         history_text = ""
@@ -992,17 +996,31 @@ Instructions:
 - If no relevant articles are found, acknowledge this and suggest using Deep Search or adjusting filters.
 - Format using markdown with headers, bullet points, and bold for key terms."""
 
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+        # Multi-provider fallback chain: tries deepseek -> openai -> anthropic
+        # -> local-gx10 until one returns non-empty content. Returns None
+        # only when EVERY provider fails (effectively the same as the old
+        # "no API key" guard).
+        chain_result = llm_chat_with_fallback(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
             max_tokens=1000,
             temperature=0.3,
         )
 
-        answer = response.choices[0].message.content.strip()
+        if chain_result is None:
+            return {
+                "answer": (
+                    "Chat service is temporarily unavailable — all LLM "
+                    "providers in the fallback chain (DeepSeek, OpenAI, "
+                    "Anthropic, GX10) are unreachable or returned empty. "
+                    "Please retry in a moment."
+                ),
+                "confidence": 0.0,
+                "error": "all_providers_failed",
+            }
+
+        answer, used_provider, used_model = chain_result
+        answer = answer.strip()
 
         # Estimate confidence
         confidence = 0.5
@@ -1046,7 +1064,11 @@ Instructions:
         return {
             "answer": answer,
             "confidence": round(confidence, 2),
-            "model": f"deepseek:{model}",
+            # 2026-05-28: stamp provider:model so the UI can tell which
+            # backend actually answered (used vs fell-back). Was hard-
+            # coded "deepseek:{model}" even when the call used something
+            # else — making the displayed model label dishonest.
+            "model": f"{used_provider}:{used_model}",
             "hallucination_check": hallucination_check,
             "actions": _parse_actions(answer),
         }
