@@ -164,14 +164,28 @@ app = FastAPI(
 from api.observability_middleware import ObservabilityMiddleware
 app.add_middleware(ObservabilityMiddleware)
 
-# CORS (allow local frontend dev servers)
-allowed_origins_env = os.getenv(
-    "CORS_ORIGINS",
-    "http://localhost:3000,http://localhost:5173,http://localhost:5300",
-)
-ALLOWED_ORIGINS = [
-    origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()
-]
+# CORS — allow local frontend dev servers + the prod Cloud Run frontend.
+# 2026-05-28 hotfix: CORS_ORIGINS env var wasn't applied via cloudbuild's
+# update-schedulers step (the `|| true` swallows errors), so the deployed
+# allowlist was just localhost. Browsers on prod hit "Failed to fetch" /
+# "Could not connect to API." Default now includes the prod frontend URL
+# as a belt-and-suspenders fallback.
+_DEFAULT_ORIGINS = ",".join([
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:5300",
+    "https://climatenews-frontend-srzwxdzmaq-ez.a.run.app",
+])
+allowed_origins_env = os.getenv("CORS_ORIGINS", _DEFAULT_ORIGINS)
+# Always merge the prod frontend URL in — even if CORS_ORIGINS is set
+# (e.g. to a staging URL), prod must still work.
+_PROD_FRONTEND = "https://climatenews-frontend-srzwxdzmaq-ez.a.run.app"
+_origin_set = {
+    origin.strip()
+    for origin in (allowed_origins_env + "," + _PROD_FRONTEND).split(",")
+    if origin.strip()
+}
+ALLOWED_ORIGINS = sorted(_origin_set)
 
 app.add_middleware(
     CORSMiddleware,
