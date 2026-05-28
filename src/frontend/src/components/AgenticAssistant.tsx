@@ -475,9 +475,13 @@ export default function AgenticAssistant({
       }
 
       if (Array.isArray(data.actions) && data.actions.length > 0) {
+        // 2026-05-28 chat-as-heart step 1: bumped from 3 to 5 (matches
+        // backend cap in api/chat_routes.py _parse_actions). With 22
+        // skills now wired, the LLM has more relevant next steps to
+        // propose; capping too tightly hides agentic affordances.
         assistantMessage.actions = data.actions
           .filter((a: any) => a && a.type && a.label)
-          .slice(0, 3) as ChatActionSpec[];
+          .slice(0, 5) as ChatActionSpec[];
       }
 
       const rawSources = Array.isArray(data.sources)
@@ -643,7 +647,15 @@ export default function AgenticAssistant({
                         />
                       </div>
                       {msg.actions && msg.actions.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1.5" data-testid="chat-actions-row">
+                        <div className="mt-3" data-testid="chat-actions-row">
+                          {/* 2026-05-28 chat-as-heart step 1: label
+                              the chip row so users recognize these as
+                              agentic actions (chat that ACTS), not
+                              decoration. */}
+                          <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1.5">
+                            Suggested next steps
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
                           {msg.actions.map((a, i) => {
                             const requiresConfirm = ACTION_MODES[a.type] === "confirm";
                             return (
@@ -676,6 +688,7 @@ export default function AgenticAssistant({
                               </button>
                             );
                           })}
+                          </div>
                         </div>
                       )}
                     </>

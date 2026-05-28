@@ -1118,8 +1118,13 @@ def _parse_actions(answer: str) -> list[dict]:
     actions = parsed.get("actions", []) if isinstance(parsed, dict) else []
     if not isinstance(actions, list):
         return []
+    # 2026-05-28 (chat-as-heart step 1): bumped from :3 to :5 so the
+    # LLM can surface a broader set of next-step skills after we wired
+    # 7 new skills into chatActionDispatcher (KG explore, SDG drill-
+    # down, off-topic flag, golden promotion, etc.). FE renders the
+    # same cap.
     validated = []
-    for a in actions[:3]:
+    for a in actions[:5]:
         if not isinstance(a, dict):
             continue
         atype = str(a.get("type", ""))
