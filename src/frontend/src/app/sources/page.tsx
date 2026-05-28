@@ -71,9 +71,28 @@ export default function DataSourcesPage() {
               <span className="text-gray-300">/</span>
               <h1 className="text-lg font-semibold text-gray-900">Source Trust Profiles</h1>
             </div>
-            <div className="flex items-center space-x-2 text-sm text-gray-500">
-              <Shield className="h-4 w-4" />
-              <span>{profiles.length} sources tracked</span>
+            <div className="flex items-center gap-3 text-sm text-gray-500 flex-wrap">
+              <div className="flex items-center space-x-2">
+                <Shield className="h-4 w-4" />
+                <span>{profiles.length} sources tracked</span>
+              </div>
+              {/* chat-as-heart (2026-05-28) — sources-page chip */}
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent("climatenews:assistant-prefill", {
+                      detail: {
+                        prompt: "Walk me through the source credibility tiers (T1/T2/T3) — what does each mean, which outlets are in T1, and how should I weight a story differently based on the tier of its source?",
+                      },
+                    }),
+                  );
+                }}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full bg-clilens-teal-50 hover:bg-clilens-teal-100 text-clilens-teal-700 border border-clilens-teal-200"
+                data-testid="sources-ask-assistant"
+              >
+                Ask about source tiers
+              </button>
             </div>
           </div>
         </div>
@@ -161,7 +180,25 @@ export default function DataSourcesPage() {
             bonus directly on each card.) */}
         {!loading && (
           <div className="mt-16 border-t border-gray-200 pt-12">
-            <h2 className="text-2xl font-bold text-gray-900 mb-3">How sources are scored</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-3 flex items-center gap-2 flex-wrap">
+              How sources are scored
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent("climatenews:assistant-prefill", {
+                      detail: {
+                        prompt: "Explain in plain language how the 0-100 source credibility score is computed — what's the weight of each input (tier, editorial standards, fact-check record, methodology transparency), and how do I interpret an 82 vs a 65?",
+                      },
+                    }),
+                  );
+                }}
+                className="text-xs px-2.5 py-1 rounded-full bg-clilens-teal-50 hover:bg-clilens-teal-100 text-clilens-teal-700 border border-clilens-teal-200 font-normal"
+                data-testid="source-scoring-ask-assistant"
+              >
+                Ask the assistant
+              </button>
+            </h2>
             <p className="text-gray-600 mb-4 max-w-3xl">
               Every source above is graded against the same rubric. We combine four
               independent signals into the 0&ndash;100 credibility score shown on each
