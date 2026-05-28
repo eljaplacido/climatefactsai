@@ -7,7 +7,7 @@ import {
   Globe, Home, Search, Sparkles, BookOpen,
   MapPin, FileText, Menu, X, BarChart3,
   Shield, Info, LogOut, LayoutDashboard, Rss, Settings,
-  LogIn, UserPlus, Lightbulb, Loader2, Sun, Moon, Monitor,
+  LogIn, UserPlus, Lightbulb, Loader2,
   Building2, Bookmark,
 } from "lucide-react";
 import {
@@ -57,32 +57,30 @@ export default function GlobalNav() {
   const langRef = useRef<HTMLDivElement>(null);
   const { user, isLoggedIn, loading: authLoading, logout } = useAuth();
   const { locale, setLocale, t, isTranslating } = useI18n();
-  const [theme, setTheme] = useState<"light" | "dark" | "auto">("light");
+  // 2026-05-28 — dark mode is partially implemented:
+  //   * globals.css has `.dark` overrides on text colors + bg-white
+  //     + bg-gray-50, but NOT on gradient stops (to-white, to-blue-50)
+  //     or on most component-specific colored cards.
+  //   * Result: with `.dark` active, body bg flips to slate but cards
+  //     that use bg-gradient-to-r / bg-clilens-teal-50 / to-white
+  //     stay light, while text colors flip to slate-100 — producing
+  //     near-white-on-white that's invisible. User reported this on
+  //     Featured Analysis + article detail.
+  //
+  // Until a proper theme system ships (every card paired bg/text in
+  // both modes), force light. Existing localStorage flag from prior
+  // sessions gets cleared so users stuck in "dark" don't have to
+  // toggle anything.
+  const [theme] = useState<"light">("light");
 
-  // Initialize theme from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem("clilens_theme") as "light" | "dark" | "auto" | null;
-    if (saved) {
-      setTheme(saved);
-      applyTheme(saved);
+    try {
+      localStorage.removeItem("clilens_theme");
+    } catch {
+      /* private-mode no-op */
     }
+    document.documentElement.classList.remove("dark");
   }, []);
-
-  function applyTheme(t: "light" | "dark" | "auto") {
-    const root = document.documentElement;
-    if (t === "dark" || (t === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
-      root.classList.add("dark");
-    } else {
-      root.classList.remove("dark");
-    }
-  }
-
-  function cycleTheme() {
-    const next = theme === "light" ? "dark" : theme === "dark" ? "auto" : "light";
-    setTheme(next);
-    localStorage.setItem("clilens_theme", next);
-    applyTheme(next);
-  }
 
   // Close menus on outside click
   useEffect(() => {
@@ -152,15 +150,8 @@ export default function GlobalNav() {
 
           {/* Right controls */}
           <div className="flex items-center space-x-1">
-            {/* Theme toggle */}
-            <button
-              onClick={cycleTheme}
-              className="flex items-center px-2 py-1.5 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-md transition-colors"
-              title={`Theme: ${theme}`}
-              aria-label={`Toggle theme (current: ${theme})`}
-            >
-              {theme === "light" ? <Sun className="h-4 w-4" /> : theme === "dark" ? <Moon className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
-            </button>
+            {/* 2026-05-28 — theme toggle removed; see top-of-file
+                comment. Will return when full dark mode ships. */}
 
             {/* Language selector with globe icon and flag emoji */}
             <div className="relative" ref={langRef}>
