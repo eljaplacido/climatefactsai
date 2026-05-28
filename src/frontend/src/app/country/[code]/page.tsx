@@ -273,7 +273,28 @@ export default function CountryPassportPage() {
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* chat-as-heart (2026-05-28) — country-passport
+                  ask-the-assistant chip. Pre-fills the country name
+                  + code so the LLM can dispatch explore_scenario /
+                  explore_sdg / open_country skills with the right
+                  parameter. */}
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent("climatenews:assistant-prefill", {
+                      detail: {
+                        prompt: `Tell me about ${detail.country_name}'s climate situation — what are the IPCC projections, key SDG alignments, biggest emitters, and latest climate-news coverage? Country code: ${detail.country_code}.`,
+                      },
+                    }),
+                  );
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full bg-clilens-teal-50 hover:bg-clilens-teal-100 text-clilens-teal-700 border border-clilens-teal-200"
+                data-testid="country-ask-assistant"
+              >
+                Ask the assistant about {detail.country_name}
+              </button>
               <Link
                 href={`/map?country=${code}`}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-slate-200 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 rounded-md transition-colors"
