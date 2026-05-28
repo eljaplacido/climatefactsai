@@ -504,7 +504,7 @@ function SearchPageInner() {
                   const filters = [
                     q ? `query "${q}"` : null,
                     country ? `country ${country}` : null,
-                    credibility !== "all" ? `credibility ${credibility}` : null,
+                    credibility !== "ALL" ? `credibility ${credibility}` : null,
                     tags.length > 0 ? `tags [${tags.join(", ")}]` : null,
                     dateFrom ? `from ${dateFrom}` : null,
                     dateTo ? `to ${dateTo}` : null,
