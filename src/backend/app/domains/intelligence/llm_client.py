@@ -26,16 +26,41 @@ except ImportError:
 
 
 def _provider_order(pin: Optional[str] = None) -> List[str]:
-    """Resolve the provider chain order from env or argument."""
-    pin = (pin or os.getenv("CLILENS_CHAT_PROVIDER", "")
-              or os.getenv("CLILENS_ENRICHMENT_PROVIDER", "")
-          ).strip().lower()
+    """Resolve the provider chain order from env or argument.
+
+    Two distinct policies depending on caller's intent:
+
+      * `CLILENS_ENRICHMENT_PROVIDER=local-gx10` — background-only path
+        (article enrichment, KG extraction, backfills). GX10 first,
+        cloud fallbacks behind. Acceptable to depend on GX10 since
+        the user is not blocked if it's offline.
+
+      * `CLILENS_CHAT_PROVIDER` — user-facing real-time path (chat,
+        deep-search synthesis). The user's rule: customer-facing
+        features MUST NOT have GX10 in the critical chain because GX10
+        is the user's on-prem device that can be powered off any time.
+        Default chain is cloud-only.
+
+    See [[feedback-devops-antipatterns]] for the rule's origin.
+    """
+    pin = (pin or os.getenv("CLILENS_CHAT_PROVIDER", "")).strip().lower()
+
+    # Explicit user pin overrides defaults.
     if pin == "local-gx10":
+        # User opted IN explicitly — full chain with GX10 first.
         return ["local-gx10", "deepseek", "openai", "anthropic"]
     if pin in {"deepseek", "openai", "anthropic"}:
         return [pin]
-    # Default order: cheapest reliable first, premium last.
-    return ["deepseek", "openai", "anthropic", "local-gx10"]
+
+    # Fall back to enrichment-provider env only if it's NOT local-gx10
+    # (background-only pin must not leak into user-facing chat).
+    enrichment_pin = os.getenv("CLILENS_ENRICHMENT_PROVIDER", "").strip().lower()
+    if enrichment_pin in {"deepseek", "openai", "anthropic"}:
+        return [enrichment_pin]
+
+    # DEFAULT: cloud-only chain for chat. No local-gx10 — chat must
+    # work even when the user's GX10 box is off.
+    return ["deepseek", "openai", "anthropic"]
 
 
 def get_llm_client():

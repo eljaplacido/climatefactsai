@@ -112,35 +112,35 @@ steps:
       - "--platform=managed"
       - "--allow-unauthenticated"
       - "--port=8000"
-      - "--set-secrets=DATABASE_URL=database-url:latest"
-      - "--set-secrets=SCHEDULER_SECRET=scheduler-secret:latest"
-      - "--set-secrets=JWT_SECRET_KEY=jwt-secret-key:latest"
-      - "--set-secrets=ANTHROPIC_API_KEY=anthropic-api-key:latest"
-      - "--set-secrets=OPENAI_API_KEY=openai-api-key:latest"
-      - "--set-secrets=PERPLEXITY_API_KEY=perplexity-api-key:latest"
-      - "--set-secrets=STRIPE_SECRET_KEY=stripe-secret-key:latest"
-      - "--set-secrets=STRIPE_WEBHOOK_SECRET=stripe-webhook-secret:latest"
-      - "--set-secrets=SENDGRID_API_KEY=sendgrid-api-key:latest"
-      - "--set-secrets=GOOGLE_CLIENT_ID=google-client-id:latest"
-      - "--set-secrets=GOOGLE_CLIENT_SECRET=google-client-secret:latest"
-      - "--set-secrets=DEEPSEEK_API_KEY=deepseek-api-key:latest"
-      - "--set-secrets=NOAA_API_TOKEN=noaa-api-token:latest"
-      - "--set-secrets=NASA_API_KEY=nasa-api-key:latest"
+      - "--update-secrets=DATABASE_URL=database-url:latest"
+      - "--update-secrets=SCHEDULER_SECRET=scheduler-secret:latest"
+      - "--update-secrets=JWT_SECRET_KEY=jwt-secret-key:latest"
+      - "--update-secrets=ANTHROPIC_API_KEY=anthropic-api-key:latest"
+      - "--update-secrets=OPENAI_API_KEY=openai-api-key:latest"
+      - "--update-secrets=PERPLEXITY_API_KEY=perplexity-api-key:latest"
+      - "--update-secrets=STRIPE_SECRET_KEY=stripe-secret-key:latest"
+      - "--update-secrets=STRIPE_WEBHOOK_SECRET=stripe-webhook-secret:latest"
+      - "--update-secrets=SENDGRID_API_KEY=sendgrid-api-key:latest"
+      - "--update-secrets=GOOGLE_CLIENT_ID=google-client-id:latest"
+      - "--update-secrets=GOOGLE_CLIENT_SECRET=google-client-secret:latest"
+      - "--update-secrets=DEEPSEEK_API_KEY=deepseek-api-key:latest"
+      - "--update-secrets=NOAA_API_TOKEN=noaa-api-token:latest"
+      - "--update-secrets=NASA_API_KEY=nasa-api-key:latest"
       # Phase 8 (2026-05-24) — gates POST /api/companies/admin/sync/{source}
-      - "--set-secrets=CORPORATE_SYNC_TOKEN=corporate-sync-token:latest"
+      - "--update-secrets=CORPORATE_SYNC_TOKEN=corporate-sync-token:latest"
       # 2026-05-27 — on-prem GX10 (DGX Spark) LLM endpoint reached via Cloudflare
       # Tunnel. Persisted here so Cloud Build redeploys don't wipe the
       # secret mounts that `wire-gx10.sh` initially attached. See
       # docs/improvementplans/KG-Robustness-Audit-2026-05-27.md +
       # docs/reports/asusgx10inferencestrategy.md for the rationale.
-      - "--set-secrets=CLILENS_LOCAL_GX10_BASE_URL=clilens-local-gx10-base-url:latest"
-      - "--set-secrets=CLILENS_LOCAL_GX10_API_KEY=clilens-local-gx10-api-key:latest"
-      - "--set-secrets=CLILENS_LOCAL_GX10_MODEL=clilens-local-gx10-model:latest"
-      - "--set-env-vars=ENVIRONMENT=production"
-      - "--set-env-vars=LOG_LEVEL=INFO"
-      - "--set-env-vars=API_HOST=0.0.0.0"
-      - "--set-env-vars=API_PORT=8000"
-      - "--set-env-vars=CLILENS_ENRICHMENT_PROVIDER=local-gx10"
+      - "--update-secrets=CLILENS_LOCAL_GX10_BASE_URL=clilens-local-gx10-base-url:latest"
+      - "--update-secrets=CLILENS_LOCAL_GX10_API_KEY=clilens-local-gx10-api-key:latest"
+      - "--update-secrets=CLILENS_LOCAL_GX10_MODEL=clilens-local-gx10-model:latest"
+      - "--update-env-vars=ENVIRONMENT=production"
+      - "--update-env-vars=LOG_LEVEL=INFO"
+      - "--update-env-vars=API_HOST=0.0.0.0"
+      - "--update-env-vars=API_PORT=8000"
+      - "--update-env-vars=CLILENS_ENRICHMENT_PROVIDER=local-gx10"
       - "--memory=1Gi"
       - "--cpu=1"
       - "--concurrency=80"
@@ -162,6 +162,29 @@ steps:
     args:
       - "-c"
       - |
+        set -euo pipefail
+        # 2026-05-28 hardening: verify the new revision is actually
+        # Ready=True before we proceed to FE build. If not, hard-fail
+        # the build instead of continuing with a broken API. This catches
+        # the "Container import failed" class of error that previously
+        # produced cloud_build status=SUCCESS with no running new code.
+        REVISION=$(gcloud run services describe ${_API_SERVICE} \
+          --region=${_REGION} \
+          --project=${_PROJECT_ID} \
+          --format='value(status.latestCreatedRevisionName)')
+        READY=$(gcloud run revisions describe $$REVISION \
+          --region=${_REGION} \
+          --project=${_PROJECT_ID} \
+          --format='value(status.conditions[?type=Ready].status)')
+        echo "Latest revision: $$REVISION (Ready=$$READY)"
+        if [ "$$READY" != "True" ]; then
+          echo "ERROR: Revision $$REVISION is not Ready. Aborting build."
+          gcloud run revisions describe $$REVISION \
+            --region=${_REGION} \
+            --project=${_PROJECT_ID} \
+            --format='value(status.conditions)'
+          exit 1
+        fi
         API_URL=$(gcloud run services describe ${_API_SERVICE} \
           --region=${_REGION} \
           --project=${_PROJECT_ID} \
@@ -214,9 +237,9 @@ steps:
       - "--platform=managed"
       - "--allow-unauthenticated"
       - "--port=3000"
-      - "--set-env-vars=NODE_ENV=production"
-      - "--set-env-vars=NEXT_TELEMETRY_DISABLED=1"
-      - "--set-env-vars=HOSTNAME=0.0.0.0"
+      - "--update-env-vars=NODE_ENV=production"
+      - "--update-env-vars=NEXT_TELEMETRY_DISABLED=1"
+      - "--update-env-vars=HOSTNAME=0.0.0.0"
       - "--memory=256Mi"
       - "--cpu=1"
       - "--concurrency=100"
@@ -236,6 +259,11 @@ steps:
     args:
       - "-c"
       - |
+        set -euo pipefail
+        # 2026-05-28 hardening: removed `|| true` on CORS env-var
+        # update — that swallowed failures and is exactly how CORS_ORIGINS
+        # got silently dropped, producing "Could not connect to API" for
+        # users. Hard-fail the build if this step fails.
         source /workspace/vars.env
         SCHEDULER_SECRET=$(gcloud secrets versions access latest --secret=scheduler-secret --project=${_PROJECT_ID})
         FRONTEND_URL=$(gcloud run services describe ${_FRONTEND_SERVICE} \
@@ -246,7 +274,7 @@ steps:
           --region=${_REGION} \
           --project=${_PROJECT_ID} \
           --update-env-vars=CORS_ORIGINS=$${FRONTEND_URL} \
-          --quiet || true
+          --quiet
         
         JOBS=(
           "cn-discover:/api/scheduler/ingestion/discover"
