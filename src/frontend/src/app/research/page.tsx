@@ -164,12 +164,32 @@ export default function ResearchPage() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-5xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
             <Link href="/" className="text-gray-500 hover:text-gray-700">
               <ArrowLeft className="h-5 w-5" />
             </Link>
             <BookOpen className="h-5 w-5 text-teal-600" />
             <h1 className="text-xl font-bold text-gray-900">Research Feed</h1>
+            {/* chat-as-heart (2026-05-28) — research-page chip.
+                Pre-fills with the page's purpose so the LLM can
+                suggest subscribe_research_topic skill or steer to
+                a specific paper analysis. */}
+            <button
+              type="button"
+              onClick={() => {
+                window.dispatchEvent(
+                  new CustomEvent("climatenews:assistant-prefill", {
+                    detail: {
+                      prompt: "Help me find climate research relevant to my interests — what topics should I subscribe to, and which recent papers are the most methodologically rigorous?",
+                    },
+                  }),
+                );
+              }}
+              className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full bg-clilens-teal-50 hover:bg-clilens-teal-100 text-clilens-teal-700 border border-clilens-teal-200"
+              data-testid="research-ask-assistant"
+            >
+              Ask the assistant
+            </button>
           </div>
           <p className="mt-2 text-sm text-gray-500 ml-9">
             Peer-reviewed climate research delivered daily via CrossRef — plus on-demand analysis of any paper, report, or PDF.
