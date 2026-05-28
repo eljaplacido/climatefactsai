@@ -18,6 +18,7 @@ import {
   ShieldAlert, Fingerprint, Route, ExternalLink, GitCommit, Loader2,
   CheckCircle, AlertTriangle, XCircle, HelpCircle,
 } from "lucide-react";
+import AskAboutButton from "@/components/AskAboutButton";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
 
@@ -427,7 +428,13 @@ export default function MethodologyPage() {
 
         {/* Section: How verification works (narrative) ------------------- */}
         <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-5">
-          <h2 className="text-2xl font-bold text-gray-900">How verification works</h2>
+          <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            How verification works
+            <AskAboutButton
+              prompt="Explain the 5-stage verification pipeline in plain language — what does each stage check, and how do they combine into the final credibility score I see on articles?"
+              ariaLabel="Ask the assistant: explain the verification pipeline"
+            />
+          </h2>
           <p className="text-sm text-gray-700">
             Every URL the platform analyses runs through five stages. Each
             stage emits a versioned audit record so a displayed score can
@@ -559,7 +566,13 @@ export default function MethodologyPage() {
 
         {/* Section: Verdict glossary -------------------------------------- */}
         <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-3">
-          <h2 className="text-2xl font-bold text-gray-900">Verdict labels</h2>
+          <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            Verdict labels
+            <AskAboutButton
+              prompt="Explain what each verdict label means — verified, partially_true, disputed, unverified, etc. — and how the platform decides between them. What evidence threshold flips a claim from one to another?"
+              ariaLabel="Ask the assistant: explain verdict labels"
+            />
+          </h2>
           <p className="text-sm text-gray-700">
             How the platform classifies an analysed claim once evidence is gathered.
           </p>
