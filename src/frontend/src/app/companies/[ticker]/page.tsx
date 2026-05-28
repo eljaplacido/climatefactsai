@@ -288,6 +288,26 @@ export default function CompanyDetailPage() {
               label={company.name}
               variant="chip"
             />
+            {/* chat-as-heart (2026-05-28) — company-detail ask button.
+                Pre-fills with company name + ticker so the LLM can
+                dispatch verify_corporate_claim / analyze_corporate_report
+                with the right parameters. */}
+            <button
+              type="button"
+              onClick={() => {
+                window.dispatchEvent(
+                  new CustomEvent("climatenews:assistant-prefill", {
+                    detail: {
+                      prompt: `Tell me about ${company.name}${company.ticker ? ` (${company.ticker})` : ""}'s climate disclosures. What are their net-zero commitments, is SBTi-validated, what should I verify, and how does their reporting compare to peers?`,
+                    },
+                  }),
+                );
+              }}
+              className="text-sm inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-clilens-teal-50 hover:bg-clilens-teal-100 text-clilens-teal-700 border border-clilens-teal-200 font-normal"
+              data-testid="company-ask-assistant"
+            >
+              Ask about {company.ticker || "this company"}
+            </button>
           </h1>
           <div className="flex flex-wrap gap-4 mt-3 text-sm">
             {company.country_code && (
