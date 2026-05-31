@@ -82,6 +82,8 @@ function DeepSearchPageInner() {
     null,
     URL_STATE_SERIALIZERS.nullableString,
   );
+  // F5a — platform-only vs external-enriched deep search.
+  const [platformOnly, setPlatformOnly] = useState(false);
   const [includeWeather, setIncludeWeather] = useUrlState(
     "weather",
     true,
@@ -191,6 +193,7 @@ function DeepSearchPageInner() {
         query: query.trim(),
         country: country ?? undefined,
         include_weather: includeWeather,
+        platform_only: platformOnly,
       });
       setSearchResult(result);
       // Tick the inline counter so the user sees "1 left this month"
@@ -298,6 +301,22 @@ function DeepSearchPageInner() {
                   />
                   <Cloud className="h-4 w-4" />
                   Include weather data
+                </label>
+                <label
+                  className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-200"
+                  title={
+                    platformOnly
+                      ? "Searching only Climatefacts-verified sources (no external web)."
+                      : "Including external web search to broaden coverage."
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    checked={platformOnly}
+                    onChange={(e) => setPlatformOnly(e.target.checked)}
+                    className="rounded border-gray-300 dark:border-slate-600 text-clilens-teal-600"
+                  />
+                  Platform sources only
                 </label>
                 <div className="ml-auto flex items-center gap-3">
                   <QuotaCounter quotaKey="deep_research" hideWhenUnlimited />

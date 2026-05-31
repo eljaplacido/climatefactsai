@@ -395,6 +395,7 @@ export const api = {
     category?: string;
     include_weather?: boolean;
     limit?: number;
+    platform_only?: boolean;
   }): Promise<DeepSearchResult> {
     const response = await apiClient.post("/api/deep-search/", params);
     return response.data;

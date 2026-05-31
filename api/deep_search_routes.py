@@ -31,6 +31,9 @@ class DeepSearchRequest(BaseModel):
     category: Optional[str] = None
     include_weather: bool = Field(default=True)
     limit: int = Field(default=10, ge=1, le=30)
+    # F5a — when true, search ONLY the platform's own corpus (skip external
+    # Perplexity web enrichment). Lets the user pick platform-only vs enriched.
+    platform_only: bool = Field(default=False)
 
 
 class CompareRequest(BaseModel):
@@ -176,6 +179,7 @@ async def deep_search(
             category=request.category,
             include_weather=request.include_weather,
             limit=request.limit,
+            platform_only=request.platform_only,
         )
 
         guidance_status = None

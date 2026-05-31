@@ -48,6 +48,7 @@ class DeepSearchService:
         limit: int = 10,
         include_hallucination_check: bool = True,
         include_refinements: bool = True,
+        platform_only: bool = False,
     ) -> Dict[str, Any]:
         """
         Perform a deep search combining multiple sources.
@@ -62,10 +63,15 @@ class DeepSearchService:
         import uuid as _uuid
         deep_search_session_id = str(_uuid.uuid4())
 
-        # Run all searches concurrently
+        # Run all searches concurrently. When platform_only=True (F5a), skip
+        # external Perplexity enrichment entirely — substitute an empty result
+        # at index 1 so all downstream result-index logic stays unchanged.
+        async def _no_external() -> Dict[str, Any]:
+            return {}
+
         tasks = [
             self._search_internal_corpus(query, country=country, category=category, limit=limit),
-            self._search_perplexity(query, country=country),
+            _no_external() if platform_only else self._search_perplexity(query, country=country),
         ]
         if include_weather and self._has_weather_keywords(query):
             tasks.append(self._get_weather_context(query, country=country))
