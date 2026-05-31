@@ -141,6 +141,10 @@ steps:
       - "--update-env-vars=API_HOST=0.0.0.0"
       - "--update-env-vars=API_PORT=8000"
       - "--update-env-vars=CLILENS_ENRICHMENT_PROVIDER=local-gx10"
+      # F12a (2026-05-31) — analytics admin gate admits enterprise tier OR
+      # emails here. Owner email so require_analytics_admin doesn't 403 the
+      # operator out of their own /api/analytics/* dashboard. Additive flag.
+      - "--update-env-vars=ADMIN_EMAILS=eljailari.suhonen@gmail.com"
       - "--memory=1Gi"
       - "--cpu=1"
       - "--concurrency=80"
