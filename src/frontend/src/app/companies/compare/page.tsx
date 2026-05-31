@@ -80,8 +80,8 @@ function BoolCell({ value }: { value: boolean }) {
 
 function CompareInner() {
   const sp = useSearchParams();
-  const a = sp.get("a") || "";
-  const b = sp.get("b") || "";
+  const a = sp?.get("a") || "";
+  const b = sp?.get("b") || "";
 
   const [left, setLeft] = useState<Loaded | null>(null);
   const [right, setRight] = useState<Loaded | null>(null);
