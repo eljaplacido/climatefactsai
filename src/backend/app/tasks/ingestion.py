@@ -116,6 +116,29 @@ def _insert_discovered_articles(
             inserted_ids.append(str(existing[0]["article_id"]))
             continue
 
+        # F1 — content-scope relevance gate. Reject off-topic items (bus
+        # accidents, sports, general news) before they reach the corpus.
+        # ON by default; INGEST_RELEVANCE_GATE=false disables for backfills.
+        if os.getenv("INGEST_RELEVANCE_GATE", "true").strip().lower() != "false":
+            try:
+                from app.domains.intelligence.editorial_gate import classify_climate_relevance
+                rel_body = (
+                    article.get("summary")
+                    or article.get("excerpt")
+                    or article.get("content")
+                    or article.get("extracted_text")
+                    or ""
+                )
+                is_rel, rel_score, rel_reason = classify_climate_relevance(title, rel_body)
+                if not is_rel:
+                    logger.info(
+                        "Skipping off-topic article (F1 gate)",
+                        url=url, reason=rel_reason,
+                    )
+                    continue
+            except Exception as gate_exc:  # pragma: no cover - never block ingest on gate error
+                logger.warning("F1 relevance gate errored; allowing article", error=str(gate_exc))
+
         try:
             db.execute_update(
                 """
