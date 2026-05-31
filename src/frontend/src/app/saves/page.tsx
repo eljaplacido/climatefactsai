@@ -13,6 +13,7 @@ import {
   Settings,
   Activity,
   Loader2,
+  Share2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { SavedItem, SavedItemType } from "@/types";
@@ -257,6 +258,27 @@ export default function SavesPage() {
                   </p>
                 )}
               </div>
+              {href && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const full =
+                      typeof window !== "undefined"
+                        ? `${window.location.origin}${href}`
+                        : href;
+                    if (typeof navigator !== "undefined" && navigator.share) {
+                      navigator.share({ title: description, url: full }).catch(() => {});
+                    } else if (typeof navigator !== "undefined" && navigator.clipboard) {
+                      navigator.clipboard.writeText(full);
+                    }
+                  }}
+                  className="flex-shrink-0 p-1.5 text-slate-400 hover:text-clilens-primary"
+                  aria-label={`Share ${item.item_type}`}
+                  title="Share"
+                >
+                  <Share2 className="h-4 w-4" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => handleRemove(item)}

@@ -10,6 +10,7 @@ import {
 import { useUrlState } from "@/lib/useUrlState";
 import { type ViewMode } from "@/lib/plainLanguage";
 import SaveButton from "@/components/SaveButton";
+import { useToast } from "@/components/Toast";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -90,6 +91,7 @@ export default function CompanyDetailPage() {
   const [company, setCompany] = useState<CompanyDetail | null>(null);
   const [disclosures, setDisclosures] = useState<Disclosure[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
+  const { showToast } = useToast();
   const [standardsCompliance, setStandardsCompliance] = useState<StandardCompliance[]>([]);
   const [loading, setLoading] = useState(true);
   const [analyzeText, setAnalyzeText] = useState("");
@@ -161,9 +163,16 @@ export default function CompanyDetailPage() {
           ...prev,
         ]);
         setAnalyzeText("");
+        const v = String(result.verdict || "unverified").replace(/_/g, " ");
+        showToast(
+          `Claim assessed: ${v}${result.flag_reason ? ` — ${result.flag_reason}` : ""}`,
+          result.verdict === "verified" ? "success" : "info",
+        );
+      } else {
+        showToast("Could not verify that claim — please try again.", "error");
       }
     } catch {
-      // degrade
+      showToast("Network error while verifying the claim.", "error");
     }
     setAnalyzing(false);
   };
