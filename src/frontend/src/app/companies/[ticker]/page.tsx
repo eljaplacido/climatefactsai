@@ -319,6 +319,13 @@ export default function CompanyDetailPage() {
             >
               Ask about {company.ticker || "this company"}
             </button>
+            {/* F9e — discover the compare view from the profile */}
+            <Link
+              href={`/companies/compare?a=${encodeURIComponent(company.ticker || ticker || "")}&b=`}
+              className="text-sm inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white hover:bg-gray-50 text-teal-700 border border-teal-200 font-normal"
+            >
+              Compare
+            </Link>
           </h1>
           <div className="flex flex-wrap gap-4 mt-3 text-sm">
             {company.country_code && (
