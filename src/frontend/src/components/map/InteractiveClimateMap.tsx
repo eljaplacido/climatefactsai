@@ -177,13 +177,25 @@ function FlyToCountry({
       return cc === selectedCountry;
     });
 
-    if (feature) {
+    if (!feature) return;
+
+    // Deep-link landings (?country=XX from "Open country on map") mount the
+    // map and read the param in the same tick — flying before the pane is
+    // laid out silently no-ops. Defer a frame + invalidateSize, then fly
+    // once bounds are valid. Effect re-fires when geoData loads. (F6b)
+    const timer = setTimeout(() => {
+      try {
+        map.invalidateSize();
+      } catch {
+        /* map container not ready — deps will re-fire */
+      }
       const layer = L.geoJSON(feature);
       const bounds = layer.getBounds();
       if (bounds.isValid()) {
         map.flyToBounds(bounds, { padding: [40, 40], maxZoom: 5, duration: 0.8 });
       }
-    }
+    }, 250);
+    return () => clearTimeout(timer);
   }, [selectedCountry, geoData, map]);
 
   return null;

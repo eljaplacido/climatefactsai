@@ -8,6 +8,7 @@ import FirstTimerTour from '@/components/FirstTimerTour'
 import { AuthProvider } from '@/lib/auth'
 import { I18nProvider } from '@/lib/i18n-context'
 import { ViewContextProvider } from '@/lib/view-context'
+import { ToastProvider } from '@/components/Toast'
 
 // Slice 5b (2026-05-25) — metadataBase makes per-page generateMetadata
 // relative URLs (og:image, twitter:image, canonical) resolve to absolute
