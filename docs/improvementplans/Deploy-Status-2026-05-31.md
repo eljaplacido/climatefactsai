@@ -87,3 +87,29 @@ half-built version would break the production UI.
 4. F3 dark theme (proper system + token audit) — needs live contrast checks.
 5. F7 KG graph viz.
 6. F12b/c: ingestion rebalance + verification backfill run.
+
+---
+
+## Wave 6 (2026-05-31) — companies cluster shipped → 16 items live
+
+LIVE on `main` @ `8d3f612`:
+- **F9b** compliance-framework lens switcher (filter matrix to one of CSRD/SBTi/TCFD/IFRS S2/GRI, or all).
+- **F9d** auto drill-down questions (derived from net-zero/SBTi/Scope-3/sector/greenwashing; tap to pre-fill + scroll to Verify-a-Claim).
+- **F9e** compare two companies — new `/companies/compare?a=&b=` route + "Compare" button on each profile.
+
+### Full live tally (16 fixes.md items)
+F12a · F1 · F5e · F5b · F5a · F9a · F9b · F9d · F9e · F10a · F6b · F7(cookies) · F13 · F8a(relabel) — plus pre-existing map-sync and SDG-title rendering.
+
+## Genuinely remaining (need app-render verification OR backend/data work)
+
+- **F9c PPP (Planet/People/Profit) lens** — company data is emissions-only today; People/Profit pillars would render empty. Hollow without richer disclosure parsing. Deferred on honesty grounds.
+- **F3 dark theme** — light is pinned ON PURPOSE (incomplete `dark:` tokens caused white-on-white). Needs a real ThemeProvider + full token audit + live contrast checks.
+- **F7 KG visual graph** — needs an SVG/canvas node-link component + live layout verification.
+- **F8a-full / F8b / F8c** — backend must emit research summary/findings/SDG/academic-scope fields first.
+- **F11 sources ratings** — `source_credibility_tiers` data backfill.
+- **F12b/F12c** — ingestion rebalance + verification corpus run (not code-only).
+- **F5c** — surface evidence-strength reasoning prominently in the report UI.
+- **F2/F4/F6a** — VERIFY-ON-LIVE (code reads correct).
+
+These are best done in a session where the app can be run/rendered so each
+visual feature is confirmed before reaching production.
