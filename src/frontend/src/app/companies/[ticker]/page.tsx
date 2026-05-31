@@ -628,6 +628,7 @@ export default function CompanyDetailPage() {
                   ));
                 })()}
               </div>
+            </section>
 
             <section>
               <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
