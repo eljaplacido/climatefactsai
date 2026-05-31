@@ -44,7 +44,7 @@ logger = setup_logging("quota_service")
 FREEMIUM_FREE_TIER_LIMITS: dict[str, int] = {
     "saved_articles": 3,    # lifetime cap
     "saved_searches": 3,    # lifetime cap
-    "deep_research": 2,     # per calendar month
+    "deep_research": 3,     # per calendar month (raised 2->3, 2026-05-31 owner decision)
     "url_analysis": 1,      # per calendar month
     "compare": 1,           # per calendar month
 }
