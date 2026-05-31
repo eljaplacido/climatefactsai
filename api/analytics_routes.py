@@ -5,6 +5,7 @@ Provides trend analysis, source performance, claim category breakdowns,
 verification pipeline status, and time-series data.
 """
 
+import os
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
@@ -12,12 +13,43 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from shared.database import get_postgres
+from api.auth_routes import get_optional_user
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
 
 def get_db():
     return get_postgres()
+
+
+# Admin email allowlist — mirrors api/admin_pipeline_routes.py so the same
+# operators gate every admin surface. Comma-separated emails in ADMIN_EMAILS.
+ADMIN_EMAILS = set(filter(None, os.environ.get("ADMIN_EMAILS", "").split(",")))
+
+
+def require_analytics_admin(current_user: Optional[dict] = Depends(get_optional_user)) -> dict:
+    """Gate the analytics dashboard to admins only.
+
+    These endpoints expose platform-wide aggregates (country distribution,
+    verdict distribution, pipeline health) that must NOT be public — they
+    reveal ingestion bias and verification-yield internals. Mirrors the
+    `/api/admin/dashboard` pattern: anonymous → 401, non-admin → 403.
+
+    Admin = subscription_tier == 'enterprise' OR email in ADMIN_EMAILS.
+    """
+    if not current_user:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required for analytics access",
+        )
+    tier = current_user.get("subscription_tier", "")
+    email = current_user.get("email", "")
+    if tier != "enterprise" and email not in ADMIN_EMAILS:
+        raise HTTPException(
+            status_code=403,
+            detail="Admin access required. Enterprise subscription or admin privileges needed.",
+        )
+    return current_user
 
 
 # --- Response Models ---
@@ -90,7 +122,7 @@ class AnalyticsDashboard(BaseModel):
 # --- Endpoints ---
 
 @router.get("/dashboard", response_model=AnalyticsDashboard)
-async def get_analytics_dashboard(db=Depends(get_db)):
+async def get_analytics_dashboard(db=Depends(get_db), _admin: dict = Depends(require_analytics_admin)):
     """Full analytics dashboard — aggregates all analytics in one call."""
     try:
         pipeline = _get_pipeline_status(db)
@@ -114,7 +146,7 @@ async def get_analytics_dashboard(db=Depends(get_db)):
 
 
 @router.get("/pipeline", response_model=PipelineStatus)
-async def get_pipeline_status(db=Depends(get_db)):
+async def get_pipeline_status(db=Depends(get_db), _admin: dict = Depends(require_analytics_admin)):
     """Current verification pipeline status."""
     try:
         return _get_pipeline_status(db)
@@ -126,6 +158,7 @@ async def get_pipeline_status(db=Depends(get_db)):
 async def get_trends(
     days: int = Query(default=30, ge=1, le=90),
     db=Depends(get_db),
+    _admin: dict = Depends(require_analytics_admin),
 ):
     """Article ingestion and verification trends over time."""
     try:
@@ -139,6 +172,7 @@ async def get_source_performance(
     limit: int = Query(default=20, ge=1, le=100),
     sort_by: str = Query(default="total_articles", pattern=r"^(total_articles|avg_credibility|false_claim_rate)$"),
     db=Depends(get_db),
+    _admin: dict = Depends(require_analytics_admin),
 ):
     """Source performance rankings."""
     try:
@@ -148,7 +182,7 @@ async def get_source_performance(
 
 
 @router.get("/claims", response_model=List[ClaimCategoryBreakdown])
-async def get_claim_categories(db=Depends(get_db)):
+async def get_claim_categories(db=Depends(get_db), _admin: dict = Depends(require_analytics_admin)):
     """Claim category breakdown with verification stats."""
     try:
         return _get_claim_categories(db)
@@ -157,7 +191,7 @@ async def get_claim_categories(db=Depends(get_db)):
 
 
 @router.get("/verdicts", response_model=VerificationVerdictDistribution)
-async def get_verdict_distribution(db=Depends(get_db)):
+async def get_verdict_distribution(db=Depends(get_db), _admin: dict = Depends(require_analytics_admin)):
     """Distribution of verification verdicts."""
     try:
         return _get_verdict_distribution(db)
@@ -169,6 +203,7 @@ async def get_verdict_distribution(db=Depends(get_db)):
 async def get_country_analytics(
     limit: int = Query(default=20, ge=1, le=50),
     db=Depends(get_db),
+    _admin: dict = Depends(require_analytics_admin),
 ):
     """Per-country article and verification statistics."""
     try:

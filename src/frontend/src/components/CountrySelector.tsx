@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Globe, Search } from "lucide-react";
 import { api } from "../lib/api";
 import type { Country } from "../types";
+import { REGION_ORDER, REGION_FOR, type WorldRegion } from "../lib/countryRegions";
 
 interface CountrySelectorProps {
   value: string | null;
@@ -21,7 +22,7 @@ function CountrySelector({
   value,
   onChange,
   label = "Country",
-  allOptionLabel = "All EU countries",
+  allOptionLabel = "All countries",
   showAllOption = true,
   searchable = false,
   showSelectedChip = true,
@@ -59,8 +60,27 @@ function CountrySelector({
     });
   }, [countries, searchQuery]);
 
-  const euCountries = filteredCountries.filter((country) => country.is_eu_member);
-  const nonEuCountries = filteredCountries.filter((country) => !country.is_eu_member);
+  // Group by actual world region (not EU-membership). The old grouping
+  // labelled every non-EU country "Other European countries" — wrong for
+  // the US, China, Brazil, etc. (F5e). Regions come from countryRegions.ts.
+  const countriesByRegion = useMemo(() => {
+    const groups = new Map<WorldRegion | "Other", Country[]>();
+    for (const country of filteredCountries) {
+      const region = REGION_FOR(country.country_code);
+      const bucket = groups.get(region) ?? [];
+      bucket.push(country);
+      groups.set(region, bucket);
+    }
+    // Stable display order: known regions first (REGION_ORDER), then "Other".
+    const ordered: Array<[WorldRegion | "Other", Country[]]> = [];
+    for (const region of REGION_ORDER) {
+      const bucket = groups.get(region);
+      if (bucket && bucket.length) ordered.push([region, bucket]);
+    }
+    const other = groups.get("Other");
+    if (other && other.length) ordered.push(["Other", other]);
+    return ordered;
+  }, [filteredCountries]);
 
   const isDark = theme === "dark";
 
@@ -122,27 +142,16 @@ function CountrySelector({
           </option>
         )}
 
-        {euCountries.length > 0 && (
-          <optgroup label="EU countries">
-            {euCountries.map((country) => (
+        {countriesByRegion.map(([region, regionCountries]) => (
+          <optgroup key={region} label={region}>
+            {regionCountries.map((country) => (
               <option key={country.country_code} value={country.country_code}>
                 {country.flag_emoji} {country.country_name}
                 {country.articles_count > 0 ? ` (${country.articles_count})` : ""}
               </option>
             ))}
           </optgroup>
-        )}
-
-        {nonEuCountries.length > 0 && (
-          <optgroup label="Other European countries">
-            {nonEuCountries.map((country) => (
-              <option key={country.country_code} value={country.country_code}>
-                {country.flag_emoji} {country.country_name}
-                {country.articles_count > 0 ? ` (${country.articles_count})` : ""}
-              </option>
-            ))}
-          </optgroup>
-        )}
+        ))}
       </select>
 
       {value && selectedCountry && showSelectedChip && (

@@ -38,6 +38,95 @@ RELATIONSHIP_TYPES = [
     "MEMBER_OF",
 ]
 
+# Web/CMS boilerplate that leaks into article text via RSS summaries and
+# imperfect HTML extraction, then gets mis-extracted as knowledge-graph
+# entities (the user-reported "cookies" bug — a cookie-consent banner string
+# surfaced as an ORGANIZATION/CONCEPT node). These are never legitimate
+# climate-domain entities, so we drop them before persistence.
+# Matching is case-insensitive on the normalized (lowercased, stripped) name.
+BOILERPLATE_ENTITY_NAMES = frozenset(
+    {
+        "cookie",
+        "cookies",
+        "cookie policy",
+        "cookie settings",
+        "cookie consent",
+        "accept cookies",
+        "manage cookies",
+        "consent",
+        "consent management",
+        "privacy",
+        "privacy policy",
+        "privacy notice",
+        "terms",
+        "terms of service",
+        "terms and conditions",
+        "terms of use",
+        "newsletter",
+        "subscribe",
+        "subscription",
+        "sign up",
+        "sign in",
+        "log in",
+        "login",
+        "register",
+        "advertisement",
+        "advertisements",
+        "advertising",
+        "sponsored",
+        "sponsored content",
+        "related articles",
+        "related stories",
+        "read more",
+        "share this",
+        "share this article",
+        "follow us",
+        "comments",
+        "comment",
+        "all rights reserved",
+        "copyright",
+        "rss",
+        "rss feed",
+        "homepage",
+        "home page",
+        "menu",
+        "navigation",
+        "search",
+        "website",
+        "web site",
+    }
+)
+
+# Substrings that, if present anywhere in the normalized name, mark it as
+# boilerplate even when wrapped in extra words (e.g. "Our Cookie Policy",
+# "Accept All Cookies", "Privacy Policy and Terms").
+BOILERPLATE_ENTITY_SUBSTRINGS = (
+    "cookie",
+    "privacy policy",
+    "terms of service",
+    "terms and conditions",
+    "newsletter",
+    "all rights reserved",
+    "sponsored content",
+)
+
+
+def is_boilerplate_entity(name: str) -> bool:
+    """True if `name` is web/CMS boilerplate rather than a real entity.
+
+    Pure function (no DB/LLM) so it can be unit-tested directly. Used to
+    keep cookie-consent / nav / legal-footer strings out of the knowledge
+    graph. See BOILERPLATE_ENTITY_NAMES for the rationale.
+    """
+    if not name:
+        return True
+    normalized = name.strip().lower()
+    if not normalized:
+        return True
+    if normalized in BOILERPLATE_ENTITY_NAMES:
+        return True
+    return any(sub in normalized for sub in BOILERPLATE_ENTITY_SUBSTRINGS)
+
 EXTRACTION_SYSTEM_PROMPT = """You are a climate-domain named entity and relationship extractor.
 Given article text, extract structured entities and relationships.
 
@@ -113,6 +202,11 @@ class EntityExtractionService:
             description = (ent.get("description") or "")[:500]
 
             if not name:
+                continue
+            # Drop web/CMS boilerplate (cookie banners, nav, legal footers)
+            # that leaks via RSS/HTML extraction — the "cookies" entity bug.
+            if is_boilerplate_entity(name):
+                logger.debug("Skipping boilerplate entity: %s", name)
                 continue
             if etype not in ENTITY_TYPES:
                 etype = "CONCEPT"
