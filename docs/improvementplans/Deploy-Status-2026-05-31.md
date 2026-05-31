@@ -113,3 +113,42 @@ F12a · F1 · F5e · F5b · F5a · F9a · F9b · F9d · F9e · F10a · F6b · F7
 
 These are best done in a session where the app can be run/rendered so each
 visual feature is confirmed before reaching production.
+
+---
+
+## Wave 6 COMPLETE (2026-05-31) — companies cluster live → 17 items
+
+LIVE on `main` @ `c3d8a07` (pushed → Cloud Build):
+- **F9b** compliance-framework lens switcher
+- **F9d** auto drill-down questions (pre-fill + scroll to Verify-a-Claim)
+- **F9e** compare two companies — `/companies/compare?a=&b=` route + "Compare" button on every profile
+
+NOTE: an interim commit briefly shipped a malformed `<section>` (F9d) that
+would have failed the Next build; caught via `tsc --noEmit` and hotfixed in
+`2d54804` before any harm. Lesson reinforced: never trust a commit whose tsc
+isn't 0 — and blind-shipping UI is risky, which is why the remaining visual
+items below are deferred to a render-verify session.
+
+### Full live tally (17 fixes.md items)
+F12a · F1 · F5e · F5b · F5a · F9a · F9b · F9d · F9e · F10a · F6b · F7(cookies) · F13 · F8a(relabel) + pre-existing map-sync, SDG titles.
+
+## STOPPING POINT — remaining items need a render-verify session or backend/data work
+
+I am deliberately not blind-shipping these. Each needs the app actually
+running so I can confirm it renders, OR backend payload/data changes:
+
+| Item | Blocker |
+|---|---|
+| F9c PPP lens | Company data is emissions-only; People/Profit pillars render empty — hollow without richer disclosure parsing. |
+| F3 dark theme | Needs a real ThemeProvider + full `dark:` token audit across every component + live contrast checks. Light is pinned on purpose (half-built dark caused white-on-white). |
+| F7 KG graph viz | Needs an SVG/canvas node-link component + live layout verification. |
+| F8a-full / F8b / F8c | Backend must emit research summary/findings/SDG/academic-scope fields first. |
+| F11 source ratings | `source_credibility_tiers` data backfill. |
+| F12b / F12c | Ingestion rebalance + a verification-pipeline corpus run (not code-only). |
+| F5c | Surface evidence-strength reasoning prominently (backend already returns `confidence_envelope`). |
+| F2 / F4 / F6a | VERIFY-ON-LIVE (code reads correct). |
+
+**Recommendation:** tackle these in a session where the frontend + backend can
+be run locally (or against a preview deploy), so each visual feature is
+confirmed before reaching production. Blind tsc-only gating is not enough for
+layout/contrast/graph correctness.
