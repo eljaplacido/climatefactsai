@@ -83,14 +83,23 @@ export function setLanguage(lang: LanguageCode) {
   }
 }
 
+// F13 — humanize a dotted i18n key so a missing translation never leaks a
+// raw key like "nav.home" into the UI. "nav.home" -> "Home".
+function humanizeKey(key: string): string {
+  const last = key.split(".").pop() || key;
+  const words = last.replace(/[_-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").trim();
+  if (!words) return key;
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 export function t(key: string, fallback?: string): string {
   const translations = translationCache[currentLanguage];
   if (translations && translations[key]) return translations[key];
   // Fall back to English cache
   const enTranslations = translationCache["en"];
   if (enTranslations && enTranslations[key]) return enTranslations[key];
-  // Fall back to provided default or key itself
-  return fallback || key.split(".").pop() || key;
+  // Fall back to caller default, else a humanized key (never the raw dotted key).
+  return fallback || humanizeKey(key);
 }
 
 export function getCurrentLanguage(): LanguageCode {

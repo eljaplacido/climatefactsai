@@ -141,9 +141,10 @@ export default function RecentResearchAnalyses() {
                 href={`${API_BASE}/api/methodology/audit-trail/url-analysis/${a.analysis_id}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-clilens-primary hover:underline whitespace-nowrap flex-shrink-0"
+                className="text-xs text-slate-500 hover:underline whitespace-nowrap flex-shrink-0"
+                title="Technical provenance record (JSON) — model, prompts, sources used"
               >
-                Audit trail ↗
+                Provenance (JSON) ↗
               </a>
             </div>
           </li>
