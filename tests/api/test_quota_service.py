@@ -37,11 +37,13 @@ from api.quota_service import (
 
 
 class TestTierLadderPins:
-    def test_free_tier_is_3_3_2(self):
+    def test_free_tier_ladder(self):
+        # 3 saved / 3 searches / 3 deep-research / 1 url / 1 compare.
+        # deep_research raised 2->3 on 2026-05-31 (owner decision).
         free = QUOTA_LIMITS_BY_TIER["freemium"]
         assert free["saved_articles"] == 3
         assert free["saved_searches"] == 3
-        assert free["deep_research"] == 2
+        assert free["deep_research"] == 3
         assert free["url_analysis"] == 1
         assert free["compare"] == 1
 
@@ -178,7 +180,7 @@ class TestCheckAndRaise:
         assert result.allowed is True
 
     def test_raises_429_when_blocked(self):
-        self.db.execute_query.return_value = [{"n": 2}]  # freemium deep_research = 2
+        self.db.execute_query.return_value = [{"n": 3}]  # freemium deep_research = 3
         with self._patch_db():
             with pytest.raises(HTTPException) as exc_info:
                 QuotaService.check_and_raise(
@@ -188,8 +190,8 @@ class TestCheckAndRaise:
         body = exc_info.value.detail
         assert body["error"] == "quota_exceeded"
         assert body["quota"]["quota_key"] == "deep_research"
-        assert body["quota"]["used"] == 2
-        assert body["quota"]["limit"] == 2
+        assert body["quota"]["used"] == 3
+        assert body["quota"]["limit"] == 3
         assert "Upgrade" in body["message"]
 
     def test_429_payload_has_upgrade_url(self):
