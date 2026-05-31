@@ -96,6 +96,8 @@ export default function CompanyDetailPage() {
   const [loading, setLoading] = useState(true);
   const [analyzeText, setAnalyzeText] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
+  // F9b — compliance-framework lens: "all" or a single standard id.
+  const [complianceLens, setComplianceLens] = useState<string>("all");
   // Polish wave 2 (2026-05-26, deferred #12 UI) — analyze-report URL form
   const [reportUrl, setReportUrl] = useState("");
   const [reportAnalyzing, setReportAnalyzing] = useState(false);
@@ -422,8 +424,21 @@ export default function CompanyDetailPage() {
                   Heuristic assessment of this company&apos;s disclosed data
                   against CSRD, SBTi, TCFD, IFRS S2, and GRI mandatory points.
                 </p>
+                {/* F9b — lens switcher: view one framework at a time. */}
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {["all", ...standardsCompliance.map((s) => s.id)].map((lens) => (
+                    <button
+                      key={lens}
+                      type="button"
+                      onClick={() => setComplianceLens(lens)}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${complianceLens === lens ? "bg-teal-600 text-white border-teal-600" : "bg-white text-gray-600 border-gray-200 hover:border-teal-400"}`}
+                    >
+                      {lens === "all" ? "All frameworks" : lens}
+                    </button>
+                  ))}
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-3">
-                  {standardsCompliance.map((s) => {
+                  {standardsCompliance.filter((s) => complianceLens === "all" || s.id === complianceLens).map((s) => {
                     const color =
                       s.status === "aligned" ? "bg-emerald-50 border-emerald-200 text-emerald-800"
                       : s.status === "partial" ? "bg-amber-50 border-amber-200 text-amber-800"
@@ -447,7 +462,7 @@ export default function CompanyDetailPage() {
                     Show detailed point-by-point breakdown
                   </summary>
                   <div className="mt-2 space-y-2">
-                    {standardsCompliance.map((s) => (
+                    {standardsCompliance.filter((s) => complianceLens === "all" || s.id === complianceLens).map((s) => (
                       <div key={s.id} className="bg-white border border-gray-200 rounded-md p-3">
                         <div className="flex items-center justify-between mb-1">
                           <div>
@@ -568,6 +583,52 @@ export default function CompanyDetailPage() {
               )}
             </section>
 
+            {/* F9d — auto drill-down questions derived from the company's own
+                data. Tapping one pre-fills the Verify-a-Claim box below. */}
+            <section>
+              <h2 className="text-xl font-bold text-gray-900 mb-1 flex items-center gap-2">
+                Dig deeper
+              </h2>
+              <p className="text-sm text-gray-600 mb-3">
+                Suggested follow-up questions — tap one to verify it against {company.name}&apos;s record.
+              </p>
+              <div className="flex flex-wrap gap-2 mb-8">
+                {(() => {
+                  const qs: string[] = [];
+                  const n = company.name;
+                  if (company.net_zero_target_year) {
+                    qs.push(`Is ${n} on track for its ${company.net_zero_target_year} net-zero target?`);
+                  } else {
+                    qs.push(`Has ${n} committed to a net-zero target year?`);
+                  }
+                  qs.push(
+                    company.sbti_validated
+                      ? `Are ${n}'s targets still validated by the Science Based Targets initiative?`
+                      : `Why has ${n} not had targets validated by SBTi?`,
+                  );
+                  qs.push(`How complete is ${n}'s Scope 3 (value-chain) emissions disclosure?`);
+                  if (company.sector_nace) {
+                    qs.push(`How does ${n} compare to sector peers on decarbonisation?`);
+                  }
+                  qs.push(`Does ${n} show any signs of greenwashing in its climate claims?`);
+                  return qs.map((q, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => {
+                        setAnalyzeText(q);
+                        if (typeof document !== "undefined") {
+                          document.getElementById("verify-claim-input")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                        }
+                      }}
+                      className="text-left text-sm px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 hover:bg-teal-600 hover:text-white hover:border-teal-600 transition-colors"
+                    >
+                      {q}
+                    </button>
+                  ));
+                })()}
+              </div>
+
             <section>
               <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
                 Verify a Claim
@@ -577,6 +638,7 @@ export default function CompanyDetailPage() {
               </p>
               <div className="flex gap-2">
                 <input
+                  id="verify-claim-input"
                   type="text"
                   value={analyzeText}
                   onChange={(e) => setAnalyzeText(e.target.value)}
