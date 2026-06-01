@@ -91,3 +91,52 @@ real classifier job, not a SQL heuristic:
 F12a · F1(ingest+**display+curated-backfill**) · F5e · F5b · F5a · F9a · F9b ·
 F9d · F9e · F10a · F6b · F7(**graph viz**+cookies) · F13 · F8a(relabel) · F2
 (contrast clean) · F4 (export wired) — plus pre-existing map-sync, SDG titles.
+
+---
+
+## Ultracode continuation (2026-06-01, same day) — 5 more items + adversarial review
+
+Driven by a 6-agent recon workflow (concrete plans per remaining item) then
+implemented + verified against the running stack.
+
+| Commit | Item | What shipped |
+|---|---|---|
+| `7c7b204` | **F1 (completes #1)** | LLM climate-relevance classifier (`relevance_classifier.py`, reuses the enrichment provider chain → GX10-eligible, language-agnostic, conservative safe-fail) + token-gated `POST /api/admin/backfill/relevance-flag` (dry-run default, per-source breakdown, T1 auto-keep, resumable). Validated: bus article → OFF (0.00); whole Andina off-topic cluster flagged; climate sources kept IN (0.95-1.00); 10/10 unit tests. **The owner runs this on prod (dry-run → review → apply) to flag the bus-class corpus-wide.** |
+| `b052293`,`0efffe9` | **F7** | KG visual node-link graph (Playwright-verified) + SDG named chips & explanatory copy |
+| `e3c2e8c` | **F5c + F9c** | deep-search "why low-confidence" banner; company Planet/People/Profit lens (honest empty states) |
+| `6ed2f9a` | **F11** | 41 more climate sources tiered (16 T1 / 17 T2 / 8 T3), idempotent; validated against a temp table |
+| `553ae8e` | **review fixes** | 7 confirmed bugs from an 18-agent adversarial review (see below) |
+
+### Adversarial review (ultracode quality gate)
+An 18-agent workflow (4 dimensions × find-then-independently-verify) flagged 14
+issues; **7 verified real and fixed in `553ae8e`**, 7 correctly refuted
+(intentional design / cosmetic / already-safe). The real ones, all in this
+session's code:
+- F1 backfill: `score or 0.5` corrupted the 0.0 bus-score; the resume marker
+  collided with the reliability pipeline's `content_relevance_score` writes
+  (→ new dedicated marker `articles.relevance_classified_at`, mig 059); a
+  safe-fail froze rows from retry; blocking LLM calls stalled the event loop;
+  a non-unique tier JOIN double-counted.
+- The off-topic sweep had **missed two surfaces**: `advanced_filter_routes`
+  (`/explore/*`) and chat citation/RAG retrieval (`chat_routes` +
+  `hybrid_rag_service._apply_filters`) — both now filter `is_off_topic`.
+
+### Deliberately deferred (honesty bar — NOT blind-shipped)
+- **F8 research readable report** — the one item genuinely unverifiable
+  locally: all 4 local `url_analyses` rows are `failed` (no completed analysis
+  to render against), AND there's a real `url_analyses` (the listed system) vs
+  `saved_analyses` (what `analyze_report` writes) reconciliation needed.
+  Building the report page blind would ship UI for prod data shapes never seen.
+  Precise spec is in the recon + recon's `key_files`; next session needs a
+  completed analysis (run one analysis on prod, or seed a completed row).
+- **F3 dark theme** — recon measured **24% `dark:` coverage**, no
+  ThemeProvider, gradient/custom-colour token gaps → a proper build is **XL
+  (5-7 days)** with high regression risk; removing the 469 dead tokens would
+  destroy the groundwork the user wants. Left pinned-light pending a dedicated
+  ThemeProvider effort. (Genuinely the owner's build-vs-remove call.)
+- **F5d** (academic corpus in deep-search) — needs a CrossRef integration +
+  schema (8-12h); **F12c** (verdict yield) — needs prod-data validation first.
+
+### Final live tally (this session)
+Off-topic display filter · F1 LLM classifier (+endpoint) · F7 graph+SDG ·
+F5c · F9c · F11 · review-hardening — all on `main`, deployed.
