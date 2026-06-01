@@ -355,7 +355,7 @@ async def get_country_stats(
     db = get_postgres()
 
     try:
-        conditions = ["a.country_code IS NOT NULL", "a.country_code != ''", "a.is_synthetic = FALSE"]
+        conditions = ["a.country_code IS NOT NULL", "a.country_code != ''", "a.is_synthetic = FALSE", "a.is_off_topic = FALSE"]
         params: Dict[str, Any] = {}
 
         if category:
@@ -430,7 +430,7 @@ async def get_country_stats(
                 FROM articles a
                 LEFT JOIN claims c ON c.article_id = a.article_id
                 LEFT JOIN fact_checks fc ON fc.claim_id = c.claim_id
-                WHERE a.country_code IS NOT NULL AND a.is_synthetic = FALSE
+                WHERE a.country_code IS NOT NULL AND a.is_synthetic = FALSE AND a.is_off_topic = FALSE
                 GROUP BY a.country_code
             """)
             for rr in (risk_rows or []):
@@ -452,7 +452,7 @@ async def get_country_stats(
             topic_rows = db.execute_query("""
                 SELECT UNNEST(tags) as tag, COUNT(*) as cnt
                 FROM articles
-                WHERE country_code = :cc AND tags IS NOT NULL AND is_synthetic = FALSE
+                WHERE country_code = :cc AND tags IS NOT NULL AND is_synthetic = FALSE AND is_off_topic = FALSE
                 GROUP BY tag ORDER BY cnt DESC LIMIT 3
             """, {"cc": cc})
             top_topics = [r["tag"] for r in (topic_rows or [])]
@@ -460,7 +460,7 @@ async def get_country_stats(
             # Top sources for this country
             source_rows = db.execute_query("""
                 SELECT source_name, COUNT(*) as cnt
-                FROM articles WHERE country_code = :cc AND source_name IS NOT NULL AND is_synthetic = FALSE
+                FROM articles WHERE country_code = :cc AND source_name IS NOT NULL AND is_synthetic = FALSE AND is_off_topic = FALSE
                 GROUP BY source_name ORDER BY cnt DESC LIMIT 3
             """, {"cc": cc})
             top_sources = [r["source_name"] for r in (source_rows or [])]
@@ -518,6 +518,7 @@ async def get_discussed_country_stats(
             "COALESCE(c.location_country, a.country_code) IS NOT NULL",
             "COALESCE(c.location_country, a.country_code) != ''",
             "a.is_synthetic = FALSE",
+            "a.is_off_topic = FALSE",
         ]
         params: Dict[str, Any] = {}
 
@@ -563,6 +564,7 @@ async def get_discussed_country_stats(
                 WHERE COALESCE(c.location_country, a.country_code) = :cc
                   AND a.tags IS NOT NULL
                   AND a.is_synthetic = FALSE
+                  AND a.is_off_topic = FALSE
                 GROUP BY tag ORDER BY cnt DESC LIMIT 3
             """, {"cc": cc})
             top_topics = [r["tag"] for r in (topic_rows or [])]
@@ -575,6 +577,7 @@ async def get_discussed_country_stats(
                 WHERE COALESCE(c.location_country, a.country_code) = :cc
                   AND a.source_name IS NOT NULL
                   AND a.is_synthetic = FALSE
+                  AND a.is_off_topic = FALSE
                 GROUP BY a.source_name ORDER BY cnt DESC LIMIT 3
             """, {"cc": cc})
             top_sources = [r["source_name"] for r in (source_rows or [])]
@@ -616,6 +619,7 @@ async def get_topic_density(
             WHERE :topic = ANY(a.tags)
               AND a.country_code IS NOT NULL
               AND a.is_synthetic = FALSE
+              AND a.is_off_topic = FALSE
             GROUP BY a.country_code
             ORDER BY article_count DESC
         """, {"topic": topic.lower()})
@@ -656,7 +660,7 @@ async def get_source_coverage(
     db = get_postgres()
 
     try:
-        conditions = ["a.country_code IS NOT NULL", "a.source_name IS NOT NULL", "a.is_synthetic = FALSE"]
+        conditions = ["a.country_code IS NOT NULL", "a.source_name IS NOT NULL", "a.is_synthetic = FALSE", "a.is_off_topic = FALSE"]
         params: Dict[str, Any] = {"limit": limit}
 
         if country:
@@ -751,7 +755,7 @@ async def query_map(
     effective_date_from = parsed_filters.get("date_from")
     effective_date_to = parsed_filters.get("date_to")
 
-    conditions = ["a.country_code IS NOT NULL", "a.is_synthetic = FALSE"]
+    conditions = ["a.country_code IS NOT NULL", "a.is_synthetic = FALSE", "a.is_off_topic = FALSE"]
     params: Dict[str, Any] = {"limit": request.limit}
 
     # Apply structured filters
@@ -915,7 +919,7 @@ async def list_available_sources():
             SELECT source_name, COUNT(*) as article_count,
                    AVG(reliability_score) as avg_reliability
             FROM articles
-            WHERE source_name IS NOT NULL AND is_synthetic = FALSE
+            WHERE source_name IS NOT NULL AND is_synthetic = FALSE AND is_off_topic = FALSE
             GROUP BY source_name
             ORDER BY article_count DESC
         """)
@@ -945,7 +949,7 @@ async def list_available_themes():
         rows = db.execute_query("""
             SELECT UNNEST(tags) as theme, COUNT(*) as article_count
             FROM articles
-            WHERE tags IS NOT NULL AND is_synthetic = FALSE
+            WHERE tags IS NOT NULL AND is_synthetic = FALSE AND is_off_topic = FALSE
             GROUP BY theme
             ORDER BY article_count DESC
             LIMIT 50
@@ -1258,7 +1262,7 @@ async def get_country_detail(cc: str):
         stat_rows = db.execute_query("""
             SELECT COUNT(*) as total,
                    AVG(reliability_score) as avg_cred
-            FROM articles WHERE country_code = :cc AND is_synthetic = FALSE
+            FROM articles WHERE country_code = :cc AND is_synthetic = FALSE AND is_off_topic = FALSE
         """, {"cc": cc})
         total = stat_rows[0]["total"] if stat_rows else 0
         avg_cred = (
@@ -1273,7 +1277,7 @@ async def get_country_detail(cc: str):
     try:
         cat_rows = db.execute_query("""
             SELECT COALESCE(content_category, 'uncategorised') as cat, COUNT(*) as cnt
-            FROM articles WHERE country_code = :cc AND is_synthetic = FALSE
+            FROM articles WHERE country_code = :cc AND is_synthetic = FALSE AND is_off_topic = FALSE
             GROUP BY cat ORDER BY cnt DESC
         """, {"cc": cc})
         articles_by_cat = {r["cat"]: r["cnt"] for r in (cat_rows or [])}
@@ -1286,7 +1290,7 @@ async def get_country_detail(cc: str):
         art_rows = db.execute_query("""
             SELECT article_id, title, source_name, published_date,
                    overall_credibility, excerpt
-            FROM articles WHERE country_code = :cc AND is_synthetic = FALSE
+            FROM articles WHERE country_code = :cc AND is_synthetic = FALSE AND is_off_topic = FALSE
             ORDER BY created_at DESC LIMIT 5
         """, {"cc": cc})
         recent = [
@@ -1326,6 +1330,7 @@ async def get_country_detail(cc: str):
             WHERE a.country_code = :cc
               AND a.source_name IS NOT NULL
               AND a.is_synthetic = FALSE
+              AND a.is_off_topic = FALSE
             GROUP BY a.source_name
             ORDER BY cnt DESC
             LIMIT 10
@@ -1419,6 +1424,7 @@ async def get_country_trends(
             FROM articles
             WHERE country_code = :cc
               AND is_synthetic = FALSE
+              AND is_off_topic = FALSE
               AND created_at >= NOW() - INTERVAL '{interval}'
             GROUP BY bucket
             ORDER BY bucket ASC
@@ -1545,14 +1551,14 @@ async def compare_countries(
                 SELECT COUNT(*) as cnt,
                        COUNT(DISTINCT source_name) as src_cnt,
                        AVG(reliability_score) as avg_cred
-                FROM articles WHERE country_code = :cc AND is_synthetic = FALSE
+                FROM articles WHERE country_code = :cc AND is_synthetic = FALSE AND is_off_topic = FALSE
             """, {"cc": cc})
             s = stat_rows[0] if stat_rows else {}
 
             # Top topics
             topic_rows = db.execute_query("""
                 SELECT UNNEST(tags) as tag, COUNT(*) as cnt
-                FROM articles WHERE country_code = :cc AND tags IS NOT NULL AND is_synthetic = FALSE
+                FROM articles WHERE country_code = :cc AND tags IS NOT NULL AND is_synthetic = FALSE AND is_off_topic = FALSE
                 GROUP BY tag ORDER BY cnt DESC LIMIT 5
             """, {"cc": cc})
             top_topics = [r["tag"] for r in (topic_rows or [])]
@@ -1560,7 +1566,7 @@ async def compare_countries(
             # Category breakdown (sustainability dimensions)
             cat_rows = db.execute_query("""
                 SELECT content_category, COUNT(*) as cnt
-                FROM articles WHERE country_code = :cc AND content_category IS NOT NULL AND is_synthetic = FALSE
+                FROM articles WHERE country_code = :cc AND content_category IS NOT NULL AND is_synthetic = FALSE AND is_off_topic = FALSE
                 GROUP BY content_category ORDER BY cnt DESC
             """, {"cc": cc})
             category_breakdown = {r["content_category"]: r["cnt"] for r in (cat_rows or [])}
@@ -1666,6 +1672,7 @@ async def get_timeline(
             FROM articles
             WHERE country_code IS NOT NULL
               AND is_synthetic = FALSE
+              AND is_off_topic = FALSE
               AND created_at >= :start_d
               AND created_at <= :end_d
             GROUP BY bucket, country_code
@@ -1712,7 +1719,7 @@ async def get_temperature_anomaly_layer():
     try:
         cc_rows = db.execute_query("""
             SELECT DISTINCT country_code FROM articles
-            WHERE country_code IS NOT NULL AND is_synthetic = FALSE
+            WHERE country_code IS NOT NULL AND is_synthetic = FALSE AND is_off_topic = FALSE
         """)
         active_codes = [r["country_code"] for r in (cc_rows or [])]
     except Exception:
@@ -1798,7 +1805,7 @@ async def get_climate_risk_layer():
             FROM articles a
             LEFT JOIN claims c ON c.article_id = a.article_id
             LEFT JOIN fact_checks fc ON fc.claim_id = c.claim_id
-            WHERE a.country_code IS NOT NULL AND a.is_synthetic = FALSE
+            WHERE a.country_code IS NOT NULL AND a.is_synthetic = FALSE AND a.is_off_topic = FALSE
             GROUP BY a.country_code
             ORDER BY article_count DESC
         """)
@@ -1865,7 +1872,7 @@ async def get_country_claim_ledger(
                FROM claims c
                JOIN articles a ON a.article_id = c.article_id
                LEFT JOIN claim_provenance cp ON cp.claim_id = c.claim_id
-               WHERE a.country_code = :cc AND a.is_synthetic = FALSE
+               WHERE a.country_code = :cc AND a.is_synthetic = FALSE AND a.is_off_topic = FALSE
                  AND c.created_at > NOW() - :interval::interval
                ORDER BY c.created_at DESC LIMIT :limit""",
             {"cc": cc, "interval": interval, "limit": limit},

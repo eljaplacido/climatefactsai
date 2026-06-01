@@ -73,14 +73,37 @@ async def submit_topic_feedback(
             "cat": payload.off_topic_category,
         },
     )
+    # Reflect the verdict on the display flag (mig 056 articles.is_off_topic).
+    #   * on_topic  -> clear the flag for ANYONE (un-hiding is safe; a real
+    #     reader vouching for a wrongly-hidden article should restore it).
+    #   * off_topic -> hide ONLY when the reporter is authenticated. Anonymous
+    #     off_topic flags are recorded for the corpus but must NOT hide on a
+    #     single click (abuse vector — anyone could bulk-hide articles). The
+    #     curated/admin/relevance backfill (mig 057) remains the bulk path.
+    applied = False
+    if payload.verdict == "on_topic":
+        db.execute_update(
+            "UPDATE articles SET is_off_topic = FALSE WHERE article_id = :aid",
+            {"aid": article_id},
+        )
+        applied = True
+    elif payload.verdict == "off_topic" and reporter_id is not None:
+        db.execute_update(
+            "UPDATE articles SET is_off_topic = TRUE WHERE article_id = :aid",
+            {"aid": article_id},
+        )
+        applied = True
+
     logger.info(
         f"topic-feedback: article={article_id} verdict={payload.verdict} "
-        f"reporter={reporter_id or 'anon'} cat={payload.off_topic_category}"
+        f"reporter={reporter_id or 'anon'} cat={payload.off_topic_category} "
+        f"display_flag_applied={applied}"
     )
     return {
         "status": "recorded",
         "article_id": article_id,
         "verdict": payload.verdict,
+        "display_flag_applied": applied,
     }
 
 

@@ -687,6 +687,7 @@ async def list_articles(
         FROM articles a
         LEFT JOIN source_credibility sc ON LOWER(a.source_name) = LOWER(sc.source_name)
         WHERE a.is_synthetic = FALSE
+          AND a.is_off_topic = FALSE
     """
 
     # Filter by allowed reliability tiers (sources without a tier default to 'public')
@@ -877,6 +878,7 @@ async def list_countries(db=Depends(get_db)):
             SELECT country_code, COUNT(*) AS article_count
             FROM articles
             WHERE is_synthetic = FALSE
+              AND is_off_topic = FALSE
             GROUP BY country_code
         ) AS article_counts ON article_counts.country_code = c.country_code
         WHERE c.enabled = TRUE
@@ -958,6 +960,7 @@ async def list_tags(
             FROM articles
             WHERE tags IS NOT NULL AND array_length(tags, 1) > 0
               AND is_synthetic = FALSE
+              AND is_off_topic = FALSE
         ) AS expanded
         WHERE (:country IS NULL OR expanded.country_code = :country)
         GROUP BY tag
@@ -1072,6 +1075,7 @@ def _collect_stats(db) -> DashboardStats:
             MAX(updated_at) AS last_updated
         FROM articles
         WHERE is_synthetic = FALSE
+          AND is_off_topic = FALSE
         """
     )
 

@@ -7,6 +7,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from api.main import app
+from api.auth_routes import get_optional_user
 
 
 client = TestClient(app)
@@ -113,3 +114,51 @@ class TestPerArticleFeedback:
         assert body["off_topic_count"] == 2
         assert body["on_topic_count"] == 1
         assert body["is_flagged"] is True
+
+
+class TestDisplayFlagApplied:
+    """F1: feedback now drives articles.is_off_topic (mig 056) so the report
+    button actually hides/unhides from listing surfaces — but safely."""
+
+    def test_on_topic_clears_flag_for_anyone(self):
+        # on_topic is an un-hide; safe for anonymous reporters.
+        stub = _StubDB([[{"1": 1}]])
+        with patch("api.topic_feedback_routes.get_postgres", return_value=stub):
+            r = client.post(
+                "/api/feedback/topic/11111111-1111-1111-1111-111111111111",
+                json={"verdict": "on_topic"},
+            )
+        assert r.status_code == 200
+        assert r.json()["display_flag_applied"] is True
+        # INSERT + UPDATE(is_off_topic = FALSE)
+        assert len(stub.updates) == 2
+        assert "is_off_topic = FALSE" in stub.updates[1][0]
+
+    def test_anonymous_off_topic_does_not_hide(self):
+        # Abuse guard: a single anon off_topic flag must NOT hide the article.
+        stub = _StubDB([[{"1": 1}]])
+        with patch("api.topic_feedback_routes.get_postgres", return_value=stub):
+            r = client.post(
+                "/api/feedback/topic/11111111-1111-1111-1111-111111111111",
+                json={"verdict": "off_topic"},
+            )
+        assert r.status_code == 200
+        assert r.json()["display_flag_applied"] is False
+        # only the INSERT — no display UPDATE
+        assert len(stub.updates) == 1
+
+    def test_authenticated_off_topic_hides(self):
+        stub = _StubDB([[{"1": 1}]])
+        app.dependency_overrides[get_optional_user] = lambda: {"user_id": "u-1"}
+        try:
+            with patch("api.topic_feedback_routes.get_postgres", return_value=stub):
+                r = client.post(
+                    "/api/feedback/topic/11111111-1111-1111-1111-111111111111",
+                    json={"verdict": "off_topic", "off_topic_category": "crime"},
+                )
+        finally:
+            app.dependency_overrides.pop(get_optional_user, None)
+        assert r.status_code == 200
+        assert r.json()["display_flag_applied"] is True
+        assert len(stub.updates) == 2
+        assert "is_off_topic = TRUE" in stub.updates[1][0]

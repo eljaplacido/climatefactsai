@@ -256,6 +256,7 @@ async def get_feed_status(
                  MAX(created_at) as last_article_at
                FROM articles
                WHERE is_synthetic = FALSE
+                 AND is_off_topic = FALSE
                  AND country_code = :cc""",
             {"cc": cc.upper()},
         )

@@ -111,6 +111,7 @@ async def basic_search(
             ) as relevance
         FROM articles a
         WHERE a.is_synthetic = FALSE
+          AND a.is_off_topic = FALSE
           AND to_tsvector('english', a.title || ' ' || COALESCE(a.excerpt, ''))
               @@ plainto_tsquery('english', :query)
     """
@@ -246,6 +247,7 @@ async def semantic_search(
                        1 - (embedding <=> :embedding::vector) AS sem_score
                 FROM articles
                 WHERE is_synthetic = FALSE
+                  AND is_off_topic = FALSE
                   AND embedding IS NOT NULL
             ),
             fts AS (
@@ -256,6 +258,7 @@ async def semantic_search(
                        ) AS fts_score
                 FROM articles
                 WHERE is_synthetic = FALSE
+                  AND is_off_topic = FALSE
                   AND to_tsvector('english', title || ' ' || COALESCE(excerpt, ''))
                       @@ plainto_tsquery('english', :query)
             )
@@ -273,6 +276,7 @@ async def semantic_search(
             LEFT JOIN semantic s ON a.article_id = s.article_id
             LEFT JOIN fts f ON a.article_id = f.article_id
             WHERE a.is_synthetic = FALSE
+              AND a.is_off_topic = FALSE
               AND (s.sem_score IS NOT NULL OR f.fts_score IS NOT NULL)
         """
         params = {"embedding": vector_str, "query": request.query, "limit": request.limit}
@@ -301,6 +305,7 @@ async def semantic_search(
                 ) as relevance
             FROM articles a
             WHERE a.is_synthetic = FALSE
+              AND a.is_off_topic = FALSE
               AND to_tsvector('english', a.title || ' ' || COALESCE(a.excerpt, ''))
                   @@ plainto_tsquery('english', :query)
         """
@@ -529,6 +534,7 @@ async def get_search_suggestions(
             SELECT tag, COUNT(*) as count
             FROM articles, UNNEST(tags) as tag
             WHERE is_synthetic = FALSE
+              AND is_off_topic = FALSE
               AND tag ILIKE :pattern
             GROUP BY tag
             ORDER BY count DESC
@@ -551,6 +557,7 @@ async def get_search_suggestions(
             SELECT country_code, COUNT(*) as count
             FROM articles
             WHERE is_synthetic = FALSE
+              AND is_off_topic = FALSE
               AND country_code ILIKE :pattern
             GROUP BY country_code
             ORDER BY count DESC
@@ -574,6 +581,7 @@ async def get_search_suggestions(
             SELECT source_name, COUNT(*) as count
             FROM articles
             WHERE is_synthetic = FALSE
+              AND is_off_topic = FALSE
               AND source_name ILIKE :pattern
             GROUP BY source_name
             ORDER BY count DESC

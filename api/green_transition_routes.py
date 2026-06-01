@@ -266,6 +266,7 @@ async def get_country_green_profile(
                    MAX(published_date) as latest
             FROM articles
             WHERE is_synthetic = FALSE
+              AND is_off_topic = FALSE
               AND country_code = :cc AND content_category IS NOT NULL
             GROUP BY content_category
         """, {"cc": cc})
@@ -285,6 +286,7 @@ async def get_country_green_profile(
                 SELECT UNNEST(tags) as tag, COUNT(*) as cnt
                 FROM articles
                 WHERE is_synthetic = FALSE
+                  AND is_off_topic = FALSE
                   AND country_code = :cc AND content_category = :dim AND tags IS NOT NULL
                 GROUP BY tag ORDER BY cnt DESC LIMIT 4
             """, {"cc": cc, "dim": dim})
@@ -308,6 +310,7 @@ async def get_country_green_profile(
             SELECT source_name, COUNT(*) as cnt
             FROM articles
             WHERE is_synthetic = FALSE
+              AND is_off_topic = FALSE
               AND country_code = :cc
               AND content_category = ANY(:dims)
               AND source_name IS NOT NULL
@@ -391,6 +394,7 @@ async def get_green_leaderboard(
                    COUNT(*) as cnt
             FROM articles a
             WHERE a.is_synthetic = FALSE
+              AND a.is_off_topic = FALSE
               AND a.content_category = ANY(:dims)
               AND a.country_code IS NOT NULL
               {country_filter}
@@ -474,6 +478,7 @@ async def compare_green_profiles(
                 SELECT content_category, COUNT(*) as cnt
                 FROM articles
                 WHERE is_synthetic = FALSE
+                  AND is_off_topic = FALSE
                   AND country_code = :cc AND content_category = ANY(:dims)
                 GROUP BY content_category
             """, {"cc": cc, "dims": DIMENSIONS})
