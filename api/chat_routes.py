@@ -429,6 +429,7 @@ def _search_relevant_articles(
                    ) AS relevance
             FROM articles a
             WHERE a.is_synthetic = FALSE
+              AND a.is_off_topic = FALSE
               AND to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'') || ' ' || COALESCE(a.extracted_text,''))
                   @@ plainto_tsquery('english', :q)
             {where_extra}
@@ -452,7 +453,7 @@ def _search_relevant_articles(
                 f"""SELECT a.article_id, a.title, a.source_name, a.overall_credibility,
                            0.15 AS relevance
                     FROM articles a
-                    WHERE a.is_synthetic = FALSE AND ({ilike_parts})
+                    WHERE a.is_synthetic = FALSE AND a.is_off_topic = FALSE AND ({ilike_parts})
                     ORDER BY a.published_date DESC NULLS LAST LIMIT :limit""",
                 ilike_params,
             )
@@ -463,7 +464,7 @@ def _search_relevant_articles(
             f"""SELECT a.article_id, a.title, a.source_name, a.overall_credibility,
                        0.1 AS relevance
                 FROM articles a
-                WHERE a.is_synthetic = FALSE AND a.claims_status = 'completed'
+                WHERE a.is_synthetic = FALSE AND a.is_off_topic = FALSE AND a.claims_status = 'completed'
                 {where_extra}
                 ORDER BY a.created_at DESC LIMIT 5""",
             params,
@@ -659,7 +660,7 @@ def _hydrate_view_context(db, view_context: Optional[dict]) -> dict:
                           COUNT(*) FILTER (WHERE overall_credibility='HIGH') AS high_cred_articles,
                           MAX(published_date) AS latest_published
                    FROM articles
-                   WHERE country_code = :cc AND is_synthetic = FALSE
+                   WHERE country_code = :cc AND is_synthetic = FALSE AND is_off_topic = FALSE
                    GROUP BY country_code""",
                 {"cc": cc},
             )
@@ -731,7 +732,7 @@ def _hydrate_view_context(db, view_context: Optional[dict]) -> dict:
                           COUNT(DISTINCT source_name) AS source_count
                    FROM articles
                    WHERE search_tsv @@ websearch_to_tsquery('simple', :q)
-                     AND is_synthetic = FALSE""",
+                     AND is_synthetic = FALSE AND is_off_topic = FALSE""",
                 {"q": hydrated["deep_search_query"]},
             )
             if ds_rows:
@@ -759,7 +760,7 @@ def _hydrate_view_context(db, view_context: Optional[dict]) -> dict:
                 """SELECT source_name, COUNT(*) AS article_count,
                           COUNT(DISTINCT country_code) AS country_count,
                           AVG(reliability_score) AS avg_reliability
-                   FROM articles WHERE source_name = :name AND is_synthetic = FALSE
+                   FROM articles WHERE source_name = :name AND is_synthetic = FALSE AND is_off_topic = FALSE
                    GROUP BY source_name LIMIT 1""",
                 {"name": source_id},
             )

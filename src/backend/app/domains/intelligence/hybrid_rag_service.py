@@ -375,6 +375,11 @@ class HybridRAGService:
         table_alias: str = "a",
     ) -> None:
         """Append WHERE clauses for optional country_code / content_category filters."""
+        # Always exclude synthetic seeds + off-topic articles from RAG
+        # retrieval — they must never surface as chat citations / grounding
+        # context (review fix; mirrors the listing-surface is_off_topic filter).
+        where_clauses.append(f"{table_alias}.is_synthetic = FALSE")
+        where_clauses.append(f"{table_alias}.is_off_topic = FALSE")
         if not filters:
             return
         if filters.get("country_code"):

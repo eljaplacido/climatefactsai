@@ -724,7 +724,10 @@ async def backfill_relevance_flag(
     where = [
         "a.is_synthetic = FALSE",
         "a.is_off_topic = FALSE",
-        "a.content_relevance_score IS NULL",
+        # Dedicated marker (mig 059) — NOT content_relevance_score, which the
+        # reliability pipeline also writes (its keyword heuristic), which would
+        # permanently skip already-fact-checked off-topic articles.
+        "a.relevance_classified_at IS NULL",
     ]
     params: dict = {"lim": batch_size}
     if sources:
@@ -739,9 +742,14 @@ async def backfill_relevance_flag(
         )
 
     tier_select = ", t.tier AS tier" if has_tiers else ", NULL AS tier"
+    # LATERAL ... LIMIT 1 yields exactly one tier row per article. A plain
+    # LEFT JOIN on (source_name OR domain) can match >1 tier row (source_name
+    # isn't unique — e.g. an outlet seeded under two domains), which would
+    # double-count the article against LIMIT and double-classify it.
     tier_join = (
-        "LEFT JOIN source_credibility_tiers t "
-        "ON (t.source_name = a.source_name OR t.domain = lower(a.source_name))"
+        "LEFT JOIN LATERAL (SELECT sct.tier FROM source_credibility_tiers sct "
+        "WHERE sct.source_name = a.source_name OR sct.domain = lower(a.source_name) "
+        "LIMIT 1) t ON TRUE"
         if has_tiers
         else ""
     )
@@ -758,6 +766,13 @@ async def backfill_relevance_flag(
     clf = RelevanceClassifier(db)
     sem = asyncio.Semaphore(5)
 
+    def _classify_blocking(title, excerpt, source):
+        # ArticleEnrichmentService._call_llm is async-in-name but issues
+        # BLOCKING sync SDK calls. Run each in a worker thread (its own event
+        # loop) so the FastAPI event loop is never blocked and the Semaphore
+        # actually yields concurrency instead of serialising on the loop.
+        return asyncio.run(clf.classify(title, excerpt, source))
+
     async def _classify(r: dict):
         if skip_trusted_tiers and r.get("tier") == "T1":
             return r, {
@@ -765,16 +780,21 @@ async def backfill_relevance_flag(
                 "reason": "T1 curated source (auto-kept)", "llm_used": False,
             }
         async with sem:
-            res = await clf.classify(r.get("title"), r.get("excerpt"), r.get("source_name"))
+            res = await asyncio.to_thread(
+                _classify_blocking, r.get("title"), r.get("excerpt"), r.get("source_name")
+            )
         return r, res
 
     results = await asyncio.gather(*[_classify(r) for r in rows]) if rows else []
 
     detail: list = []
-    marked = kept = llm_called = 0
+    marked = kept = llm_called = errored = 0
     for r, res in results:
         if res.get("llm_used"):
             llm_called += 1
+        is_error = bool(res.get("error"))
+        if is_error:
+            errored += 1
         off = res.get("relevant") is False
         if off:
             marked += 1
@@ -787,12 +807,20 @@ async def backfill_relevance_flag(
             "off_topic": off,
             "score": res.get("score"),
             "reason": res.get("reason"),
+            "error": is_error,
         })
-        if not dry_run:
+        # Persist ONLY a real verdict. A safe-fail (transient LLM/parse error)
+        # leaves relevance_classified_at NULL so the row is retried next run,
+        # instead of being frozen at the neutral 0.5 and never re-evaluated.
+        if not dry_run and not is_error:
+            raw_score = res.get("score")
+            # Distinguish None (no score) from a genuine 0.0 — `score or 0.5`
+            # would wrongly rewrite a confident off-topic 0.0 to 0.5.
+            score_val = 0.5 if raw_score is None else float(raw_score)
             db.execute_update(
-                "UPDATE articles SET content_relevance_score = :s, is_off_topic = :o "
-                "WHERE article_id = :id",
-                {"s": round(float(res.get("score") or 0.5), 2), "o": off, "id": r["id"]},
+                "UPDATE articles SET content_relevance_score = :s, is_off_topic = :o, "
+                "relevance_classified_at = NOW() WHERE article_id = :id",
+                {"s": round(score_val, 2), "o": off, "id": r["id"]},
             )
             if off and has_feedback:
                 try:
@@ -818,7 +846,7 @@ async def backfill_relevance_flag(
 
     logger.info(
         f"relevance-flag: dry_run={dry_run} scanned={len(rows)} "
-        f"llm_called={llm_called} marked_off_topic={marked} kept={kept}"
+        f"llm_called={llm_called} marked_off_topic={marked} kept={kept} errored={errored}"
     )
     return {
         "dry_run": dry_run,
@@ -826,6 +854,9 @@ async def backfill_relevance_flag(
         "llm_called": llm_called,
         "marked_off_topic": marked,
         "kept": kept,
+        # Transient classifier failures — NOT persisted, so re-running the
+        # backfill retries them (the resume marker stays NULL).
+        "errored": errored,
         "by_source": by_source,
         "detail": detail,
     }

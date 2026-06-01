@@ -113,11 +113,11 @@ class RelevanceClassifier:
         except Exception as exc:  # never let a classifier error hide content
             logger.warning("relevance classifier LLM error; safe-fail keep", error=str(exc))
             return {"relevant": True, "score": 0.5, "reason": "classifier error (kept)",
-                    "llm_used": False}
+                    "llm_used": False, "error": True}
 
         if not result:
             return {"relevant": True, "score": 0.5, "reason": "classifier unavailable (kept)",
-                    "llm_used": False}
+                    "llm_used": False, "error": True}
 
         text, provider, model = result
         data = _extract_json(text)
@@ -125,7 +125,7 @@ class RelevanceClassifier:
             logger.warning("relevance classifier unparseable reply; safe-fail keep",
                            reply=(text or "")[:160])
             return {"relevant": True, "score": 0.5, "reason": "unparseable reply (kept)",
-                    "llm_used": True, "provider": provider}
+                    "llm_used": True, "provider": provider, "error": True}
 
         try:
             score = float(data.get("score", 0.5))
