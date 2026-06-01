@@ -58,22 +58,29 @@ export default function SDGChips({ text, maxChips = 5, minMatchCount = 1 }: Prop
   if (!loaded || tags.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-[10px] uppercase tracking-wide text-gray-500 mr-1">
-        UN SDGs
-      </span>
-      {tags.map((t) => (
-        <Link
-          key={t.goal_id}
-          href={`/sdg/${t.goal_id}`}
-          title={`SDG ${t.goal_id}: ${t.title} (${t.matched_count} keyword matches)`}
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium text-white hover:opacity-90"
-          style={{ backgroundColor: t.color }}
-        >
-          <span>{t.icon}</span>
-          <span>{t.goal_id}</span>
-        </Link>
-      ))}
+    <div>
+      <h3 className="text-sm font-semibold text-gray-800">
+        Related UN Sustainable Development Goals
+      </h3>
+      <p className="text-xs text-gray-500 mt-0.5 mb-2">
+        This coverage maps to {tags.length === 1 ? "this global goal" : "these global goals"}
+        {" "}— tap one to browse other articles, research and companies linked to it.
+      </p>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {tags.map((t) => (
+          <Link
+            key={t.goal_id}
+            href={`/sdg/${t.goal_id}`}
+            title={`SDG ${t.goal_id}: ${t.title} — ${t.matched_count} keyword match${t.matched_count === 1 ? "" : "es"}. Tap to browse related coverage.`}
+            className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-1 rounded-md text-[11px] font-medium text-white hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: t.color }}
+          >
+            <span aria-hidden>{t.icon}</span>
+            <span className="font-bold tabular-nums">{t.goal_id}</span>
+            <span className="font-normal">{t.title}</span>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }
