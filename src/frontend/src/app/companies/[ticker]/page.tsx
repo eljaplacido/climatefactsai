@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import {
   Building2, Loader2, CheckCircle, AlertTriangle, XCircle,
   HelpCircle, FileText, ExternalLink, ArrowLeft, ShieldCheck,
+  Leaf, Users, Coins,
 } from "lucide-react";
 import { useUrlState } from "@/lib/useUrlState";
 import { type ViewMode } from "@/lib/plainLanguage";
@@ -501,6 +502,88 @@ export default function CompanyDetailPage() {
                 </details>
               </section>
             )}
+
+            {/* F9c — Planet / People / Profit lens. Honest by design: only
+                the Planet pillar is populated (CDP/SBTi disclosures are
+                emissions-only). People and Profit are explicit "not ingested"
+                empty states with the reason, not hollow zeros — matching the
+                platform's transparency contract. */}
+            {(() => {
+              const hasEmissions = disclosures.some(
+                (d) =>
+                  d.scope1_tco2e != null ||
+                  d.scope2_tco2e_market != null ||
+                  d.scope2_tco2e_location != null ||
+                  d.scope3_tco2e != null
+              );
+              return (
+                <section>
+                  <h2 className="text-xl font-bold text-gray-900 mb-1 flex items-center gap-2">
+                    <Leaf className="w-5 h-5 text-emerald-600" />
+                    Planet · People · Profit
+                  </h2>
+                  <p className="text-sm text-gray-500 mb-4">
+                    A triple-bottom-line view of this company's sustainability,
+                    derived from its disclosures. Only the Planet pillar is
+                    populated today — the others show why.
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Leaf className="w-4 h-4 text-emerald-700" />
+                        <span className="font-semibold text-emerald-900">Planet</span>
+                      </div>
+                      <ul className="text-sm text-emerald-900/90 space-y-1">
+                        <li>
+                          {hasEmissions
+                            ? "✓ Emissions disclosed (Scope 1–3)"
+                            : "Emissions not yet disclosed"}
+                        </li>
+                        <li>
+                          {company.sbti_validated
+                            ? "✓ SBTi-validated target"
+                            : "No SBTi-validated target"}
+                        </li>
+                        <li>
+                          {company.net_zero_target_year
+                            ? `✓ Net-zero by ${company.net_zero_target_year}`
+                            : "No net-zero target on record"}
+                        </li>
+                      </ul>
+                      <p className="text-xs text-emerald-700/80 mt-2">
+                        From CDP / SBTi climate disclosures.
+                      </p>
+                    </div>
+
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Users className="w-4 h-4 text-gray-500" />
+                        <span className="font-semibold text-gray-700">People</span>
+                      </div>
+                      <p className="text-sm text-gray-500">Not yet ingested.</p>
+                      <p className="text-xs text-gray-400 mt-2">
+                        Social/workforce metrics (safety, pay equity,
+                        labour-rights audits) require GRI/CSRD report parsing,
+                        which isn't in the current disclosure pipeline.
+                      </p>
+                    </div>
+
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Coins className="w-4 h-4 text-gray-500" />
+                        <span className="font-semibold text-gray-700">Profit</span>
+                      </div>
+                      <p className="text-sm text-gray-500">Not yet ingested.</p>
+                      <p className="text-xs text-gray-400 mt-2">
+                        Financial-sustainability metrics (clean-capex share,
+                        green-taxonomy revenue alignment) require annual-report
+                        parsing.
+                      </p>
+                    </div>
+                  </div>
+                </section>
+              );
+            })()}
 
             <section>
               <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">

@@ -469,6 +469,41 @@ function DeepSearchPageInner() {
                 variant="inline"
               />
             </div>
+            {/* F5c — surface WHY the answer is low-confidence prominently,
+                ABOVE the prose. The user reported deep-search "always shows
+                weak evidence" with no explanation; here we render the
+                backend's confidence_envelope.reason + the internal/external
+                evidence counts + an actionable next step, instead of burying
+                it in a small pill inside the prose. */}
+            {(() => {
+              const env = searchResult.confidence_envelope;
+              const internal = searchResult.internal_articles_count ?? 0;
+              const external = searchResult.external_sources_count ?? 0;
+              const isLow = env?.confidence === "low" || internal + external < 3;
+              if (!isLow) return null;
+              const ev = formatEvidenceStrengthPlain(internal, external);
+              return (
+                <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm">
+                      <p className="font-semibold text-amber-900">
+                        Why this answer is low-confidence
+                      </p>
+                      {env?.reason && (
+                        <p className="text-amber-800 mt-1">{env.reason}</p>
+                      )}
+                      <p className="text-amber-800 mt-1">{ev.sentence}</p>
+                      <p className="text-amber-700/90 text-xs mt-2">
+                        {platformOnly
+                          ? "You searched platform sources only — enable external sources, or broaden the query, for wider corroboration."
+                          : "Try broadening the query or rephrasing it to match how the platform's climate sources frame the topic."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             {/* Phase 0 day 3 (§3.3): when the backend routed to the
                 low-evidence prompt, render the sentence-grounded view
                 with per-sentence calibration pills + confidence banner.
