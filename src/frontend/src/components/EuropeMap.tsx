@@ -3,7 +3,8 @@
 import { useEffect, useState, useRef, useCallback, memo } from "react";
 import { Loader2 } from "lucide-react";
 
-const GEO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+// Self-hosted (public/geo/) — prod CSP blocks the jsdelivr CDN. See InteractiveClimateMap.
+const GEO_URL = "/geo/countries-110m.json";
 
 interface CountryStatsData {
   country_code: string;

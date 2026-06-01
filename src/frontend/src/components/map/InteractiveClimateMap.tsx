@@ -13,8 +13,11 @@ import type { Layer, PathOptions, LeafletMouseEvent, LatLngTuple } from "leaflet
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-const GEO_URL =
-  "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+// Self-hosted (public/geo/) — the prod CSP `connect-src 'self' https://*.run.app
+// https://*.googleapis.com` blocks the jsdelivr CDN, which silently broke the
+// entire map (base geography never loaded). Serving from 'self' fixes it AND
+// removes the runtime dependency on an external CDN.
+const GEO_URL = "/geo/countries-110m.json";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
 
