@@ -676,6 +676,11 @@ async def backfill_relevance_flag(
         default=None, description="comma-separated source_name allowlist to scope the run"
     ),
     skip_trusted_tiers: bool = Query(default=True),
+    correct_trusted_only: bool = Query(
+        default=False,
+        description="Maintenance: un-flag classifier-flagged articles from T1/T2 "
+        "curated sources (false-positive correction). Classifies nothing.",
+    ),
     x_corporate_sync_token: Optional[str] = Header(default=None),
     x_scheduler_secret: Optional[str] = Header(default=None),
 ):
@@ -720,6 +725,42 @@ async def backfill_relevance_flag(
 
     has_tiers = _exists("source_credibility_tiers")
     has_feedback = _exists("topic_feedback")
+
+    # Maintenance path: un-flag classifier false-positives on curated (T1/T2)
+    # sources. A vetted climate/environment outlet's article should never be
+    # hidden as off-topic; an early run over-flagged some (biodiversity,
+    # hurricane forecasts) before T2 auto-keep existed. Classifies nothing.
+    if correct_trusted_only:
+        if not has_tiers:
+            return {"corrected_trusted_sources": 0, "note": "no source_credibility_tiers table"}
+        n = db.execute_update(
+            """UPDATE articles a
+                  SET is_off_topic = FALSE
+                WHERE a.is_off_topic = TRUE
+                  AND EXISTS (
+                      SELECT 1 FROM source_credibility_tiers t
+                       WHERE (t.source_name = a.source_name
+                              OR t.domain = lower(a.source_name))
+                         AND t.tier IN ('T1', 'T2'))
+                  AND EXISTS (
+                      SELECT 1 FROM topic_feedback tf
+                       WHERE tf.article_id = a.article_id
+                         AND tf.off_topic_category = 'relevance_classifier')"""
+        )
+        if has_feedback:
+            db.execute_update(
+                """DELETE FROM topic_feedback tf
+                    WHERE tf.off_topic_category = 'relevance_classifier'
+                      AND EXISTS (
+                          SELECT 1 FROM articles a
+                            JOIN source_credibility_tiers t
+                              ON (t.source_name = a.source_name
+                                  OR t.domain = lower(a.source_name))
+                           WHERE a.article_id = tf.article_id
+                             AND t.tier IN ('T1', 'T2'))"""
+            )
+        logger.info(f"relevance-flag correct_trusted_only: un-flagged {n} curated-source articles")
+        return {"corrected_trusted_sources": n}
 
     where = [
         "a.is_synthetic = FALSE",
@@ -774,10 +815,16 @@ async def backfill_relevance_flag(
         return asyncio.run(clf.classify(title, excerpt, source))
 
     async def _classify(r: dict):
-        if skip_trusted_tiers and r.get("tier") == "T1":
+        # T1/T2 are vetted climate/environment outlets — their articles are
+        # climate-relevant by editorial selection, so auto-keep without an LLM
+        # call (avoids false-positives like flagging a climate source's
+        # biodiversity / hurricane-forecast story). T3 (national mainstream,
+        # climate beat not the focus — e.g. Andina Peru) is NOT trusted and is
+        # still classified.
+        if skip_trusted_tiers and r.get("tier") in ("T1", "T2"):
             return r, {
                 "relevant": True, "score": 1.0,
-                "reason": "T1 curated source (auto-kept)", "llm_used": False,
+                "reason": f"{r.get('tier')} curated source (auto-kept)", "llm_used": False,
             }
         async with sem:
             res = await asyncio.to_thread(
