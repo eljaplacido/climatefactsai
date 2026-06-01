@@ -662,3 +662,170 @@ async def golden_queue_articles(
             "standard newest-un-enriched queue on its next polling cycle."
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# 7. Content-scope relevance flag (F1 / §3) — LLM/source-aware off-topic gate
+# ---------------------------------------------------------------------------
+
+@router.post("/backfill/relevance-flag")
+async def backfill_relevance_flag(
+    batch_size: int = Query(default=50, ge=1, le=300),
+    dry_run: bool = Query(default=True),
+    sources: Optional[str] = Query(
+        default=None, description="comma-separated source_name allowlist to scope the run"
+    ),
+    skip_trusted_tiers: bool = Query(default=True),
+    x_corporate_sync_token: Optional[str] = Header(default=None),
+    x_scheduler_secret: Optional[str] = Header(default=None),
+):
+    """Classify un-scored articles for climate relevance (F1) and flag the
+    off-topic ones (``articles.is_off_topic = TRUE``) so the bus-accident class
+    drops out of every listing surface.
+
+    A keyword/SQL sweep was measured to mis-flag ~65% of the corpus, so this
+    uses the LLM classifier (``RelevanceClassifier``, reuses the enrichment
+    provider chain → GX10-eligible, language-agnostic).
+
+    - ``dry_run=true`` (default): classify + return verdicts, write NOTHING —
+      review the per-source breakdown before trusting it.
+    - ``dry_run=false``: persist ``content_relevance_score`` on every classified
+      article (so it is not re-checked) and ``is_off_topic=TRUE`` + a traceable
+      ``topic_feedback`` row on the off-topic ones.
+
+    Resumable: each call processes the next ``batch_size`` articles with
+    ``content_relevance_score IS NULL``; loop until ``scanned == 0``.
+
+    Cost control: T1-tier curated climate sources are auto-kept without an LLM
+    call when ``skip_trusted_tiers=true``. Pin ``CLILENS_ENRICHMENT_PROVIDER=
+    deepseek`` for predictable cost. Conservative: any classifier error keeps
+    the article visible (never hides on failure).
+    """
+    import asyncio
+
+    _auth(x_corporate_sync_token, x_scheduler_secret)
+    db = get_postgres()
+
+    try:
+        from app.domains.intelligence.relevance_classifier import RelevanceClassifier
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"RelevanceClassifier unavailable: {type(exc).__name__}",
+        )
+
+    def _exists(rel: str) -> bool:
+        row = db.execute_query(f"SELECT to_regclass('public.{rel}') AS t")
+        return bool(row and row[0].get("t"))
+
+    has_tiers = _exists("source_credibility_tiers")
+    has_feedback = _exists("topic_feedback")
+
+    where = [
+        "a.is_synthetic = FALSE",
+        "a.is_off_topic = FALSE",
+        "a.content_relevance_score IS NULL",
+    ]
+    params: dict = {"lim": batch_size}
+    if sources:
+        names = [s.strip() for s in sources.split(",") if s.strip()]
+        if names:
+            where.append("a.source_name = ANY(:names)")
+            params["names"] = names
+    if has_feedback:
+        where.append(
+            "NOT EXISTS (SELECT 1 FROM topic_feedback tf "
+            "WHERE tf.article_id = a.article_id AND tf.verdict = 'on_topic')"
+        )
+
+    tier_select = ", t.tier AS tier" if has_tiers else ", NULL AS tier"
+    tier_join = (
+        "LEFT JOIN source_credibility_tiers t "
+        "ON (t.source_name = a.source_name OR t.domain = lower(a.source_name))"
+        if has_tiers
+        else ""
+    )
+
+    rows = db.execute_query(
+        f"""SELECT a.article_id::text AS id, a.title, a.excerpt, a.source_name {tier_select}
+            FROM articles a {tier_join}
+            WHERE {' AND '.join(where)}
+            ORDER BY a.created_at DESC
+            LIMIT :lim""",
+        params,
+    )
+
+    clf = RelevanceClassifier(db)
+    sem = asyncio.Semaphore(5)
+
+    async def _classify(r: dict):
+        if skip_trusted_tiers and r.get("tier") == "T1":
+            return r, {
+                "relevant": True, "score": 1.0,
+                "reason": "T1 curated source (auto-kept)", "llm_used": False,
+            }
+        async with sem:
+            res = await clf.classify(r.get("title"), r.get("excerpt"), r.get("source_name"))
+        return r, res
+
+    results = await asyncio.gather(*[_classify(r) for r in rows]) if rows else []
+
+    detail: list = []
+    marked = kept = llm_called = 0
+    for r, res in results:
+        if res.get("llm_used"):
+            llm_called += 1
+        off = res.get("relevant") is False
+        if off:
+            marked += 1
+        else:
+            kept += 1
+        detail.append({
+            "article_id": r["id"],
+            "title": (r.get("title") or "")[:90],
+            "source": r.get("source_name"),
+            "off_topic": off,
+            "score": res.get("score"),
+            "reason": res.get("reason"),
+        })
+        if not dry_run:
+            db.execute_update(
+                "UPDATE articles SET content_relevance_score = :s, is_off_topic = :o "
+                "WHERE article_id = :id",
+                {"s": round(float(res.get("score") or 0.5), 2), "o": off, "id": r["id"]},
+            )
+            if off and has_feedback:
+                try:
+                    db.execute_update(
+                        """INSERT INTO topic_feedback
+                               (feedback_id, article_id, verdict, reason,
+                                reporter_id, off_topic_category)
+                           SELECT gen_random_uuid(), :id, 'off_topic', :reason,
+                                  NULL, 'relevance_classifier'
+                            WHERE NOT EXISTS (
+                                SELECT 1 FROM topic_feedback tf WHERE tf.article_id = :id
+                            )""",
+                        {"id": r["id"], "reason": f"LLM relevance: {res.get('reason')}"[:480]},
+                    )
+                except Exception as exc:
+                    logger.warning(f"relevance-flag: topic_feedback insert skipped: {exc}")
+
+    by_source: dict = {}
+    for d in detail:
+        s = by_source.setdefault(d["source"], {"scanned": 0, "off_topic": 0})
+        s["scanned"] += 1
+        s["off_topic"] += 1 if d["off_topic"] else 0
+
+    logger.info(
+        f"relevance-flag: dry_run={dry_run} scanned={len(rows)} "
+        f"llm_called={llm_called} marked_off_topic={marked} kept={kept}"
+    )
+    return {
+        "dry_run": dry_run,
+        "scanned": len(rows),
+        "llm_called": llm_called,
+        "marked_off_topic": marked,
+        "kept": kept,
+        "by_source": by_source,
+        "detail": detail,
+    }
