@@ -1445,6 +1445,26 @@ def _persist_structured_failure(
     )
 
 
+def _verdicts_to_claim_counts(fact_checks: list[dict]) -> tuple[int, int, int]:
+    """Map per-claim verification verdicts to the (verified, false, misleading)
+    counts the canonical ReliabilityScorer expects.
+
+    Verdict vocabulary (VerdictAdjudicator): verified / disputed /
+    partially_true / partially_verified / unverified.
+      - verified                         -> verified_claims
+      - disputed                         -> false_claims
+      - partially_true|partially_verified-> misleading_claims (partial support)
+      - unverified                       -> counts toward total only
+    """
+    verified = sum(1 for f in fact_checks if f.get("verdict") == "verified")
+    false = sum(1 for f in fact_checks if f.get("verdict") == "disputed")
+    misleading = sum(
+        1 for f in fact_checks
+        if f.get("verdict") in ("partially_true", "partially_verified")
+    )
+    return verified, false, misleading
+
+
 async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
     """
     Synchronous processing of URL analysis (NO KAFKA).
@@ -1669,6 +1689,66 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
                 logger.warning(
                     f"Per-claim verification disabled for {analysis_id}: "
                     f"{type(_verify_exc).__name__}: {_verify_exc}"
+                )
+
+        # Step 7.6 (2026-06-02, audit seq-4): when per-claim verification
+        # actually ran, REPLACE the extraction-quality heuristic (Step 7) with a
+        # verification-backed reliability score via the canonical ReliabilityScorer
+        # — source credibility (50%, with the mig-041/045 3-axis blend) + verified-
+        # claim ratio (30%, with the claim-density honesty cap) + relevance (20%).
+        # The Step-7 heuristic was self-commented as "NOT a verified credibility
+        # score" yet drove the displayed HIGH/MEDIUM/LOW label. This closes that
+        # gap so the score reflects whether claims actually held up against
+        # evidence and how reputable the source is. The heuristic stays as the
+        # fallback when verification is disabled/empty (score never gets worse).
+        if fact_checks_payload:
+            try:
+                from shared.reliability_scorer import ReliabilityScorer
+                from app.domains.trust.source_tier_service import (
+                    get_source_credibility_score,
+                    get_source_3axis_scores,
+                )
+
+                verified_n, false_n, misleading_n = _verdicts_to_claim_counts(
+                    fact_checks_payload
+                )
+                adjudicated_n = len(fact_checks_payload)
+
+                try:
+                    src_cred = get_source_credibility_score(db, source_name, source_domain)
+                except Exception:
+                    src_cred = None
+                ed = fc = tr = None
+                try:
+                    axes = get_source_3axis_scores(db, source_name, source_domain)
+                    if axes:
+                        ed, fc, tr = axes
+                except Exception:
+                    pass
+
+                v_score, v_level = ReliabilityScorer.calculate_reliability_score(
+                    source_credibility_score=src_cred,
+                    total_claims=adjudicated_n,
+                    verified_claims=verified_n,
+                    false_claims=false_n,
+                    misleading_claims=misleading_n,
+                    content_relevance_score=None,
+                    editorial_score=ed,
+                    factcheck_score=fc,
+                    transparency_score=tr,
+                )
+                reliability_score = int(v_score)
+                overall_credibility = str(v_level)
+                logger.info(
+                    f"URL analysis {analysis_id}: verification-backed score="
+                    f"{reliability_score} level={overall_credibility} "
+                    f"(verified={verified_n} disputed={false_n} partial={misleading_n} "
+                    f"of {adjudicated_n} adjudicated; src_cred={src_cred})"
+                )
+            except Exception as _score_exc:
+                logger.warning(
+                    f"Verification-backed scoring failed for {analysis_id}, keeping "
+                    f"extraction heuristic: {type(_score_exc).__name__}: {_score_exc}"
                 )
 
         # Step 8: Update with results
