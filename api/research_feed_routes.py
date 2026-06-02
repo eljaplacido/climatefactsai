@@ -450,7 +450,15 @@ async def _poll_crossref(query: str, rows: int = DEFAULT_POLL_ROWS) -> List[dict
                     "rows": min(max(rows, 1), 100),
                     "sort": "published",
                     "order": "desc",
-                    "filter": "type:journal-article",
+                    # Academic-only whitelist by publication type (OR-ed):
+                    # peer-reviewed journals, conference papers, theses/
+                    # dissertations (Theseus-class MSc/PhD), preprints, book
+                    # chapters and reports. Excludes news/blog/dataset/other.
+                    "filter": (
+                        "type:journal-article,type:proceedings-article,"
+                        "type:dissertation,type:posted-content,"
+                        "type:book-chapter,type:report,type:reference-entry"
+                    ),
                 },
             )
         if resp.status_code != 200:
