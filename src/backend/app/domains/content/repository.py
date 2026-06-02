@@ -197,18 +197,6 @@ class ArticleRepository:
         include_non_climate: bool = False
     ) -> list[Article]:
         """List articles with optional filters."""
-        climate_tags = [
-            'climate', 'emissions', 'renewable-energy', 'renewable energy',
-            'climate-finance', 'global-climate', 'ocean-warming', 'arctic',
-            'deforestation', 'amazon', 'conservation', 'adaptation',
-            'clean energy', 'energy transition', 'energy-transition',
-            'environmental policy', 'green transition', 'vihrea_siirtyma',
-            'ilmastonmuutos', 'kestava_kehitys', 'nature conservation',
-            'solar-power', 'climate-indicators', 'ocean', 'sea-ice',
-            'bioeconomy', 'hydrogen', 'food systems', 'eu-policy',
-            'climate-feedback', 'iea', 'noaa'
-        ]
-
         source_credibility = {
             'NASA': 95, 'NOAA': 95, 'IPCC': 98,
             'MIT Technology Review': 85,
@@ -224,29 +212,47 @@ class ArticleRepository:
             'Reccessary': 60
         }
 
-        where_conditions = []
+        # Bound params for every user-controlled filter — no f-string
+        # interpolation (closes the SQL-injection surface the single-quote
+        # escape only half-covered). limit/offset are always bound.
+        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        where_conditions = ["a.is_synthetic IS NOT TRUE"]
+
+        # Relevance gate: the off-topic classifier (mig 056/057) is the source
+        # of truth for "is this a climate article", NOT a hardcoded tag
+        # whitelist. The old `a.tags && ARRAY[...climate_tags...]` filter
+        # silently returned [] for the entire corpus (articles ingested without
+        # those exact tag strings / NULL tags), which made /api/v2/articles dead
+        # in prod despite 3k+ articles — matches the legacy /api/articles gate.
         if not include_non_climate:
-            quoted = [f"'{t}'" for t in climate_tags]
-            where_conditions.append(f"a.tags && ARRAY[{','.join(quoted)}]::text[]")
+            where_conditions.append("a.is_off_topic IS NOT TRUE")
 
         if query:
-            safe_query = query.replace("'", "''")
+            # title/excerpt are the real columns; the old headline/summary_text
+            # refs do not exist in prod and 500'd every ?q= search.
             where_conditions.append(
-                f"to_tsvector('english', COALESCE(a.title, a.headline, '') || ' ' || COALESCE(a.excerpt, a.summary_text, '')) "
-                f"@@ plainto_tsquery('english', '{safe_query}')"
+                "to_tsvector('english', COALESCE(a.title, '') || ' ' || COALESCE(a.excerpt, '')) "
+                "@@ plainto_tsquery('english', :q_text)"
             )
+            params["q_text"] = query
 
         if country:
-            where_conditions.append(f"a.country_code = '{country}'")
+            where_conditions.append("a.country_code = :country")
+            params["country"] = country
 
         if credibility:
-            where_conditions.append(f"a.overall_credibility = '{credibility}'")
+            where_conditions.append("a.overall_credibility = :credibility")
+            params["credibility"] = credibility
 
         if tags:
-            tags_quoted = [f"'{t}'" for t in tags]
-            where_conditions.append(f"a.tags && ARRAY[{','.join(tags_quoted)}]::text[]")
+            placeholders = []
+            for i, t in enumerate(tags):
+                key = f"tag{i}"
+                placeholders.append(f":{key}")
+                params[key] = t
+            where_conditions.append(f"a.tags && ARRAY[{','.join(placeholders)}]::text[]")
 
-        where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
+        where_clause = " AND ".join(where_conditions)
 
         source_cases = []
         for source, score in source_credibility.items():
@@ -266,7 +272,7 @@ class ArticleRepository:
             LEFT JOIN publishers p ON a.publisher_id = p.id
             WHERE {where_clause}
             ORDER BY relevance_score DESC, a.published_date DESC NULLS LAST
-            LIMIT {limit} OFFSET {offset}
+            LIMIT :limit OFFSET :offset
         """
 
         legacy_query = f"""
@@ -286,10 +292,10 @@ class ArticleRepository:
             FROM articles a
             WHERE {where_clause.replace('a.', '')}
             ORDER BY relevance_score DESC, published_date DESC NULLS LAST
-            LIMIT {limit} OFFSET {offset}
+            LIMIT :limit OFFSET :offset
         """
 
-        results = self._execute_trust_query(trust_query, legacy_query, {})
+        results = self._execute_trust_query(trust_query, legacy_query, params)
         return [self._row_to_article(row) for row in results]
 
     def get_tags(self, limit: int = 50) -> list[TagStat]:
@@ -372,12 +378,12 @@ class ArticleRepository:
     def _article_select_columns(self, include_detail: bool = False) -> str:
         columns = [
             "a.article_id",
-            "COALESCE(a.title, a.headline) AS title",
+            "a.title",
             "COALESCE(a.url, a.original_url) AS url",
             "a.source_name",
             "a.author",
             "a.published_date",
-            "COALESCE(a.excerpt, a.summary_text) AS excerpt",
+            "a.excerpt",
             "a.reliability_score",
             "a.overall_credibility",
             "a.source_credibility_score",
