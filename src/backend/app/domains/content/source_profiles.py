@@ -300,6 +300,20 @@ class SourceProfileService:
         profiles.sort(key=lambda p: p.get("credibility_score") or 0, reverse=True)
         return profiles[: int(limit)]
 
+    @staticmethod
+    def _norm_domain(value) -> str:
+        """Lowercase + strip a leading www. prefix (not lstrip, which would
+        eat any leading w/x/. char) so profile and tier domains join cleanly."""
+        d = str(value or "").strip().lower()
+        return d[4:] if d.startswith("www.") else d
+
+    @staticmethod
+    def _tier_rank(tier) -> int:
+        """Order tiers so the *best* wins when a source matches >1 tier row
+        (e.g. an outlet seeded under two domains, or matched by both name and
+        domain). T1 > T2 > T3 > anything else."""
+        return {"t1": 3, "t2": 2, "t3": 1}.get(str(tier or "").lower(), 0)
+
     def _attach_credibility_tiers(self, rows: list[dict]) -> list[dict]:
         """Enrich profile rows with source_credibility_tiers data (migration 027).
 
@@ -310,28 +324,49 @@ class SourceProfileService:
 
         Called by `list_profiles` and the per-domain getter on 2026-05-23 as
         part of §3.7 (Sources page hardcoded-list deletion + DB-backed tiers).
+
+        2026-06-02: match on `source_name` OR `domain`. The tier table is keyed
+        by `domain`, but a large slice of `source_profiles` carries a fabricated
+        slug domain (legacy seed pollution, e.g. `carbon-brief-c078`) that never
+        joins, so vetted sources like Carbon Brief / DeSmog / Inside Climate News
+        rendered as "Unrated" despite being tiered under their real domain. The
+        tier table also stores `source_name`, and those phantom profiles keep the
+        correct name — so a name match recovers the tier without touching data.
         """
         if not rows:
             return rows
 
-        # Build a domain lookup. Profile rows use `source_domain`; tier rows
-        # are keyed by `domain`. Normalise both to lowercase for the join.
+        # Profile rows use `source_domain`; tier rows are keyed by `domain`.
+        # Also collect names (lowercased) so a fabricated-domain profile can
+        # still match its tier row by name.
         domains = sorted({
-            str(row.get("source_domain") or "").lower().lstrip("www.")
+            self._norm_domain(row.get("source_domain"))
             for row in rows
             if row.get("source_domain")
         })
-        if not domains:
+        names = sorted({
+            str(row.get("source_name") or "").strip().lower()
+            for row in rows
+            if str(row.get("source_name") or "").strip()
+        })
+        if not domains and not names:
             return rows
+
+        clauses: list[str] = []
+        params: dict = {}
+        if domains:
+            clauses.append("domain = ANY(:domains)")
+            params["domains"] = domains
+        if names:
+            clauses.append("LOWER(source_name) = ANY(:names)")
+            params["names"] = names
 
         try:
             tier_rows = self.db.execute_query(
-                """
-                SELECT domain, prior_bonus, tier
-                FROM source_credibility_tiers
-                WHERE domain = ANY(:domains)
-                """,
-                {"domains": domains},
+                "SELECT domain, source_name, prior_bonus, tier "
+                "FROM source_credibility_tiers "
+                f"WHERE {' OR '.join(clauses)}",
+                params,
             )
         except Exception as exc:
             # Migration 027 not applied or column shape changed — fail soft.
@@ -342,27 +377,35 @@ class SourceProfileService:
             return rows
 
         tier_by_domain: dict[str, dict] = {}
+        tier_by_name: dict[str, dict] = {}
         for tr in tier_rows or []:
-            d = str(tr.get("domain") or "").lower().lstrip("www.")
-            if not d:
-                continue
-            tier_by_domain[d] = {
+            payload = {
                 "tier": tr.get("tier"),
                 "tier_prior_bonus": tr.get("prior_bonus"),
             }
+            d = self._norm_domain(tr.get("domain"))
+            n = str(tr.get("source_name") or "").strip().lower()
+            rank = self._tier_rank(payload["tier"])
+            if d and rank >= self._tier_rank(tier_by_domain.get(d, {}).get("tier")):
+                tier_by_domain[d] = payload
+            if n and rank >= self._tier_rank(tier_by_name.get(n, {}).get("tier")):
+                tier_by_name[n] = payload
 
         enriched: list[dict] = []
         for row in rows:
-            d = str(row.get("source_domain") or "").lower().lstrip("www.")
-            if d and d in tier_by_domain:
-                merged = dict(row)
-                merged.update(tier_by_domain[d])
-                enriched.append(merged)
+            merged = dict(row)
+            d = self._norm_domain(row.get("source_domain"))
+            n = str(row.get("source_name") or "").strip().lower()
+            # Prefer a domain match (most specific), fall back to a name match.
+            match = (tier_by_domain.get(d) if d else None) or (
+                tier_by_name.get(n) if n else None
+            )
+            if match:
+                merged.update(match)
             else:
-                merged = dict(row)
                 merged.setdefault("tier", None)
                 merged.setdefault("tier_prior_bonus", None)
-                enriched.append(merged)
+            enriched.append(merged)
         return enriched
 
     def list_profiles(

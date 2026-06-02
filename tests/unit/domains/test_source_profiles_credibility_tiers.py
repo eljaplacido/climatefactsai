@@ -34,15 +34,68 @@ class TestAttachCredibilityTiers:
         # No DB hit when input is empty
         db.execute_query.assert_not_called()
 
-    def test_no_domains_in_rows_returns_unchanged(self):
-        """If profile rows have no source_domain, the join can't happen —
-        return rows untouched, no DB hit."""
+    def test_no_domain_no_name_returns_unchanged(self):
+        """If profile rows have neither source_domain nor source_name, the join
+        can't happen — return rows untouched, no DB hit."""
         db = MagicMock()
         svc = _service_with_db(db)
-        rows = [{"source_name": "X", "source_domain": None}]
+        rows = [{"source_name": None, "source_domain": None}]
         result = svc._attach_credibility_tiers(rows)
         assert result == rows
         db.execute_query.assert_not_called()
+
+    def test_name_only_row_still_queries_by_name(self):
+        """A profile with no usable domain but a source_name is now joined by
+        name (the fabricated-domain recovery path). DB IS hit; a non-match
+        yields explicit null tier fields."""
+        db = MagicMock()
+        db.execute_query.return_value = []  # no tier match for "X"
+        svc = _service_with_db(db)
+        rows = [{"source_name": "X", "source_domain": None}]
+        result = svc._attach_credibility_tiers(rows)
+        db.execute_query.assert_called_once()
+        assert result[0]["tier"] is None
+        assert result[0]["tier_prior_bonus"] is None
+
+    def test_name_match_recovers_tier_when_domain_is_fabricated(self):
+        """Core 2026-06-02 fix: a phantom profile carries a fabricated slug
+        domain (`carbon-brief-c078`) that can't join, but its source_name is
+        correct. A name match against the tier table recovers the real tier."""
+        db = MagicMock()
+        db.execute_query.return_value = [
+            {"domain": "carbonbrief.org", "source_name": "Carbon Brief", "tier": "T1", "prior_bonus": 30},
+        ]
+        svc = _service_with_db(db)
+        rows = [{"source_name": "Carbon Brief", "source_domain": "carbon-brief-c078"}]
+        result = svc._attach_credibility_tiers(rows)
+        assert result[0]["tier"] == "T1"
+        assert result[0]["tier_prior_bonus"] == 30
+
+    def test_domain_match_preferred_over_name_match(self):
+        """When a row matches one tier row by domain and a *different* tier row
+        by name, the domain match (most specific) wins."""
+        db = MagicMock()
+        db.execute_query.return_value = [
+            {"domain": "example.com", "source_name": "Other", "tier": "T3", "prior_bonus": 5},
+            {"domain": "elsewhere.org", "source_name": "Example", "tier": "T1", "prior_bonus": 30},
+        ]
+        svc = _service_with_db(db)
+        rows = [{"source_name": "Example", "source_domain": "example.com"}]
+        result = svc._attach_credibility_tiers(rows)
+        assert result[0]["tier"] == "T3"  # domain match wins over name match
+
+    def test_best_tier_wins_on_multiple_name_matches(self):
+        """A source_name seeded under two tier rows (different migrations) must
+        resolve to the best (T1 over T2)."""
+        db = MagicMock()
+        db.execute_query.return_value = [
+            {"domain": "reporterre.net", "source_name": "Reporterre (FR)", "tier": "T2", "prior_bonus": 15},
+            {"domain": "reporterre.net", "source_name": "Reporterre (FR)", "tier": "T1", "prior_bonus": 30},
+        ]
+        svc = _service_with_db(db)
+        rows = [{"source_name": "Reporterre (FR)", "source_domain": "reporterre-fr-80a4"}]
+        result = svc._attach_credibility_tiers(rows)
+        assert result[0]["tier"] == "T1"
 
     def test_matching_rows_get_tier_and_prior_bonus(self):
         db = MagicMock()
