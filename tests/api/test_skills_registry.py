@@ -30,11 +30,14 @@ client = TestClient(app)
 
 
 class TestRegistryShape:
-    def test_registry_has_eleven_skills(self):
-        """Phase 7 B3 (2026-05-24): bumped to 11 — added open_company +
-        verify_corporate_claim for the corporate-claim surface. Crossing
-        the boundary again needs an explicit decision."""
-        assert len(SKILLS_REGISTRY) == 11
+    def test_registry_has_expected_skill_count(self):
+        """Canonical skill-count pin. 2026-06-02: corrected to 22 — the
+        registry had grown (open_company, verify_corporate_claim, save_item,
+        subscribe_research_topic, explore_scenario, analyze_corporate_report,
+        explore_entity, explain_connection, flag_off_topic, suggest_company,
+        promote_golden_example, explore_sdg, tag_sdgs) while this pin still
+        asserted 11, silently failing CI. Bumping needs an explicit decision."""
+        assert len(SKILLS_REGISTRY) == 22
 
     def test_list_skills_returns_stable_order(self):
         """Two consecutive calls return the same order — clients can
@@ -88,8 +91,8 @@ class TestSerialisation:
     def test_serialize_registry_envelope(self):
         envelope = serialize_registry()
         assert isinstance(envelope["skills"], list)
-        assert envelope["total"] == 11
-        assert envelope["modes"]["auto"] + envelope["modes"]["confirm"] == 11
+        assert envelope["total"] == len(SKILLS_REGISTRY)
+        assert envelope["modes"]["auto"] + envelope["modes"]["confirm"] == len(SKILLS_REGISTRY)
 
     def test_serialized_skill_is_pure_json(self):
         """Every serialised skill must be JSON-roundtrippable so the
@@ -99,7 +102,7 @@ class TestSerialisation:
         envelope = serialize_registry()
         s = json.dumps(envelope)
         rev = json.loads(s)
-        assert rev["total"] == 11
+        assert rev["total"] == len(SKILLS_REGISTRY)
 
 
 class TestRenderActionsBlock:
@@ -125,8 +128,8 @@ class TestSkillsEndpoint:
         resp = client.get("/api/skills")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["total"] == 11
-        assert len(body["skills"]) == 11
+        assert body["total"] == len(SKILLS_REGISTRY)
+        assert len(body["skills"]) == len(SKILLS_REGISTRY)
         names = {s["name"] for s in body["skills"]}
         assert names == set(SKILLS_REGISTRY.keys())
 

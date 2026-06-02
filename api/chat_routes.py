@@ -1128,6 +1128,31 @@ Instructions:
 - If no relevant articles are found, acknowledge this and suggest using Deep Search or adjusting filters.
 - Format using markdown with headers, bullet points, and bold for key terms."""
 
+        # Agentic actions (the "chat that acts" surface): instruct the LLM to
+        # append a JSON actions block so _parse_actions has something to find.
+        # Without this block the chat ALWAYS returned actions:[] — the entire
+        # 22-skill dispatcher + confirm-modal pipeline was wired but idle.
+        # The action list is rendered from the skills registry so it stays in
+        # lockstep with VALID_ACTION_TYPES.
+        try:
+            from app.domains.intelligence.skills import render_actions_block_for_prompt
+            user_prompt += (
+                "\n\nAFTER your markdown answer, you MAY append a JSON actions block "
+                "suggesting 0-3 genuinely useful next steps for the user. Separate it "
+                "from your answer with a line containing only '---'. Omit the block "
+                "entirely if no action is genuinely helpful.\n"
+                "AVAILABLE ACTIONS (use ONLY these `type` values):\n"
+                f"{render_actions_block_for_prompt()}\n"
+                "Each action is {\"type\": <one above>, \"params\": {..}, \"label\": "
+                "\"short button text\"}. Example:\n"
+                "Your answer text…\n"
+                "---\n"
+                "{\"actions\":[{\"type\":\"open_country\",\"params\":{\"code\":\"DE\"},"
+                "\"label\":\"Open Germany on the map\"}]}"
+            )
+        except Exception as _act_exc:  # pragma: no cover - registry import guard
+            logger.debug(f"actions block unavailable (non-fatal): {_act_exc}")
+
         # Multi-provider fallback chain: tries deepseek -> openai -> anthropic
         # -> local-gx10 until one returns non-empty content. Returns None
         # only when EVERY provider fails (effectively the same as the old
@@ -1153,6 +1178,15 @@ Instructions:
 
         answer, used_provider, used_model = chain_result
         answer = answer.strip()
+
+        # Split the optional trailing JSON actions block from the display text
+        # so the raw JSON contract never renders in the chat bubble. Actions
+        # parse from after the last '---'; only strip when they actually parse.
+        actions = _parse_actions(answer)
+        if actions:
+            _cut = answer.rfind("---")
+            if _cut != -1:
+                answer = answer[:_cut].rstrip()
 
         # Estimate confidence
         confidence = 0.5
@@ -1202,7 +1236,7 @@ Instructions:
             # else — making the displayed model label dishonest.
             "model": f"{used_provider}:{used_model}",
             "hallucination_check": hallucination_check,
-            "actions": _parse_actions(answer),
+            "actions": actions,
         }
 
     except ImportError:
@@ -1244,12 +1278,21 @@ def _store_chat_message(
         logger.warning(f"Failed to store chat message: {e}")
 
 
-VALID_ACTION_TYPES = frozenset({
-    "navigate", "analyze_url", "apply_search_filters",
-    "apply_map_filters", "open_methodology_section",
-    "open_country", "start_deep_search",
-    "bookmark_article", "start_calibration_label",
-})
+# Derive the validator from the single source of truth (skills.py registry) so
+# it can never lag the 22-skill set again — the old 9-item hardcode silently
+# dropped 13 of the registry's actions (open_company, verify_corporate_claim,
+# explore_scenario, explore_entity, flag_off_topic, …) before the LLM could
+# surface them. Falls back to the legacy 9 if the registry import is unavailable.
+try:
+    from app.domains.intelligence.skills import SKILLS_REGISTRY as _SKILLS_REGISTRY
+    VALID_ACTION_TYPES = frozenset(_SKILLS_REGISTRY.keys())
+except Exception:  # pragma: no cover - registry should always import
+    VALID_ACTION_TYPES = frozenset({
+        "navigate", "analyze_url", "apply_search_filters",
+        "apply_map_filters", "open_methodology_section",
+        "open_country", "start_deep_search",
+        "bookmark_article", "start_calibration_label",
+    })
 
 
 def _parse_actions(answer: str) -> list[dict]:
@@ -1300,14 +1343,22 @@ async def record_action_click(action: ChatActionSpec):
     """Record that a user clicked a suggested chat action (telemetry)."""
     db = get_postgres()
     try:
+        # Postgres does not allow ORDER BY / LIMIT directly on UPDATE, so the
+        # old query raised a syntax error every click and the telemetry was
+        # silently lost (caught below). Target the single most-recent matching
+        # row via a ctid subselect (PK-agnostic).
         db.execute_update(
             """UPDATE chat_actions_log
                SET was_clicked = TRUE, clicked_at = NOW()
-               WHERE action_type = :atype
-                 AND params = CAST(:params AS jsonb)
-                 AND was_clicked = FALSE
-                 AND suggested_at > NOW() - INTERVAL '1 hour'
-               ORDER BY suggested_at DESC LIMIT 1""",
+               WHERE ctid = (
+                   SELECT ctid FROM chat_actions_log
+                   WHERE action_type = :atype
+                     AND params = CAST(:params AS jsonb)
+                     AND was_clicked = FALSE
+                     AND suggested_at > NOW() - INTERVAL '1 hour'
+                   ORDER BY suggested_at DESC
+                   LIMIT 1
+               )""",
             {
                 "atype": action.type,
                 "params": json.dumps(action.params),

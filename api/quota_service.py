@@ -42,24 +42,26 @@ logger = setup_logging("quota_service")
 # Never silently extend the dict — every key must have an explicit count.
 
 FREEMIUM_FREE_TIER_LIMITS: dict[str, int] = {
-    "saved_articles": 3,    # lifetime cap
-    "saved_searches": 3,    # lifetime cap
-    "deep_research": 3,     # per calendar month (raised 2->3, 2026-05-31 owner decision)
-    "url_analysis": 1,      # per calendar month
-    "compare": 1,           # per calendar month
+    "saved_articles": 3,        # lifetime cap
+    "saved_searches": 3,        # lifetime cap
+    "deep_research": 3,         # per calendar month (raised 2->3, 2026-05-31 owner decision)
+    "url_analysis": 1,          # per calendar month
+    "compare": 1,               # per calendar month
+    "insights_extraction": 50,  # lifetime test calls for the analyze-text/insights API (2026-06-02)
 }
 
 QUOTA_LIMITS_BY_TIER: dict[str, dict[str, int]] = {
     # Anonymous traffic — handled separately by the IP-based rate limiter;
-    # the structured 0/0/0/0 here means "must sign in to use these".
+    # the structured 0s here mean "must sign in to use these".
     "anonymous": {
         "saved_articles": 0,
         "saved_searches": 0,
         "deep_research": 0,
         "url_analysis": 0,
         "compare": 0,
+        "insights_extraction": 0,
     },
-    # Free (registered) — 3/3/2 per the 2026-05-23 decision.
+    # Free (registered) — per the 2026-05-23 decision + 50 insights test calls.
     "freemium": FREEMIUM_FREE_TIER_LIMITS,
     "free": FREEMIUM_FREE_TIER_LIMITS,  # alias used by some legacy auth code
     "basic": {
@@ -68,6 +70,7 @@ QUOTA_LIMITS_BY_TIER: dict[str, dict[str, int]] = {
         "deep_research": 15,
         "url_analysis": 5,
         "compare": 10,
+        "insights_extraction": 500,
     },
     "standard": {  # legacy alias for basic
         "saved_articles": 50,
@@ -75,6 +78,7 @@ QUOTA_LIMITS_BY_TIER: dict[str, dict[str, int]] = {
         "deep_research": 15,
         "url_analysis": 5,
         "compare": 10,
+        "insights_extraction": 500,
     },
     "professional": {
         "saved_articles": -1,
@@ -82,6 +86,7 @@ QUOTA_LIMITS_BY_TIER: dict[str, dict[str, int]] = {
         "deep_research": 100,
         "url_analysis": 30,
         "compare": 50,
+        "insights_extraction": 5000,
     },
     "enterprise": {
         "saved_articles": -1,
@@ -89,6 +94,7 @@ QUOTA_LIMITS_BY_TIER: dict[str, dict[str, int]] = {
         "deep_research": -1,
         "url_analysis": -1,
         "compare": -1,
+        "insights_extraction": -1,
     },
 }
 
@@ -99,6 +105,11 @@ LIFETIME_KEYS = frozenset({"saved_articles", "saved_searches"})
 # Quotas measured per calendar month (counter resets at start of next month).
 MONTHLY_KEYS = frozenset({"deep_research", "url_analysis", "compare"})
 
+# Lifetime usage-event quotas — no backing content table, so consume() MUST
+# log to user_usage and the count is all-time (not reset monthly). Used for the
+# insights-extraction API freemium allowance (50 lifetime test calls).
+LIFETIME_USAGE_KEYS = frozenset({"insights_extraction"})
+
 # Human-readable labels for client error messages and inline UI.
 QUOTA_LABELS: dict[str, str] = {
     "saved_articles": "saved articles",
@@ -106,6 +117,7 @@ QUOTA_LABELS: dict[str, str] = {
     "deep_research": "deep research queries",
     "url_analysis": "URL analyses",
     "compare": "topic comparisons",
+    "insights_extraction": "text-analysis (insights) calls",
 }
 
 UPGRADE_URL = "/dashboard/subscription"
@@ -210,6 +222,18 @@ class QuotaService:
                     {"uid": user_id, "ut": quota_key},
                 )
                 return int(rows[0]["n"]) if rows else 0
+            if quota_key in LIFETIME_USAGE_KEYS:
+                # All-time count (lifetime allowance), logged to user_usage by consume().
+                rows = db.execute_query(
+                    """
+                    SELECT COUNT(*) AS n
+                    FROM user_usage
+                    WHERE user_id = :uid
+                      AND usage_type = :ut
+                    """,
+                    {"uid": user_id, "ut": quota_key},
+                )
+                return int(rows[0]["n"]) if rows else 0
         except Exception as exc:
             logger.warning(
                 f"Quota count query failed for {quota_key}; defaulting to 0. "
@@ -238,7 +262,7 @@ class QuotaService:
         tier_limits = QUOTA_LIMITS_BY_TIER[normalized_tier]
         limit = tier_limits.get(quota_key, 0)
 
-        period = "lifetime" if quota_key in LIFETIME_KEYS else "monthly"
+        period = "lifetime" if quota_key in (LIFETIME_KEYS | LIFETIME_USAGE_KEYS) else "monthly"
         reset_at = None if period == "lifetime" else _next_month_start_utc()
 
         used = cls._count_used(user_id, quota_key)

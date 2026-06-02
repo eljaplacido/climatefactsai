@@ -4,7 +4,7 @@ Intelligence Domain Router
 Admin endpoints for triggering and monitoring fact-checking.
 """
 
-from typing import Annotated
+from typing import Annotated, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, status
@@ -13,6 +13,11 @@ from app.core.database import Database, get_db
 from .services import VerificationService
 from .schemas import VerificationResult, VerificationRequest, ClaimExtractionRequest
 from .analysis_engine import AnalysisEngine
+
+# Auth dependency for gating the monetizable insights endpoint. Imported from
+# the api package (no cycle: auth_routes does not import this domain router).
+# Supports both JWT bearer tokens and X-API-Key (the future paid-API channel).
+from api.auth_routes import get_optional_user
 
 router = APIRouter(prefix="/api/v2/intelligence", tags=["Intelligence"])
 
@@ -162,17 +167,36 @@ async def get_article_insights(
 async def analyze_text(
     request: ClaimExtractionRequest,
     engine: AnalysisEngineDep = None,
+    current_user: Optional[dict] = Depends(get_optional_user),
 ):
     """
     Analyze raw text without storing results.
 
-    Extracts and classifies claims, returning structured breakdown.
-    Useful for quick analysis of arbitrary text snippets.
+    Extracts and classifies claims, returning structured breakdown — the same
+    LLM-backed insights-extraction capability sold via the API. Gated + metered
+    on the `insights_extraction` quota (anonymous=0 → sign in required;
+    free=50 lifetime test calls; paid tiers scale up). This stops the endpoint
+    from being an unauthenticated LLM-cost sink that also gave the product away.
     """
+    # Lazy import keeps the api.quota_service dependency out of this domain
+    # module's import-time graph (avoids any startup-order coupling).
+    from api.quota_service import QuotaService
+
+    user_id = str(current_user["user_id"]) if current_user else None
+    tier = (current_user or {}).get("subscription_tier")
+    QuotaService.check_and_raise(user_id, tier, "insights_extraction")
+
     result = await engine.analyze_text(
         text=request.text,
         max_claims=request.max_claims,
     )
+
+    # Meter the successful call (lifetime usage event). Best-effort.
+    try:
+        QuotaService.consume(user_id, "insights_extraction")
+    except Exception:
+        pass
+
     return result
 
 

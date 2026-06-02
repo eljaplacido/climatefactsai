@@ -22,6 +22,7 @@ from fastapi import HTTPException
 from api.quota_service import (
     FREEMIUM_FREE_TIER_LIMITS,
     LIFETIME_KEYS,
+    LIFETIME_USAGE_KEYS,
     MONTHLY_KEYS,
     QUOTA_LABELS,
     QUOTA_LIMITS_BY_TIER,
@@ -71,11 +72,15 @@ class TestTierLadderPins:
 
     def test_lifetime_vs_monthly_partition_is_exhaustive(self):
         all_keys = set(FREEMIUM_FREE_TIER_LIMITS.keys())
-        partitioned = LIFETIME_KEYS | MONTHLY_KEYS
+        # Three disjoint buckets: lifetime-table-backed, monthly-usage, and
+        # lifetime-usage-event (insights_extraction — 2026-06-02).
+        partitioned = LIFETIME_KEYS | MONTHLY_KEYS | LIFETIME_USAGE_KEYS
         assert all_keys == partitioned, (
-            "Every quota key must be exactly one of lifetime/monthly"
+            "Every quota key must be exactly one of lifetime/monthly/lifetime-usage"
         )
         assert LIFETIME_KEYS.isdisjoint(MONTHLY_KEYS)
+        assert LIFETIME_KEYS.isdisjoint(LIFETIME_USAGE_KEYS)
+        assert MONTHLY_KEYS.isdisjoint(LIFETIME_USAGE_KEYS)
 
     def test_every_quota_has_a_human_label(self):
         for key in FREEMIUM_FREE_TIER_LIMITS:
