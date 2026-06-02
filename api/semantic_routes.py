@@ -85,7 +85,7 @@ async def get_entity_profile(
     profile_rows = _safe_query(
         db,
         """SELECT entity_id, entity_name, entity_type, description,
-                  article_count, created_at
+                  article_count, first_seen_at
            FROM entities WHERE entity_id::text = :eid""",
         {"eid": entity_id},
     )
@@ -142,7 +142,7 @@ async def get_entity_profile(
             "type": e.get("entity_type", ""),
             "description": e.get("description") or "",
             "article_count": int(e.get("article_count") or 0),
-            "created_at": str(e["created_at"]) if e.get("created_at") else None,
+            "created_at": str(e["first_seen_at"]) if e.get("first_seen_at") else None,
         },
         "neighbors": list(neighbor_set.values()),
         "relationships": [
