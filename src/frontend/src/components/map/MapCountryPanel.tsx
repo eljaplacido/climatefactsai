@@ -66,7 +66,7 @@ interface CountryDetail {
     is_anomalous: boolean;
     description: string;
   };
-  sources: {
+  source_coverage: {
     source_name: string;
     article_count: number;
     avg_credibility: number;
@@ -125,7 +125,7 @@ export default function MapCountryPanel({
         // Normalize potentially null fields to prevent Object.keys crashes
         if (data) {
           data.category_breakdown = data.category_breakdown || {};
-          data.sources = data.sources || [];
+          data.source_coverage = data.source_coverage || [];
           data.article_count = data.article_count ?? 0;
           data.avg_credibility = data.avg_credibility ?? 0;
           data.climate_risk_score = data.climate_risk_score ?? 0;
@@ -229,7 +229,7 @@ export default function MapCountryPanel({
   const avgCredibility = detail?.avg_credibility ?? 0;
   const articleCount = detail?.article_count ?? 0;
   const climateRiskScore = detail?.climate_risk_score ?? 0;
-  const sources = detail?.sources || [];
+  const sources = detail?.source_coverage || [];
   const weather = detail?.weather;
   const tempAnomaly = detail?.temperature_anomaly;
 

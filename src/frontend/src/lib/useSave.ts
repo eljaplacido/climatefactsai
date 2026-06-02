@@ -2,14 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import type { SavedItemType, SavedItemRequest } from "@/types";
-
-const TOKEN_KEY = "clilens_token";
-
-function hasAuthToken(): boolean {
-  if (typeof window === "undefined") return false;
-  return Boolean(localStorage.getItem(TOKEN_KEY));
-}
 
 // localStorage cache key so anonymous users get optimistic toggle UX
 // (lost on logout / clear, but covers the "did I already save this" case
@@ -76,6 +70,7 @@ export interface UseSaveReturn {
  */
 export function useSave(args: UseSaveArgs): UseSaveReturn {
   const { type, id, itemRef: ref, label, notes, folder, payload } = args;
+  const { isLoggedIn } = useAuth();
   const cacheRef = id ?? ref ?? "";
   const [saved, setSaved] = useState<boolean>(() => getCachedSaved(type, cacheRef));
   const [savedId, setSavedId] = useState<string | null>(null);
@@ -83,8 +78,10 @@ export function useSave(args: UseSaveArgs): UseSaveReturn {
   const [error, setError] = useState<string | null>(null);
 
   // Confirm server truth on mount (cache may be stale for cross-device users).
+  // Gate on a *confirmed* login (not raw token presence) so an expired/stale
+  // token doesn't make every article card fire a doomed saved/check → 401.
   useEffect(() => {
-    if (!cacheRef || !hasAuthToken()) return;
+    if (!cacheRef || !isLoggedIn) return;
     let cancelled = false;
     api
       .checkSavedItem({ item_type: type, item_id: id || undefined, item_ref: ref || undefined })
@@ -100,7 +97,7 @@ export function useSave(args: UseSaveArgs): UseSaveReturn {
     return () => {
       cancelled = true;
     };
-  }, [type, id, ref, cacheRef]);
+  }, [type, id, ref, cacheRef, isLoggedIn]);
 
   const toggle = useCallback(async () => {
     if (busy || !cacheRef) return;
@@ -111,7 +108,7 @@ export function useSave(args: UseSaveArgs): UseSaveReturn {
     setSaved(!prev);
     setCachedSaved(type, cacheRef, !prev);
 
-    if (!hasAuthToken()) {
+    if (!isLoggedIn) {
       // Anonymous toggle stays local-only; FE prompts auth where it matters.
       setBusy(false);
       return;
@@ -169,7 +166,7 @@ export function useSave(args: UseSaveArgs): UseSaveReturn {
     } finally {
       setBusy(false);
     }
-  }, [busy, cacheRef, saved, savedId, type, id, ref, label, notes, folder, payload]);
+  }, [busy, cacheRef, saved, savedId, type, id, ref, label, notes, folder, payload, isLoggedIn]);
 
   return { saved, busy, error, toggle };
 }

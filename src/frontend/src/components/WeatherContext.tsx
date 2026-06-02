@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import type { ArticleWeatherContext, LocationWeatherContext } from "@/types";
 import { Cloud, Thermometer, Droplets, Wind, AlertTriangle, MapPin } from "lucide-react";
 import AskAboutButton from "./AskAboutButton";
@@ -125,9 +126,19 @@ export default function WeatherContext({ articleId }: Props) {
   // Previously this silently hid on ANY error including 401/403, so the
   // platform looked broken to anyone not on Standard+.
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const { isLoggedIn } = useAuth();
 
   useEffect(() => {
     let cancelled = false;
+
+    // Weather context is a Standard+ feature — anonymous always 403s. Skip the
+    // doomed request entirely and render the auth prompt, instead of spamming
+    // the console with 401/403/404 for every article view.
+    if (!isLoggedIn) {
+      setState({ kind: "auth" });
+      return;
+    }
+
     const timeout = setTimeout(() => {
       if (!cancelled) setState({ kind: "error" });
     }, 15000);
@@ -163,7 +174,7 @@ export default function WeatherContext({ articleId }: Props) {
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [articleId]);
+  }, [articleId, isLoggedIn]);
 
   if (state.kind === "loading") {
     return (

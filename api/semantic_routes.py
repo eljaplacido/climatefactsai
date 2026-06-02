@@ -86,7 +86,7 @@ async def get_entity_profile(
         db,
         """SELECT entity_id, entity_name, entity_type, description,
                   article_count, created_at
-           FROM entities WHERE entity_id = :eid""",
+           FROM entities WHERE entity_id::text = :eid""",
         {"eid": entity_id},
     )
     if not profile_rows:
@@ -103,7 +103,7 @@ async def get_entity_profile(
            FROM entity_relationships er
            JOIN entities e_src ON e_src.entity_id = er.source_entity_id
            JOIN entities e_tgt ON e_tgt.entity_id = er.target_entity_id
-           WHERE er.source_entity_id = :eid OR er.target_entity_id = :eid
+           WHERE er.source_entity_id::text = :eid OR er.target_entity_id::text = :eid
            ORDER BY er.confidence DESC, er.strength DESC
            LIMIT :nl""",
         {"eid": entity_id, "nl": neighbor_limit},
@@ -117,7 +117,7 @@ async def get_entity_profile(
                   ae.mention_count, ae.salience
            FROM article_entities ae
            JOIN articles a ON a.article_id = ae.article_id
-           WHERE ae.entity_id = :eid
+           WHERE ae.entity_id::text = :eid
            ORDER BY ae.salience DESC, a.published_date DESC NULLS LAST
            LIMIT :al""",
         {"eid": entity_id, "al": article_limit},

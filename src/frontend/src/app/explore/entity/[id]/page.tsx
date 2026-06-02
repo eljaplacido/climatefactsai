@@ -11,9 +11,9 @@
 // Powered by GET /api/semantic/entity/{entity_id} +
 // POST /api/semantic/explain.
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import {
   Network,
   ArrowLeft,
@@ -78,9 +78,19 @@ function typeStyle(t: string): string {
   return TYPE_COLOR[(t || "").toUpperCase()] || "bg-gray-100 text-gray-800 border-gray-200";
 }
 
-export default function EntityPage() {
+// useSearchParams (below) requires the route to opt out of static prerender
+// and the reader to sit under a Suspense boundary (Next.js 14).
+export const dynamic = "force-dynamic";
+
+function EntityPageInner() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const entityId = String(params?.id || "");
+  // When reached from an article's knowledge graph, ?from={articleId} lets the
+  // back link return to that article instead of dumping the user on home.
+  const fromArticle = searchParams?.get("from");
+  const backHref = fromArticle ? `/articles/${fromArticle}` : "/";
+  const backLabel = fromArticle ? "Back to article" : "Back home";
   const [data, setData] = useState<EntityProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -158,8 +168,8 @@ export default function EntityPage() {
     return (
       <div className="max-w-5xl mx-auto p-6">
         <p className="text-rose-700">Couldn&apos;t load entity: {error}</p>
-        <Link href="/" className="text-clilens-primary hover:underline mt-3 inline-block">
-          ← Back home
+        <Link href={backHref} className="text-clilens-primary hover:underline mt-3 inline-block">
+          ← {backLabel}
         </Link>
       </div>
     );
@@ -169,11 +179,11 @@ export default function EntityPage() {
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
       <Link
-        href="/"
+        href={backHref}
         className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
       >
         <ArrowLeft className="h-4 w-4 mr-1" />
-        Back
+        {backLabel}
       </Link>
 
       <header className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-6">
@@ -357,5 +367,13 @@ export default function EntityPage() {
         </ul>
       </section>
     </div>
+  );
+}
+
+export default function EntityPage() {
+  return (
+    <Suspense fallback={<div className="max-w-5xl mx-auto p-6 text-gray-500">Loading entity…</div>}>
+      <EntityPageInner />
+    </Suspense>
   );
 }

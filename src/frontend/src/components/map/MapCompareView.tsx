@@ -38,7 +38,7 @@ interface CompareCountryData {
   climate_risk: number;
   topic_count: number;
   top_topics: string[];
-  recent_articles: {
+  recent_articles?: {
     article_id: string;
     title: string;
     source_name: string;
@@ -444,7 +444,7 @@ export default function MapCompareView({
                       Recent from {country.country_name}
                     </h4>
                     <div className="space-y-2">
-                      {country.recent_articles.slice(0, 5).map((a) => (
+                      {(country.recent_articles || []).slice(0, 5).map((a) => (
                         <Link
                           key={a.article_id}
                           href={`/articles/${a.article_id}`}
@@ -467,7 +467,7 @@ export default function MapCompareView({
                           </div>
                         </Link>
                       ))}
-                      {country.recent_articles.length === 0 && (
+                      {(country.recent_articles || []).length === 0 && (
                         <p className="text-xs text-slate-500 text-center py-4">
                           No recent articles
                         </p>

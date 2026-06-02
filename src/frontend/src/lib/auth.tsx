@@ -172,8 +172,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (profile) {
           setToken(newToken);
           setUser(profile);
+          setLoading(false);
+          return;
         }
       }
+
+      // Both the stored token and refresh failed → the session is dead.
+      // Clear the stale token so the app renders as logged-out instead of
+      // looking authenticated while every protected call (saved/check,
+      // auth/me, analyze quota) 401s in the background.
+      clearTokens();
+      setUser(null);
+      setToken(null);
       setLoading(false);
     }
     init();

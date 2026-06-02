@@ -378,7 +378,7 @@ export default function KnowledgeGraphMini({ articleId }: Props) {
               {entities.map((e) => (
                 <Link
                   key={e.entity_id}
-                  href={`/explore/entity/${e.entity_id}`}
+                  href={`/explore/entity/${e.entity_id}?from=${articleId}`}
                   className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border transition-shadow hover:shadow-sm ${typeStyle(e.type)}`}
                   title={`${e.description || e.type} — click to explore connections`}
                 >

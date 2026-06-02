@@ -16,6 +16,7 @@ import QuotaCounter from './QuotaCounter'
 import UpgradeModal, { type UpgradeModalQuotaEnvelope } from './UpgradeModal'
 import { useQuota } from '@/lib/useQuota'
 import { useViewContext } from '@/lib/view-context'
+import { useAuth } from '@/lib/auth'
 
 // Per-reason icon emoji. Plain emoji on purpose — `lucide-react` doesn't
 // have great visual differentiators for "paywall" vs "JS-SPA" vs
@@ -61,6 +62,7 @@ export default function UrlAnalysisForm() {
   const [upgradeMessage, setUpgradeMessage] = useState<string | null>(null)
 
   const { setView, clearKey } = useViewContext()
+  const { isLoggedIn, loading: authLoading } = useAuth()
 
   // Publish the in-flight / completed analysis id into the shared view-context
   // so the chat assistant can answer "explain this analysis" without guessing.
@@ -243,6 +245,22 @@ export default function UrlAnalysisForm() {
       <h2 className="text-lg font-semibold text-gray-900 mb-4">
         Analyze Climate News URL
       </h2>
+
+      {!authLoading && !isLoggedIn && (
+        <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-sm text-amber-900 font-medium">Sign in to analyze URLs</p>
+          <p className="text-sm text-amber-800 mt-1">
+            URL credibility analysis is available on the Basic plan and above. Your
+            session may also have expired — sign in again to continue.
+          </p>
+          <a
+            href={`/login?redirect=${encodeURIComponent('/analyze')}`}
+            className="inline-block mt-2 text-sm font-medium text-amber-900 underline hover:text-amber-700"
+          >
+            Sign in →
+          </a>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>

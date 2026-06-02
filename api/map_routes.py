@@ -197,6 +197,9 @@ class CountryComparison(BaseModel):
     resource_efficiency_score: Optional[float] = None
     regenerative_score: Optional[float] = None
     sustainability_score: Optional[float] = None
+    # Recent articles for the side-by-side compare view. Keys match the
+    # frontend MapCompareView shape (overall_credibility, not `credibility`).
+    recent_articles: List[Dict[str, Any]] = []
 
 
 class CompareResponse(BaseModel):
@@ -1592,6 +1595,29 @@ async def compare_countries(
             def _cat_score(cat: str) -> float:
                 return round(min(10.0, category_breakdown.get(cat, 0) / 2.0), 1)
 
+            # Recent articles (5) for the side-by-side compare view. Frontend
+            # MapCompareView reads article_id/title/source_name/overall_credibility.
+            recent_articles: List[Dict[str, Any]] = []
+            try:
+                ra_rows = db.execute_query("""
+                    SELECT article_id, title, source_name, published_date, overall_credibility
+                    FROM articles
+                    WHERE country_code = :cc AND is_synthetic = FALSE AND is_off_topic = FALSE
+                    ORDER BY created_at DESC LIMIT 5
+                """, {"cc": cc})
+                recent_articles = [
+                    {
+                        "article_id": str(r["article_id"]),
+                        "title": r.get("title", ""),
+                        "source_name": r.get("source_name"),
+                        "published_date": str(r["published_date"]) if r.get("published_date") else None,
+                        "overall_credibility": r.get("overall_credibility") or "UNKNOWN",
+                    }
+                    for r in (ra_rows or [])
+                ]
+            except Exception:
+                pass
+
             results.append(CountryComparison(
                 country_code=cc,
                 country_name=country_names.get(cc, cc),
@@ -1610,6 +1636,7 @@ async def compare_countries(
                 resource_efficiency_score=_cat_score("resource_efficiency"),
                 regenerative_score=_cat_score("regenerative_economy"),
                 sustainability_score=_cat_score("sustainability"),
+                recent_articles=recent_articles,
             ))
         except Exception as e:
             logger.warning(f"Compare failed for {cc}: {e}")
