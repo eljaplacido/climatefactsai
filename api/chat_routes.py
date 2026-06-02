@@ -48,6 +48,14 @@ class ChatRequest(BaseModel):
             "deep_search_query, deep_search_compare, source_id, label."
         ),
     )
+    source_mode: Optional[str] = Field(
+        "platform",
+        description=(
+            "Where the answer is grounded: 'platform' (ingested corpus only — "
+            "default), 'web' (external web search via deep-search), or 'both' "
+            "(corpus + web). web/both consume the deep_research quota."
+        ),
+    )
 
 
 class ChatSource(BaseModel):
@@ -173,6 +181,36 @@ async def ask_general_question(
     # If view_context provides a country and the request didn't, use it as a
     # corpus filter so retrieval matches the user's focus.
     effective_country = request.country or hydrated_view.get("country_code")
+
+    # Source mode (user choice): platform corpus only (default), external web
+    # search, or both. web/both route through DeepSearchService (Perplexity +
+    # corpus synthesis) so the chat can ANSWER even when the corpus has no
+    # matching articles — the long-standing "no articles to reference" dead end.
+    source_mode = (request.source_mode or "platform").lower()
+    if source_mode in ("web", "both"):
+        web_resp = await _answer_via_deep_search(
+            db, request.question, effective_country, request.category,
+            user_id=user_id, user_tier=user_tier, source_mode=source_mode,
+            session_id=session_id, mode=mode,
+        )
+        if web_resp is not None:
+            _store_chat_message(db, session_id, "user", request.question)
+            _store_chat_message(
+                db, session_id, "assistant", web_resp.answer,
+                sources_used=[s.source_name for s in web_resp.sources[:5]],
+                article_ids=[s.article_id for s in web_resp.sources[:5] if s.article_id],
+                confidence=web_resp.confidence,
+            )
+            try:
+                UsageTracker.log_usage(
+                    user_id=user_id, usage_type="general_chat",
+                    metadata={"question": request.question[:100], "session_id": session_id,
+                              "mode": mode, "source_mode": source_mode},
+                )
+            except Exception:
+                pass
+            return web_resp
+        # web_resp is None → external path unavailable; fall through to platform.
 
     # Use HybridRAGService for retrieval when available, fall back to FTS
     sources = await _hybrid_search_articles(
@@ -348,6 +386,99 @@ async def delete_chat_session(
 
 
 # ── Internal helpers ──
+
+async def _answer_via_deep_search(
+    db,
+    question: str,
+    country: Optional[str],
+    category: Optional[str],
+    *,
+    user_id: str,
+    user_tier: str,
+    source_mode: str,
+    session_id: str,
+    mode: str,
+) -> Optional["ChatResponse"]:
+    """Answer a chat question through DeepSearchService (corpus + external web).
+
+    Returns a ChatResponse on success, or None to signal the caller to fall
+    back to the platform-only path (external provider unavailable / produced no
+    answer). Quota exhaustion is raised (429) so the user sees the upgrade hint
+    instead of a silent fallback.
+    """
+    # web/both make a paid external call → gate behind the deep_research quota.
+    # Professional/Enterprise are unlimited; anonymous/free get the upgrade hint.
+    try:
+        from api.quota_service import QuotaService
+        QuotaService.check_and_raise(
+            user_id=str(user_id) if user_id and user_id != "anonymous" else None,
+            tier=user_tier,
+            quota_key="deep_research",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.debug(f"deep_research quota check skipped (non-fatal): {exc}")
+
+    try:
+        from app.domains.intelligence.deep_search_service import DeepSearchService
+        service = DeepSearchService(db)
+        result = await service.search(
+            query=question,
+            country=country,
+            category=category,
+            include_weather=False,
+            limit=10,
+            include_hallucination_check=False,
+            include_refinements=False,
+            platform_only=False,  # web/both → external enrichment allowed
+        )
+    except Exception as exc:
+        logger.warning(f"chat web-mode deep search failed; falling back to platform: {exc}")
+        return None
+
+    answer = (result or {}).get("answer") or ""
+    if not answer:
+        return None
+
+    citations = (result or {}).get("citations") or []
+    sources: List[ChatSource] = []
+    web_urls: List[str] = []
+    for c in citations:
+        if c.get("type") == "internal_article" and c.get("article_id"):
+            sources.append(ChatSource(
+                article_id=str(c.get("article_id")),
+                title=c.get("title", ""),
+                source_name=c.get("source_name", ""),
+                credibility=c.get("credibility"),
+                relevance=float(c.get("relevance_score") or 0),
+            ))
+        elif c.get("type") == "external_web" and c.get("source_url"):
+            web_urls.append(c["source_url"])
+
+    # External web sources have no article page to link to via ChatSource, so
+    # surface them as a clickable footnote in the answer markdown.
+    if web_urls:
+        seen: set[str] = set()
+        uniq = [u for u in web_urls if not (u in seen or seen.add(u))][:6]
+        answer = answer.rstrip() + "\n\n**Web sources:**\n" + "\n".join(f"- {u}" for u in uniq)
+
+    internal_n = int((result or {}).get("internal_articles_count") or 0)
+    external_n = int((result or {}).get("external_sources_count") or 0)
+    confidence = round(min(0.9, 0.3 + 0.1 * (internal_n + external_n)), 2)
+    synth_model = ((result or {}).get("methodology") or {}).get("synthesis_model")
+
+    return ChatResponse(
+        session_id=session_id,
+        question=question,
+        answer=answer,
+        sources=sources[:5],
+        confidence=confidence,
+        model=synth_model,
+        created_at=datetime.utcnow().isoformat(),
+        mode=mode,
+    )
+
 
 async def _hybrid_search_articles(
     db, question: str, country: Optional[str], category: Optional[str]

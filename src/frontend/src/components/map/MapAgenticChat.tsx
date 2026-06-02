@@ -51,6 +51,9 @@ export default function MapAgenticChat({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // Corpus-only (default), external web search, or both — so the chat can
+  // answer broad questions even when no platform article matches.
+  const [sourceMode, setSourceMode] = useState<"platform" | "web" | "both">("platform");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -87,6 +90,7 @@ export default function MapAgenticChat({
           session_id: sessionId,
           limit: 30,
           view_context: viewContext,
+          source_mode: sourceMode,
         };
         if (selectedCountry) requestBody.countries = [selectedCountry];
 
@@ -151,7 +155,7 @@ export default function MapAgenticChat({
         setLoading(false);
       }
     },
-    [loading, sessionId, onHighlightCountries, selectedCountry, compareCountries]
+    [loading, sessionId, onHighlightCountries, selectedCountry, compareCountries, sourceMode]
   );
 
   function handleSubmit(e: React.FormEvent) {
@@ -320,6 +324,30 @@ export default function MapAgenticChat({
                 ))}
               </div>
             )}
+
+            {/* Source mode toggle */}
+            <div className="flex items-center gap-1.5 px-4 pt-3" role="group" aria-label="Answer source">
+              <span className="text-[11px] text-slate-400 mr-1">Answer from:</span>
+              {([
+                { key: "platform", label: "Platform" },
+                { key: "web", label: "Web" },
+                { key: "both", label: "Both" },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setSourceMode(opt.key)}
+                  aria-pressed={sourceMode === opt.key}
+                  className={`px-2 py-0.5 text-[11px] rounded-full border transition-colors ${
+                    sourceMode === opt.key
+                      ? "bg-teal-600 text-white border-teal-500"
+                      : "bg-slate-800 text-slate-300 border-slate-600 hover:bg-slate-700"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
 
             {/* Input */}
             <form

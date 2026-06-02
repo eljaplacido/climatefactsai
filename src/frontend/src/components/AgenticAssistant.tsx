@@ -178,6 +178,10 @@ export default function AgenticAssistant({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // Where the assistant grounds its answer: the platform corpus only, an
+  // external web search, or both. Lets the user always get an answer even when
+  // the corpus has no matching articles (the "no articles to reference" wall).
+  const [sourceMode, setSourceMode] = useState<"platform" | "web" | "both">("platform");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -387,6 +391,7 @@ export default function AgenticAssistant({
         question: userMessage.content,
         mode,
         session_id: sessionId,
+        source_mode: sourceMode,
       };
       if (currentCountry) body.country = currentCountry;
       if (hasViewContext) body.view_context = viewContext;
@@ -397,6 +402,7 @@ export default function AgenticAssistant({
           query: userMessage.content,
           session_id: sessionId,
           limit: 10,
+          source_mode: sourceMode,
         };
         if (currentCountry) {
           body.countries = [currentCountry];
@@ -760,6 +766,37 @@ export default function AgenticAssistant({
 
           {/* Input area inside expanded panel */}
           <div className="px-4 py-3 border-t border-slate-700/50">
+            {/* Source mode: corpus only / external web / both. Gives users a
+                guaranteed answer path when the corpus has no matching articles. */}
+            <div className="flex items-center gap-1.5 mb-2" role="group" aria-label="Answer source">
+              <span className="text-[11px] text-slate-400 mr-1">Answer from:</span>
+              {([
+                { key: "platform", label: "Platform" },
+                { key: "web", label: "Web" },
+                { key: "both", label: "Both" },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setSourceMode(opt.key)}
+                  aria-pressed={sourceMode === opt.key}
+                  title={
+                    opt.key === "platform"
+                      ? "Answer only from the platform's ingested sources"
+                      : opt.key === "web"
+                        ? "Answer using an external web search"
+                        : "Combine platform sources with a web search"
+                  }
+                  className={`px-2 py-0.5 text-[11px] rounded-full border transition-colors ${
+                    sourceMode === opt.key
+                      ? "bg-teal-600 text-white border-teal-500"
+                      : "bg-slate-800 text-slate-300 border-slate-600/50 hover:bg-slate-700"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
             <div className="flex items-center gap-2">
               <input
                 ref={inputRef}

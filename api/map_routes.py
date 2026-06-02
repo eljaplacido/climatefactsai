@@ -97,6 +97,13 @@ class MapQueryRequest(BaseModel):
             "agentic answer; same shape as /api/chat view_context."
         ),
     )
+    source_mode: Optional[str] = Field(
+        "platform",
+        description=(
+            "Answer grounding: 'platform' (corpus only — default), 'web' "
+            "(external web search), or 'both'. web/both use deep-search."
+        ),
+    )
 
 
 class MapQueryResponse(BaseModel):
@@ -721,6 +728,57 @@ async def query_map(
     Supports `session_id` for follow-up queries that maintain conversation context.
     """
     db = get_postgres()
+
+    # --- Source mode: external web / both --------------------------------------
+    # When the user picks "Web" or "Both", route the question through
+    # DeepSearchService (corpus + Perplexity synthesis) so the map chat can
+    # answer even when no platform article matches — instead of the
+    # "no articles to reference" dead end. Best-effort: on any failure we fall
+    # through to the platform-only path below.
+    source_mode = (getattr(request, "source_mode", None) or "platform").lower()
+    if request.query and source_mode in ("web", "both"):
+        try:
+            from app.domains.intelligence.deep_search_service import DeepSearchService
+            _ctx = request.view_context or {}
+            _country = None
+            if request.countries:
+                _country = request.countries[0]
+            elif isinstance(_ctx, dict) and isinstance(_ctx.get("country"), str):
+                _country = _ctx["country"]
+            ds = DeepSearchService(db)
+            ds_result = await ds.search(
+                query=request.query,
+                country=_country,
+                category=None,
+                include_weather=False,
+                limit=request.limit,
+                include_hallucination_check=False,
+                include_refinements=False,
+                platform_only=False,
+            )
+            ds_answer = (ds_result or {}).get("answer") or ""
+            if ds_answer:
+                web_urls = [
+                    c.get("source_url")
+                    for c in (ds_result.get("citations") or [])
+                    if c.get("type") == "external_web" and c.get("source_url")
+                ]
+                if web_urls:
+                    seen: set = set()
+                    uniq = [u for u in web_urls if not (u in seen or seen.add(u))][:6]
+                    ds_answer = ds_answer.rstrip() + "\n\n**Web sources:**\n" + "\n".join(f"- {u}" for u in uniq)
+                return MapQueryResponse(
+                    query=request.query,
+                    country_highlights=[],
+                    matching_articles=int((ds_result or {}).get("internal_articles_count") or 0),
+                    answer=ds_answer,
+                    highlighted_countries=[_country.upper()] if _country else [],
+                    filters_applied={"source_mode": source_mode},
+                    session_id=request.session_id,
+                    queried_at=datetime.utcnow().isoformat(),
+                )
+        except Exception as exc:
+            logger.warning(f"map web-mode deep search failed; falling back to platform: {exc}")
 
     # --- LLM-based query parsing for natural language queries -----------------
     parsed_filters: Dict[str, Any] = {}
