@@ -109,8 +109,27 @@ class SBTIAdapter:
         try:
             resp = await self.client.get(SBTI_CSV_URL)
             resp.raise_for_status()
-            reader = csv.DictReader(io.StringIO(resp.text))
-            for row in reader:
+            rows = list(csv.DictReader(io.StringIO(resp.text)))
+
+            # Pre-pass: a company is SBTi-VALIDATED when it has a row whose
+            # `status` is "Target set" (SBTi approved a science-based target).
+            # The dashboard splits a company across rows: action="Commitment"
+            # rows carry the lifecycle `status` (Target set / Active / Removed /
+            # Extended), while action="Target" rows carry the target DETAILS with
+            # status="NA". So the old condition (action=="target" AND
+            # status=="active") could NEVER match — Target rows are never
+            # "active" — which is why prod showed only the 9 seed companies as
+            # validated instead of ~3,900. Mark every disclosure of a validated
+            # company so the target-detail rows (target_year / value) are
+            # validated too, not just the bare commitment row.
+            validated_companies = {
+                (r.get("company_name") or "").strip().strip('"').lower()
+                for r in rows
+                if (r.get("status") or "").strip().lower() == "target set"
+                and (r.get("company_name") or "").strip()
+            }
+
+            for row in rows:
                 try:
                     name = (row.get("company_name") or "").strip().strip('"')
                     if not name:
@@ -141,28 +160,24 @@ class SBTIAdapter:
                         target_year or base_year
                         or _int((row.get("date_published") or "")[:4]) or 2024
                     )
-                    status = (row.get("status") or "").lower()
-                    action = (row.get("action") or "").lower()
+                    is_validated = name.lower() in validated_companies
+                    # Net-zero signal lives in target / commitment_type / type
+                    # (e.g. target="Net-zero", commitment_type="Net-zero"),
+                    # NOT only `type` — the old check on `type` alone missed
+                    # ~4,500 net-zero companies.
+                    is_net_zero = any(
+                        "net-zero" in (row.get(c) or "").lower()
+                        or "net zero" in (row.get(c) or "").lower()
+                        for c in ("target", "commitment_type", "type")
+                    )
                     upsert_disclosure(db, DisclosureRecord(
                         company_id=cid, source=SOURCE_NAME,
                         reporting_year=reporting_year,
-                        sbti_validated=(
-                            # SBTi-validated = the row IS a target (not just a
-                            # commitment), and status is active. Commitments
-                            # without targets aren't validation.
-                            action == "target" and status == "active"
-                        ),
+                        sbti_validated=is_validated,
                         target_year=target_year,
                         baseline_year=base_year,
                         target_pct_reduction=_float(row.get("target_value")),
-                        # target_value of 1.0 = 100% reduction = "net zero"
-                        # signal, but the explicit net-zero target lives
-                        # elsewhere; only set it when commitment_type marks it.
-                        net_zero_target_year=(
-                            target_year
-                            if "net zero" in (row.get("type") or "").lower()
-                            else None
-                        ),
+                        net_zero_target_year=target_year if is_net_zero else None,
                         methodology_version="sbti_corporate_net_zero_v1.2",
                         raw_record=dict(row),
                     ))
