@@ -21,6 +21,12 @@ class EmbeddingService:
     EMBEDDING_MODEL = "text-embedding-ada-002"
     EMBEDDING_DIM = 1536
 
+    # seq-6: free local embeddings on the GX10. bge-m3 is multilingual and
+    # 1024-dim; generated via the GX10's OpenAI-compatible Ollama endpoint
+    # (localhost:11434/v1 inside the embedding_worker — no OpenAI spend).
+    BGE_M3_MODEL = "bge-m3"
+    BGE_M3_DIM = 1024
+
     def __init__(self, db: Database):
         self.db = db
         self.api_key = os.getenv("OPENAI_API_KEY")
@@ -46,6 +52,97 @@ class EmbeddingService:
         except Exception as e:
             logger.error(f"Embedding generation failed: {e}")
             return None
+
+    async def generate_bge_m3_embedding(self, text: str) -> Optional[List[float]]:
+        """Generate a 1024-dim bge-m3 embedding via the GX10's OpenAI-compatible
+        Ollama endpoint (CLILENS_LOCAL_GX10_BASE_URL, default localhost:11434/v1).
+
+        Designed to run INSIDE the GX10 embedding_worker, where the base URL is
+        localhost — free, no OpenAI spend. Returns None on any failure so the
+        caller can skip the article and retry later.
+        """
+        base = os.getenv("CLILENS_LOCAL_GX10_BASE_URL", "http://localhost:11434/v1").rstrip("/")
+        api_key = os.getenv("CLILENS_LOCAL_GX10_API_KEY", "ollama")
+        model = os.getenv("CLILENS_EMBEDDING_MODEL", self.BGE_M3_MODEL)
+        truncated = (text or "")[:32000]
+        if not truncated.strip():
+            return None
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    f"{base}/embeddings",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json={"model": model, "input": truncated},
+                )
+                resp.raise_for_status()
+                emb = resp.json()["data"][0]["embedding"]
+            if len(emb) != self.BGE_M3_DIM:
+                logger.warning(
+                    "bge-m3 embedding dim %s != expected %s (model=%s)",
+                    len(emb), self.BGE_M3_DIM, model,
+                )
+                return None
+            return emb
+        except Exception as e:
+            logger.error(f"bge-m3 embedding generation failed: {e}")
+            return None
+
+    async def store_bge_m3_embedding(self, article_id: str, embedding: List[float]) -> bool:
+        """Store an article's bge-m3 embedding in the parallel column."""
+        try:
+            vector_str = "[" + ",".join(str(x) for x in embedding) + "]"
+            self.db.execute_update(
+                """UPDATE articles
+                   SET embedding_bge_m3 = :embedding::vector
+                   WHERE article_id = :article_id""",
+                {"embedding": vector_str, "article_id": article_id},
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to store bge-m3 embedding for {article_id}: {e}")
+            return False
+
+    async def populate_bge_m3_embedding(self, article_id: str) -> bool:
+        """Generate + store the bge-m3 embedding for one article (if missing)."""
+        rows = self.db.execute_query(
+            """SELECT title, excerpt, COALESCE(extracted_text, '') AS text
+               FROM articles
+               WHERE article_id = :id AND embedding_bge_m3 IS NULL""",
+            {"id": article_id},
+        )
+        if not rows:
+            return False
+        row = rows[0]
+        text = f"{row.get('title', '')}. {row.get('excerpt', '')} {row.get('text', '')}".strip()
+        embedding = await self.generate_bge_m3_embedding(text)
+        if not embedding:
+            return False
+        return await self.store_bge_m3_embedding(article_id, embedding)
+
+    async def batch_populate_bge_m3(self, limit: int = 25) -> dict:
+        """Embed the next `limit` non-synthetic articles missing a bge-m3 vector.
+
+        Returns {total_found, processed, failed} so the GX10 worker can decide
+        whether to sleep (corpus caught up) or run the next batch immediately.
+        """
+        rows = self.db.execute_query(
+            """SELECT article_id::text AS id
+               FROM articles
+               WHERE embedding_bge_m3 IS NULL
+                 AND is_synthetic = FALSE
+                 AND COALESCE(NULLIF(extracted_text, ''), excerpt, title) IS NOT NULL
+               ORDER BY created_at DESC NULLS LAST
+               LIMIT :n""",
+            {"n": limit},
+        ) or []
+        processed = failed = 0
+        for r in rows:
+            if await self.populate_bge_m3_embedding(r["id"]):
+                processed += 1
+            else:
+                failed += 1
+        return {"total_found": len(rows), "processed": processed, "failed": failed}
 
     async def store_embedding(self, article_id: str, embedding: List[float]) -> bool:
         """Store an article's embedding vector in the database."""
