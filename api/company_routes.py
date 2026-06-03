@@ -543,10 +543,18 @@ def _run_adapter_sync_blocking(source: str) -> None:
 async def trigger_adapter_sync(
     source: str,
     background_tasks: BackgroundTasks,
+    wait: bool = Query(
+        default=False,
+        description="Run synchronously (CPU stays allocated for the whole "
+        "request). Cloud Run throttles CPU to ~0 AFTER the 202 response, which "
+        "makes the background path crawl on the 38k-row SBTi sync (~a day); "
+        "wait=true completes it in minutes, bounded by the 1800s request timeout.",
+    ),
     x_corporate_sync_token: Optional[str] = Header(default=None),
 ):
-    """Schedule an adapter sync. Returns 202 immediately; sync runs in
-    background. Status checkable via GET /admin/sync/{source}."""
+    """Trigger an adapter sync. Default returns 202 (background); wait=true runs
+    it to completion in a worker thread and returns the outcome. Status also
+    checkable via GET /admin/sync/{source}."""
     expected = os.environ.get("CORPORATE_SYNC_TOKEN")
     if not expected:
         raise HTTPException(
@@ -571,6 +579,16 @@ async def trigger_adapter_sync(
                 "started_at": current.get("started_at"),
             },
         )
+    if wait:
+        # Run to completion in a worker thread while the REQUEST stays open, so
+        # Cloud Run keeps CPU allocated. asyncio.to_thread keeps the event loop
+        # free for other requests on this instance (the sync's DB calls are
+        # blocking psycopg2). _run_adapter_sync_blocking records _LAST_SYNC_RUN.
+        import asyncio
+        await asyncio.to_thread(_run_adapter_sync_blocking, source)
+        return JSONResponse(status_code=200, content=_LAST_SYNC_RUN.get(source, {
+            "status": "unknown", "source": source,
+        }))
     background_tasks.add_task(_run_adapter_sync_blocking, source)
     return JSONResponse(
         status_code=202,
