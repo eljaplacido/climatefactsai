@@ -141,6 +141,9 @@ steps:
       - "--update-env-vars=API_HOST=0.0.0.0"
       - "--update-env-vars=API_PORT=8000"
       - "--update-env-vars=CLILENS_ENRICHMENT_PROVIDER=local-gx10"
+      # seq-5 (2026-06-02) — stamp the deployed commit so /api/methodology
+      # returns a real git_revision (was null) for honest traceability.
+      - "--update-env-vars=GIT_COMMIT_SHA=$COMMIT_SHA"
       # F12a (2026-05-31) — analytics admin gate admits enterprise tier OR
       # emails here. Owner email so require_analytics_admin doesn't 403 the
       # operator out of their own /api/analytics/* dashboard. Additive flag.

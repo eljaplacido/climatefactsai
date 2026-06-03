@@ -79,9 +79,10 @@ class ReliabilityScorer:
     WEIGHT_VERIFIED_CLAIMS = 0.30
     WEIGHT_CONTENT_RELEVANCE = 0.20
 
-    # Threshold values
-    THRESHOLD_HIGH = 80
-    THRESHOLD_MEDIUM = 50
+    # Threshold values — sourced from the single credibility-threshold module
+    # (seq-5) so every credibility ladder in the codebase stays in lockstep.
+    from shared.credibility_thresholds import HIGH as THRESHOLD_HIGH  # noqa: E402
+    from shared.credibility_thresholds import MEDIUM as THRESHOLD_MEDIUM  # noqa: E402
 
     # Slice 4 (2026-05-25, Honest-Gap-Audit v2 item 4) — claim-density
     # honesty. An article with 1/1 verified claim used to score the same

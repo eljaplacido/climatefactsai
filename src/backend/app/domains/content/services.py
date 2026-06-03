@@ -198,10 +198,8 @@ class ArticleService:
         Returns:
             'high', 'medium', or 'low'
         """
-        if score >= 0.75:
-            return 'high'
-        elif score >= 0.45:
-            return 'medium'
-        else:
-            return 'low'
+        # Single source of truth (seq-5): was 0.75/0.45, now the canonical
+        # 0.80/0.50 so this label agrees with the URL + reliability scorers.
+        from shared.credibility_thresholds import level_for_unit
+        return level_for_unit(score).lower()
 

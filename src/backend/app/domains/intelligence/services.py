@@ -1302,13 +1302,10 @@ class VerificationService:
                 / len(claims)
             ) if claims else 0.5
 
-            # Determine level
-            if article_credibility >= 0.75:
-                credibility_level = "high"
-            elif article_credibility >= 0.45:
-                credibility_level = "medium"
-            else:
-                credibility_level = "low"
+            # Determine level via the single source of truth (seq-5):
+            # was 0.75/0.45, now the canonical 0.80/0.50.
+            from shared.credibility_thresholds import level_for_unit
+            credibility_level = level_for_unit(article_credibility).lower()
 
             # Aggregate decomposed confidence across all claims
             article_dc = None

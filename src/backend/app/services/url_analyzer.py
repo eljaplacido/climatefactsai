@@ -337,13 +337,11 @@ class URLAnalyzer:
         else:
             reliability_score = int((total_score / total_weight) * 100)
 
-        # Determine credibility level
-        if reliability_score >= 75:
-            credibility_level = "HIGH"
-        elif reliability_score >= 45:
-            credibility_level = "MEDIUM"
-        else:
-            credibility_level = "LOW"
+        # Determine credibility level via the single source of truth (seq-5):
+        # this path used 75/45, which disagreed with the canonical 80/50
+        # reliability_scorer for borderline scores (76 -> HIGH here, MEDIUM there).
+        from shared.credibility_thresholds import level_for
+        credibility_level = level_for(reliability_score)
 
         return (reliability_score, credibility_level)
 
