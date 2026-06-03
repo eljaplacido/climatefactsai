@@ -158,6 +158,10 @@ class CountryDetail(BaseModel):
     source_coverage: List[Dict[str, Any]] = []
     high_severity_claims: int = 0
     disputed_claims_ratio: Optional[float] = None
+    # seq-11 (2026-06-02): the panel's risk card read this but /detail never
+    # returned it (only /compare did), so every country showed 0/10. Now
+    # computed with the same _compute_climate_risk_score as compare + the layer.
+    climate_risk_score: Optional[float] = None
 
 
 class TrendPoint(BaseModel):
@@ -1414,6 +1418,8 @@ async def get_country_detail(cc: str):
     # --- Climate risk indicators from claims -----------------------------------
     high_severity = 0
     disputed_ratio: Optional[float] = None
+    total_claims = 0
+    disputed_count = 0
     try:
         risk_rows = db.execute_query("""
             SELECT
@@ -1428,12 +1434,21 @@ async def get_country_detail(cc: str):
             WHERE a.country_code = :cc
         """, {"cc": cc})
         if risk_rows and risk_rows[0]["total_claims"]:
-            tc = risk_rows[0]["total_claims"]
+            total_claims = risk_rows[0]["total_claims"]
             high_severity = risk_rows[0].get("high_severity", 0) or 0
-            disp = risk_rows[0].get("disputed", 0) or 0
-            disputed_ratio = round(disp / tc, 3) if tc > 0 else 0.0
+            disputed_count = risk_rows[0].get("disputed", 0) or 0
+            disputed_ratio = round(disputed_count / total_claims, 3) if total_claims > 0 else 0.0
     except Exception:
         pass
+
+    # seq-11: same risk formula as /compare + the choropleth layer so the panel's
+    # risk card matches the map coloring (was always 0/10 — field never returned).
+    climate_risk_score = _compute_climate_risk_score(
+        article_count=total,
+        claim_count=total_claims,
+        risky_claim_count=disputed_count,
+        avg_reliability=avg_cred,
+    )
 
     return CountryDetail(
         country_code=cc,
@@ -1451,6 +1466,7 @@ async def get_country_detail(cc: str):
         source_coverage=source_coverage,
         high_severity_claims=high_severity,
         disputed_claims_ratio=disputed_ratio,
+        climate_risk_score=climate_risk_score,
     )
 
 

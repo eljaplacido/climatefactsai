@@ -122,13 +122,33 @@ export default function MapCountryPanel({
       );
       if (res.ok) {
         const data = await res.json();
-        // Normalize potentially null fields to prevent Object.keys crashes
+        // Normalize potentially null fields + reconcile the API shape with the
+        // panel's expected fields (seq-11 — these mismatches blanked 3 cards):
+        //  - API returns `articles_by_category`, panel reads `category_breakdown`
+        //  - API returns flat `weather.temperature_anomaly_c`, panel reads a
+        //    `temperature_anomaly` object
         if (data) {
-          data.category_breakdown = data.category_breakdown || {};
+          data.category_breakdown =
+            data.category_breakdown || data.articles_by_category || {};
           data.source_coverage = data.source_coverage || [];
           data.article_count = data.article_count ?? 0;
           data.avg_credibility = data.avg_credibility ?? 0;
           data.climate_risk_score = data.climate_risk_score ?? 0;
+          if (
+            !data.temperature_anomaly &&
+            data.weather &&
+            typeof data.weather.temperature_anomaly_c === "number"
+          ) {
+            const dev = data.weather.temperature_anomaly_c;
+            data.temperature_anomaly = {
+              deviation_c: dev,
+              is_anomalous: Math.abs(dev) >= 2,
+              description:
+                dev >= 0
+                  ? `${dev.toFixed(1)}°C above the seasonal normal`
+                  : `${Math.abs(dev).toFixed(1)}°C below the seasonal normal`,
+            };
+          }
         }
         setDetail(data);
       }
