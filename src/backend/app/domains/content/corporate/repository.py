@@ -44,10 +44,17 @@ def upsert_company(db, name: str, **kwargs) -> str:
     )
     if existing:
         company_id = str(existing[0]["company_id"])
+        # Do NOT overwrite name/country_code here. They are the (lower(name),
+        # country_code) partial-unique dedup keys; re-setting them to the CSV
+        # values collides with a DIFFERENT existing row whenever the corpus has a
+        # residual duplicate (the mig 036/038/043/044 dedupe debt) — that
+        # UniqueViolation poisoned the whole SBTi sync (seq-7, 2026-06-04). The
+        # strong-id match (ticker/isin/lei) already identifies the company, so
+        # only refresh the sector.
         db.execute_update(
-            """UPDATE companies SET name = :name, country_code = :country_code,
-               sector_nace = :sector, updated_at = NOW() WHERE company_id = :id""",
-            {"name": name, "country_code": cc, "sector": sector, "id": company_id},
+            "UPDATE companies SET sector_nace = COALESCE(:sector, sector_nace), "
+            "updated_at = NOW() WHERE company_id = :id",
+            {"sector": sector, "id": company_id},
         )
         return company_id
 
