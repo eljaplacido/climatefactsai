@@ -315,10 +315,12 @@ class TestAnalyzerWithRealisticContext:
 
 class TestAdapterSyncEndpoint:
     def test_503_when_sync_token_env_unset(self, monkeypatch):
-        """Fail-safe default: if CORPORATE_SYNC_TOKEN is not set in the
-        environment, the endpoint is *off* (503). A fresh deploy can't
-        accidentally expose an unprotected ingestion trigger."""
+        """Fail-safe default: if NEITHER CORPORATE_SYNC_TOKEN nor SCHEDULER_SECRET
+        is set, the endpoint is *off* (503). A fresh deploy can't accidentally
+        expose an unprotected ingestion trigger. The endpoint accepts either
+        token (dual gate, a37813f), so both must be unset to assert the 503."""
         monkeypatch.delenv("CORPORATE_SYNC_TOKEN", raising=False)
+        monkeypatch.delenv("SCHEDULER_SECRET", raising=False)
         resp = client.post("/api/companies/admin/sync/sbti")
         assert resp.status_code == 503
         assert "CORPORATE_SYNC_TOKEN" in resp.json()["detail"]

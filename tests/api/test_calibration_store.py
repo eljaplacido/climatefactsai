@@ -168,7 +168,9 @@ class TestRefitAndPersist:
             {"label_truth": 0.0, "reliability_score": 40},
             {"label_truth": 1.0, "reliability_score": 75},
         ])
-        result = refit_and_persist(db, signal_name="reliability_score")
+        # min_labels default is 50 (production fence, commit 5dc7b12); this unit
+        # exercises the success path with the documented preview override.
+        result = refit_and_persist(db, signal_name="reliability_score", min_labels=5)
         assert result.status == "ok"
         assert result.n_labels == 5
         assert result.brier_score is not None
@@ -209,7 +211,8 @@ class TestRefitAndPersist:
             ],
             raise_on_insert=True,
         )
-        result = refit_and_persist(db, signal_name="reliability_score")
+        # min_labels=5 so we clear the fence and actually attempt the insert.
+        result = refit_and_persist(db, signal_name="reliability_score", min_labels=5)
         assert result.status == "error"
         assert result.n_labels == 5
         assert "simulated db error" in result.error
@@ -240,7 +243,12 @@ class TestGetLatestPlatt:
 
 class TestApplyLatestToReliability:
     def test_returns_calibrated_value_when_fit_exists(self):
-        db = _RecordingDB(select_rows=[{"platt_a": -2.0, "platt_b": 0.5}])
+        # apply_latest_to_reliability now routes through get_latest_fit_meta and
+        # only applies a *production-grade* (non-preview) fit (5dc7b12 fence), so
+        # the mock row must carry n_labels >= STABLE_FIT_MIN + is_preview=False.
+        db = _RecordingDB(select_rows=[
+            {"platt_a": -2.0, "platt_b": 0.5, "n_labels": 60, "is_preview": False}
+        ])
         calibrated = apply_latest_to_reliability(db, 80.0)
         assert calibrated is not None
         # apply_platt(0.8, A=-2, B=0.5) = 1 - sigmoid(-2*0.8 + 0.5) = 1 - sigmoid(-1.1)

@@ -418,7 +418,10 @@ def apply_latest_to_reliability(
         a = float(meta["platt_a"])
         b = float(meta["platt_b"])
         raw_unit = max(0.0, min(1.0, float(raw_reliability_score) / 100.0))
-        calibrated_unit = apply_platt(PlattParams(A=a, B=b), raw_unit)
+        # apply_platt signature is (raw_p, params) — raw first. Passing them in
+        # the wrong order raised TypeError, but it was latent: prod has no
+        # production-grade (non-preview) fit yet, so this line was never reached.
+        calibrated_unit = apply_platt(raw_unit, PlattParams(A=a, B=b))
         return round(calibrated_unit * 100.0, 1)
     except Exception as exc:
         _logger.debug(f"apply_latest_to_reliability failed: {exc}")

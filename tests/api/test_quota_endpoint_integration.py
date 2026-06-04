@@ -46,17 +46,19 @@ class TestQuotaSummaryEndpoint:
             assert q["allowed"] is False
             assert q["upgrade_url"] == "/dashboard/subscription"
 
-    def test_anonymous_covers_all_five_quota_keys(self):
+    def test_anonymous_covers_all_quota_keys(self):
         resp = client.get("/api/quota")
         body = resp.json()
         keys = {q["quota_key"] for q in body["quotas"]}
-        # The 3/3/2 decision + url_analysis + compare = 5 keys
+        # The 3/3/2 decision + url_analysis + compare + insights_extraction
+        # (added with the gated /analyze-text endpoint, audit seq-3) = 6 keys.
         assert keys == {
             "saved_articles",
             "saved_searches",
             "deep_research",
             "url_analysis",
             "compare",
+            "insights_extraction",
         }
 
     def test_single_quota_endpoint_returns_one_key(self):

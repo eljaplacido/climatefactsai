@@ -22,6 +22,17 @@ from fastapi.testclient import TestClient
 from api.main import app
 
 
+@pytest.fixture(autouse=True)
+def _bypass_url_quota(monkeypatch):
+    """These tests exercise URL-analysis submission/validation mechanics, not the
+    freemium quota gate (covered in test_quota_endpoint_integration). Anonymous
+    url_analysis quota is 0 (2026-05-23 freemium tightening), which would 429
+    every submission here — bypass the gate so the pipeline assertions run."""
+    from api.quota_service import QuotaService
+
+    monkeypatch.setattr(QuotaService, "check_and_raise", lambda *a, **k: None)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -275,9 +286,12 @@ class TestFetchUrlContentLimits:
         assert len(result["text"]) > 50000
 
     @pytest.mark.asyncio
-    async def test_declared_content_length_above_limit_returns_400(self, monkeypatch):
+    async def test_declared_content_length_above_limit_raises_too_large(self, monkeypatch):
         from api import url_analysis_routes
-        from fastapi import HTTPException
+        from api.url_analysis_routes import (
+            URLFetchException,
+            FAILURE_REASON_RESPONSE_TOO_LARGE,
+        )
 
         class _FakeResponse:
             def __init__(self):
@@ -302,10 +316,12 @@ class TestFetchUrlContentLimits:
         monkeypatch.setenv("URL_ANALYSIS_MAX_RESPONSE_BYTES", str(10 * 1024 * 1024))
         monkeypatch.setattr(url_analysis_routes.httpx, "AsyncClient", lambda *a, **kw: _FakeClient())
 
-        with pytest.raises(HTTPException) as exc:
+        # fetch_url_content now raises the structured URLFetchException
+        # (response_too_large) instead of a bare HTTPException(400); the route
+        # maps it to the structured failure envelope. See test_url_analysis_failures.
+        with pytest.raises(URLFetchException) as exc:
             await url_analysis_routes.fetch_url_content("https://example.com/too-big")
-        assert exc.value.status_code == 400
-        assert "Response too large" in str(exc.value.detail)
+        assert exc.value.reason == FAILURE_REASON_RESPONSE_TOO_LARGE
 
     @pytest.mark.asyncio
     async def test_text_is_capped_by_configured_char_limit(self, monkeypatch):

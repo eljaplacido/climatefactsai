@@ -497,7 +497,12 @@ class TestCalibrationAdminEndpoints:
 
         prior = self._swap_db(_EnoughLabelsDB())
         try:
-            r = client.post("/api/methodology/calibration/refit?signal=reliability_score")
+            # min_labels default is 50 (production fence, commit 5dc7b12); this
+            # test exercises the success path with the documented preview
+            # override so 5 labels still produce an 'ok' fit.
+            r = client.post(
+                "/api/methodology/calibration/refit?signal=reliability_score&min_labels=5"
+            )
             assert r.status_code == 200
             body = r.json()
             assert body["status"] == "ok"
