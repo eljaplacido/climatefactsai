@@ -101,12 +101,12 @@ async def get_current_subscription(
         result = db.execute_query(
             """
             SELECT
-                subscription_tier,
-                subscription_status,
+                tier,
+                status,
                 stripe_customer_id,
                 stripe_subscription_id,
-                subscription_start_date,
-                subscription_end_date,
+                current_period_start,
+                current_period_end,
                 cancel_at_period_end
             FROM subscriptions
             WHERE user_id = :user_id
@@ -121,10 +121,10 @@ async def get_current_subscription(
 
         row = result[0]
         return SubscriptionInfo(
-            tier=row.get("subscription_tier") or "freemium",
-            status=row.get("subscription_status") or "active",
-            current_period_start=row.get("subscription_start_date"),
-            current_period_end=row.get("subscription_end_date"),
+            tier=row.get("tier") or "freemium",
+            status=row.get("status") or "active",
+            current_period_start=row.get("current_period_start"),
+            current_period_end=row.get("current_period_end"),
             cancel_at_period_end=row.get("cancel_at_period_end", False),
             stripe_customer_id=row.get("stripe_customer_id"),
             stripe_subscription_id=row.get("stripe_subscription_id")
@@ -159,7 +159,7 @@ async def create_subscription(
     try:
         # Check if user already has subscription
         existing = db.execute_query(
-            "SELECT id FROM subscriptions WHERE user_id = :user_id AND subscription_status = 'active'",
+            "SELECT subscription_id FROM subscriptions WHERE user_id = :user_id AND status = 'active'",
             params={"user_id": current_user["user_id"]}
         )
 
@@ -223,10 +223,10 @@ async def create_subscription(
         db.execute_update(
             """
             INSERT INTO subscriptions (
-                id, user_id, subscription_tier, subscription_status,
+                subscription_id, user_id, tier, status,
                 stripe_customer_id, stripe_subscription_id,
-                stripe_price_id, subscription_start_date,
-                subscription_end_date, created_at, updated_at
+                stripe_price_id, current_period_start,
+                current_period_end, created_at, updated_at
             ) VALUES (
                 :id, :user_id, :tier, :status,
                 :stripe_customer_id, :stripe_subscription_id,
@@ -291,9 +291,9 @@ async def upgrade_subscription(
         # Get current subscription
         current = db.execute_query(
             """
-            SELECT id, stripe_subscription_id, subscription_tier
+            SELECT subscription_id, stripe_subscription_id, tier
             FROM subscriptions
-            WHERE user_id = :user_id AND subscription_status = 'active'
+            WHERE user_id = :user_id AND status = 'active'
             ORDER BY created_at DESC
             LIMIT 1
             """,
@@ -308,7 +308,7 @@ async def upgrade_subscription(
 
         row = current[0]
 
-        if row["subscription_tier"] == request.new_tier:
+        if row["tier"] == request.new_tier:
             raise HTTPException(
                 status_code=400,
                 detail="Already subscribed to this tier"
@@ -342,12 +342,12 @@ async def upgrade_subscription(
         db.execute_update(
             """
             UPDATE subscriptions
-            SET subscription_tier = :tier,
+            SET tier = :tier,
                 stripe_price_id = :price_id,
                 updated_at = NOW()
-            WHERE id = :id
+            WHERE subscription_id = :id
             """,
-            params={"tier": request.new_tier, "price_id": new_price_id, "id": row["id"]}
+            params={"tier": request.new_tier, "price_id": new_price_id, "id": row["subscription_id"]}
         )
 
         # Update user tier
@@ -357,7 +357,7 @@ async def upgrade_subscription(
         )
 
         logger.info(
-            f"Subscription upgraded: {row['subscription_tier']} -> {request.new_tier} "
+            f"Subscription upgraded: {row['tier']} -> {request.new_tier} "
             f"for user {current_user['user_id']}"
         )
 
@@ -396,9 +396,9 @@ async def cancel_subscription(
         # Get current subscription
         current = db.execute_query(
             """
-            SELECT id, stripe_subscription_id, subscription_end_date
+            SELECT subscription_id, stripe_subscription_id, current_period_end
             FROM subscriptions
-            WHERE user_id = :user_id AND subscription_status = 'active'
+            WHERE user_id = :user_id AND status = 'active'
             ORDER BY created_at DESC
             LIMIT 1
             """,
@@ -428,17 +428,17 @@ async def cancel_subscription(
         db.execute_update(
             """
             UPDATE subscriptions
-            SET subscription_status = :status,
+            SET status = :status,
                 cancel_at_period_end = :cancel_at_end,
-                canceled_at = :canceled_at,
+                cancelled_at = :cancelled_at,
                 updated_at = NOW()
-            WHERE id = :id
+            WHERE subscription_id = :id
             """,
             params={
                 "status": new_status,
                 "cancel_at_end": not immediate,
-                "canceled_at": datetime.utcnow() if immediate else None,
-                "id": row["id"],
+                "cancelled_at": datetime.utcnow() if immediate else None,
+                "id": row["subscription_id"],
             }
         )
 
@@ -457,7 +457,7 @@ async def cancel_subscription(
         return {
             "message": "Subscription canceled successfully",
             "immediate": immediate,
-            "access_until": row.get("subscription_end_date") if not immediate else None
+            "access_until": row.get("current_period_end") if not immediate else None
         }
 
     except stripe.error.StripeError as e:
@@ -497,7 +497,7 @@ async def get_payment_history(
         results = db.execute_query(
             """
             SELECT
-                id, amount, currency, status,
+                payment_id, amount_cents, currency, status,
                 description, invoice_url, created_at
             FROM payment_history
             WHERE user_id = :user_id
@@ -509,8 +509,8 @@ async def get_payment_history(
 
         return [
             PaymentHistoryItem(
-                id=row["id"],
-                amount=float(row.get("amount", 0)) / 100,  # Convert cents to dollars
+                id=str(row["payment_id"]),
+                amount=float(row.get("amount_cents", 0)) / 100,  # Convert cents to dollars
                 currency=row.get("currency", "usd"),
                 status=row.get("status", "unknown"),
                 description=row.get("description", ""),
@@ -571,8 +571,8 @@ async def stripe_webhook(
         db.execute_update(
             """
             UPDATE subscriptions
-            SET subscription_status = :status,
-                subscription_end_date = :end_date,
+            SET status = :status,
+                current_period_end = :end_date,
                 updated_at = NOW()
             WHERE stripe_subscription_id = :stripe_id
             """,
@@ -592,7 +592,7 @@ async def stripe_webhook(
         db.execute_update(
             """
             UPDATE subscriptions
-            SET subscription_status = 'canceled',
+            SET status = 'canceled',
                 updated_at = NOW()
             WHERE stripe_subscription_id = :stripe_id
             """,
@@ -623,7 +623,7 @@ async def stripe_webhook(
             db.execute_update(
                 """
                 INSERT INTO payment_history (
-                    id, user_id, stripe_invoice_id, amount, currency,
+                    payment_id, user_id, stripe_invoice_id, amount_cents, currency,
                     status, description, invoice_url, created_at
                 ) VALUES (
                     :id, :user_id, :invoice_id, :amount, :currency,
@@ -658,7 +658,7 @@ async def stripe_webhook(
             db.execute_update(
                 """
                 INSERT INTO payment_history (
-                    id, user_id, stripe_invoice_id, amount, currency,
+                    payment_id, user_id, stripe_invoice_id, amount_cents, currency,
                     status, description, created_at
                 ) VALUES (
                     :id, :user_id, :invoice_id, :amount, :currency,

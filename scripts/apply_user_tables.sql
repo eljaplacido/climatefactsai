@@ -160,6 +160,7 @@ CREATE TABLE IF NOT EXISTS payment_history (
     currency VARCHAR(3) DEFAULT 'EUR',
     status VARCHAR(20) NOT NULL,
     description TEXT,
+    invoice_url TEXT,
     paid_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

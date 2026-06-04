@@ -321,6 +321,9 @@ CREATE TABLE IF NOT EXISTS payment_history (
     -- Description
     description TEXT,
 
+    -- Stripe hosted invoice link (surfaced by /api/subscription/history)
+    invoice_url TEXT,
+
     -- Timestamps
     paid_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
