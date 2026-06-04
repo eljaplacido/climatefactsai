@@ -19,41 +19,38 @@ import pytest
 # Helpers
 # ---------------------------------------------------------------------------
 
-class _FakeChoice:
-    def __init__(self, content: str):
-        self.message = type("M", (), {"content": content})
+class _FakeChatChain:
+    """Captures the prompts passed to llm_chat_with_fallback (the chain the chat
+    route uses since the 2026-05-28 fallback refactor) and returns a canned
+    (answer, provider, model) tuple.
 
-
-class _FakeResponse:
-    def __init__(self, content: str = "Hydrated answer."):
-        self.choices = [_FakeChoice(content)]
-
-
-class _FakeLLMClient:
-    """Captures the args of every chat.completions.create call."""
+    Exposes ``.calls[i]["messages"]`` as ``[{system}, {user}]`` so the existing
+    system-prompt assertions keep working without change."""
 
     def __init__(self, content: str = "Hydrated answer."):
         self.calls: List[Dict[str, Any]] = []
         self.content = content
-        self.chat = type(
-            "Chat", (),
-            {"completions": type("C", (), {"create": self._create})()},
-        )()
 
-    def _create(self, **kwargs):
-        self.calls.append(kwargs)
-        return _FakeResponse(self.content)
+    def __call__(self, *, system_prompt: str, user_prompt: str, **kwargs):
+        self.calls.append({
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            **kwargs,
+        })
+        return (self.content, "fake-provider", "fake-model")
 
 
-def _stub_llm(monkeypatch, fake_client: Optional[_FakeLLMClient] = None):
-    """Patch get_llm_client used by both chat_routes & llm_client module."""
-    fake_client = fake_client or _FakeLLMClient()
+def _stub_llm(monkeypatch, fake_client: Optional["_FakeChatChain"] = None):
+    """Patch llm_chat_with_fallback so chat tests capture the prompts without a
+    network call. (Was get_llm_client until the route moved to the fallback
+    chain in the 2026-05-28 refactor — patching get_llm_client no longer
+    intercepts the answer path, which silently broke these tests.)"""
+    fake_client = fake_client or _FakeChatChain()
 
     import app.domains.intelligence.llm_client as llm_mod
-    monkeypatch.setattr(
-        llm_mod, "get_llm_client",
-        lambda: (fake_client, "fake-model"),
-    )
+    monkeypatch.setattr(llm_mod, "llm_chat_with_fallback", fake_client)
     return fake_client
 
 
@@ -241,15 +238,14 @@ class TestChatViewContext:
         system_prompt = next(m["content"] for m in messages if m["role"] == "system")
         assert "URL analysis open" in system_prompt or "X article" in system_prompt
 
-    def test_no_llm_key_returns_error_payload(
+    def test_no_llm_providers_returns_error_payload(
         self, client, chat_db, monkeypatch
     ):
-        """When get_llm_client returns (None, model), the chat route returns
-        a structured error payload instead of crashing."""
+        """When the whole fallback chain fails (llm_chat_with_fallback returns
+        None — no provider usable), the chat route returns a structured error
+        payload instead of crashing."""
         import app.domains.intelligence.llm_client as llm_mod
-        monkeypatch.setattr(
-            llm_mod, "get_llm_client", lambda: (None, "no-model")
-        )
+        monkeypatch.setattr(llm_mod, "llm_chat_with_fallback", lambda **kw: None)
 
         resp = client.post(
             "/api/chat",
@@ -258,8 +254,8 @@ class TestChatViewContext:
         # Route still returns 200 (the error is encoded in the body)
         assert resp.status_code == 200
         data = resp.json()
-        assert data.get("error") == "no_api_key"
-        assert "no LLM API key" in data["answer"] or "unavailable" in data["answer"].lower()
+        assert data.get("error") == "all_providers_failed"
+        assert "unavailable" in data["answer"].lower()
 
     def test_session_id_is_reused_for_multi_turn(
         self, client, chat_db, monkeypatch
