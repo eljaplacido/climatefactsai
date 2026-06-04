@@ -102,3 +102,58 @@ async def get_fallbacks(
         ],
         "total": len(rows or []),
     }
+
+
+@router.get("/cost")
+async def get_cost(
+    x_corporate_sync_token: Optional[str] = Header(default=None),
+    window_hours: int = 24,
+):
+    """LLM spend telemetry (seq-8). Aggregates llm_cost_log by provider over the
+    window, showing the cloud-vs-GX10(free) split + estimated USD. Makes the
+    enrichment/embeddings→GX10 savings visible and surfaces a deep-search
+    Anthropic runaway before it shows up on a bill."""
+    _auth(x_corporate_sync_token)
+    window_hours = max(1, min(window_hours, 24 * 90))
+    db = get_postgres()
+    try:
+        rows = db.execute_query(
+            """SELECT provider,
+                      COUNT(*)               AS calls,
+                      SUM(prompt_tokens)     AS prompt_tokens,
+                      SUM(completion_tokens) AS completion_tokens,
+                      SUM(est_cost_usd)      AS est_cost_usd
+                 FROM llm_cost_log
+                WHERE created_at >= NOW() - (:hrs || ' hours')::interval
+                GROUP BY provider
+                ORDER BY est_cost_usd DESC NULLS LAST""",
+            {"hrs": window_hours},
+        )
+    except Exception as exc:
+        logger.warning(f"llm_cost_log query failed (table may be unmigrated): {exc}")
+        return {"window_hours": window_hours, "by_provider": [], "total_usd": 0.0,
+                "note": "no cost data yet (llm_cost_log empty or unmigrated)"}
+
+    by_provider = [
+        {
+            "provider": r["provider"],
+            "calls": int(r.get("calls") or 0),
+            "prompt_tokens": int(r.get("prompt_tokens") or 0),
+            "completion_tokens": int(r.get("completion_tokens") or 0),
+            "est_cost_usd": round(float(r.get("est_cost_usd") or 0), 4),
+        }
+        for r in (rows or [])
+    ]
+    total_usd = round(sum(p["est_cost_usd"] for p in by_provider), 4)
+    paid = round(sum(p["est_cost_usd"] for p in by_provider if p["provider"] != "local-gx10"), 4)
+    free_calls = sum(p["calls"] for p in by_provider if p["provider"] == "local-gx10")
+    total_calls = sum(p["calls"] for p in by_provider)
+    return {
+        "window_hours": window_hours,
+        "by_provider": by_provider,
+        "total_usd": total_usd,
+        "paid_usd": paid,
+        "free_gx10_calls": free_calls,
+        "total_calls": total_calls,
+        "gx10_offload_pct": round(100.0 * free_calls / total_calls, 1) if total_calls else 0.0,
+    }

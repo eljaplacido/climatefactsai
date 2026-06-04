@@ -25,6 +25,37 @@ except ImportError:
     logger.error("openai package not installed — LLM features unavailable")
 
 
+# --- Cost telemetry (seq-8, 2026-06-04) -------------------------------------
+# USD per 1,000,000 tokens (input, output). Rough public list prices — the goal
+# is relative visibility (cloud spend vs the free on-prem GX10), not invoicing
+# accuracy. Keyed by provider with a representative model rate; local-gx10 free.
+_COST_RATES_PER_M = {
+    "deepseek": (0.14, 0.28),       # deepseek-chat
+    "openai": (0.15, 0.60),         # gpt-4o-mini
+    "anthropic": (3.00, 15.00),     # claude sonnet-class
+    "local-gx10": (0.0, 0.0),       # free, on-prem
+}
+
+
+def _record_cost(provider: str, model: str, usage, purpose: str) -> None:
+    """Best-effort: write one llm_cost_log row for a successful provider call.
+    Never raises — telemetry must never break the LLM path."""
+    try:
+        pt = int(getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0) or 0)
+        ct = int(getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0) or 0)
+        rate_in, rate_out = _COST_RATES_PER_M.get(provider, (0.0, 0.0))
+        cost = (pt / 1_000_000.0) * rate_in + (ct / 1_000_000.0) * rate_out
+        from shared.database import get_postgres
+        get_postgres().execute_update(
+            "INSERT INTO llm_cost_log (provider, model, purpose, prompt_tokens, "
+            "completion_tokens, est_cost_usd) VALUES (:p, :m, :purpose, :pt, :ct, :cost)",
+            {"p": provider, "m": model, "purpose": purpose,
+             "pt": pt, "ct": ct, "cost": round(cost, 6)},
+        )
+    except Exception as exc:
+        logger.debug(f"llm cost telemetry skipped: {exc}")
+
+
 def _provider_order(pin: Optional[str] = None) -> List[str]:
     """Resolve the provider chain order from env or argument.
 
@@ -103,6 +134,7 @@ def llm_chat_with_fallback(
     max_tokens: int = 1200,
     temperature: float = 0.3,
     provider_pin: Optional[str] = None,
+    purpose: str = "llm_chat",
 ) -> Optional[Tuple[str, str, str]]:
     """
     Multi-provider chat completion with auto-fallback.
@@ -157,6 +189,7 @@ def llm_chat_with_fallback(
                     ).strip()
                 if text:
                     logger.info(f"local-gx10 chat OK ({len(text)} chars)")
+                    _record_cost("local-gx10", model, getattr(response, "usage", None), purpose)
                     return text, "local-gx10", model
 
             elif provider == "deepseek":
@@ -182,6 +215,7 @@ def llm_chat_with_fallback(
                 )
                 text = (response.choices[0].message.content or "").strip()
                 if text:
+                    _record_cost("deepseek", model, getattr(response, "usage", None), purpose)
                     return text, "deepseek", model
 
             elif provider == "openai":
@@ -204,6 +238,7 @@ def llm_chat_with_fallback(
                 )
                 text = (response.choices[0].message.content or "").strip()
                 if text:
+                    _record_cost("openai", model, getattr(response, "usage", None), purpose)
                     return text, "openai", model
 
             elif provider == "anthropic":
@@ -228,6 +263,7 @@ def llm_chat_with_fallback(
                 if message.content:
                     text = message.content[0].text.strip()
                     if text:
+                        _record_cost("anthropic", model, getattr(message, "usage", None), purpose)
                         return text, "anthropic", model
 
         except Exception as exc:
