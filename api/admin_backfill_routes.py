@@ -907,3 +907,109 @@ async def backfill_relevance_flag(
         "by_source": by_source,
         "detail": detail,
     }
+
+
+# ---------------------------------------------------------------------------
+# Source-health canary (seq-9) — probe every feed, auto-disable dead ones.
+# ---------------------------------------------------------------------------
+
+@router.post("/scheduler/source-health")
+async def trigger_source_health(
+    background_tasks: BackgroundTasks,
+    wait: bool = Query(
+        default=False,
+        description=(
+            "wait=true probes all feeds in a worker thread and returns the "
+            "summary (use for the cron, which the Cloud Run instance must stay "
+            "alive for); default returns 202 and runs in the background."
+        ),
+    ),
+    threshold: int = Query(default=5, ge=2, le=20),
+    x_corporate_sync_token: Optional[str] = Header(default=None),
+    x_scheduler_secret: Optional[str] = Header(default=None),
+):
+    """Run the source-health canary: probe every active feed in
+    rss_feed_registry, record HTTP status + entry count + last-success, and
+    auto-disable any feed that has failed `threshold` consecutive probes.
+
+    seq-9: dead feeds were polled forever (fetch_error_count was written by the
+    ingestion path but never acted on). Cadence target: daily via cn-source-health.
+    """
+    _auth(x_corporate_sync_token, x_scheduler_secret)
+    db = get_postgres()
+
+    from app.domains.content.source_health import run_source_health_canary
+
+    if wait:
+        summary = await asyncio.to_thread(
+            run_source_health_canary, db, threshold=threshold
+        )
+        return {"status": "completed", **summary}
+
+    async def _run():
+        try:
+            summary = await asyncio.to_thread(
+                run_source_health_canary, db, threshold=threshold
+            )
+            logger.info(f"scheduler/source-health: {summary}")
+        except Exception as exc:
+            logger.error(f"scheduler/source-health failed: {exc}")
+
+    background_tasks.add_task(_run)
+    return {
+        "status": "queued",
+        "task": "source_health_canary",
+        "note": "Probing feeds in the background; GET /api/admin/source-health for the snapshot.",
+    }
+
+
+@router.get("/source-health")
+async def get_source_health():
+    """Per-feed liveness snapshot from the registry — public (feed URLs are
+    already public; no secrets surfaced). Aggregate counts + the unhealthy tail
+    so ops can see dead/at-risk feeds without triggering a probe."""
+    db = get_postgres()
+    try:
+        rows = db.execute_query(
+            """
+            SELECT feed_name, feed_url, region, country_code, reliability_tier,
+                   is_active, fetch_error_count, last_fetched_at, last_success_at,
+                   last_item_count, last_http_status, last_check_error
+            FROM rss_feed_registry
+            ORDER BY is_active DESC, fetch_error_count DESC, feed_name
+            """,
+            {},
+        )
+    except Exception as exc:
+        logger.warning(f"source-health snapshot query failed: {exc}")
+        return {"total": 0, "active": 0, "disabled": 0, "at_risk": 0, "feeds": []}
+
+    rows = rows or []
+    active = sum(1 for r in rows if r.get("is_active"))
+    disabled = sum(1 for r in rows if not r.get("is_active"))
+    at_risk = sum(
+        1 for r in rows
+        if r.get("is_active") and int(r.get("fetch_error_count") or 0) > 0
+    )
+    return {
+        "total": len(rows),
+        "active": active,
+        "disabled": disabled,
+        "at_risk": at_risk,
+        "feeds": [
+            {
+                "feed_name": r.get("feed_name"),
+                "region": r.get("region"),
+                "country_code": r.get("country_code"),
+                "reliability_tier": r.get("reliability_tier"),
+                "is_active": r.get("is_active"),
+                "fetch_error_count": r.get("fetch_error_count"),
+                "last_fetched_at": str(r["last_fetched_at"]) if r.get("last_fetched_at") else None,
+                "last_success_at": str(r["last_success_at"]) if r.get("last_success_at") else None,
+                "last_item_count": r.get("last_item_count"),
+                "last_http_status": r.get("last_http_status"),
+                "last_check_error": r.get("last_check_error"),
+            }
+            for r in rows
+        ],
+    }

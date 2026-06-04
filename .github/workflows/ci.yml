@@ -93,6 +93,7 @@ jobs:
             tests/api/test_agentic_skill_pin.py \
             tests/api/test_chat_actions_parse.py \
             tests/api/test_subscription_schema_alignment.py \
+            tests/api/test_source_health.py \
             tests/api/test_aoi_service.py \
             tests/api/test_aoi_poll_service.py \
             tests/api/test_scheduler_aoi_poll.py \

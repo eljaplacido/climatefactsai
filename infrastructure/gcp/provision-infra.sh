@@ -307,6 +307,13 @@ ensure_scheduler_job "cn-ner-extract"        "/api/admin/scheduler/extract-entit
 # 06:00 UTC, off-peak and after the daily backfills have settled.
 ensure_scheduler_job "cn-sbti-sync"          "/api/companies/admin/sync/sbti?wait=true"       "0 6 1 * *"    "Monthly SBTi validated-targets re-sync — POST /api/companies/admin/sync/sbti (seq-7)" "1800s"
 
+# Source-health canary (seq-9, 2026-06-04). Probes every rss_feed_registry feed
+# (HTTP status + entry count), records last-success, and auto-disables a feed
+# after N consecutive failures — dead feeds were polled forever. Network-bound
+# across ~50 feeds, so wait=true (keep the instance alive) + a deadline above the
+# 180s gcloud default. Daily at 07:00 UTC, after the overnight backfills settle.
+ensure_scheduler_job "cn-source-health"      "/api/admin/scheduler/source-health?wait=true"   "0 7 * * *"    "Daily RSS feed-liveness canary + auto-disable dead feeds (seq-9)" "1800s"
+
 # ---------------------------------------------------------------------------
 # 8. Grant Cloud Scheduler permission to invoke Cloud Run
 # ---------------------------------------------------------------------------

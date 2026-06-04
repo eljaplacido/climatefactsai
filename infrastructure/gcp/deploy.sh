@@ -105,6 +105,7 @@ update_scheduler_urls() {
         "cn-html-backfill:/api/admin/backfill/extracted-text-html"
         "cn-ner-extract:/api/admin/scheduler/extract-entities"
         "cn-sbti-sync:/api/companies/admin/sync/sbti?wait=true"
+        "cn-source-health:/api/admin/scheduler/source-health?wait=true"
     )
 
     for entry in "${jobs[@]}"; do
