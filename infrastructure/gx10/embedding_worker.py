@@ -119,11 +119,16 @@ async def main() -> int:
             logger.info("Hit MAX_BATCHES=%s; exiting cleanly", MAX_BATCHES)
             break
 
-        if summary.get("total_found", 0) == 0:
+        found = summary.get("total_found", 0)
+        processed = summary.get("processed", 0)
+        # Back off when caught up (found==0) OR when no article in the batch could
+        # be embedded (processed==0, e.g. Ollama 500s on a permanently-bad row) —
+        # otherwise a single failing article hot-loops the GPU forever.
+        if found == 0 or processed == 0:
             consecutive_empty += 1
+            reason = "no articles to embed" if found == 0 else f"batch made no progress ({found} failed)"
             sleep_s = min(IDLE_SLEEP * (2 ** min(consecutive_empty - 1, 5)), 1800)
-            logger.info("No articles to embed; sleeping %ss (empty streak %s)",
-                        sleep_s, consecutive_empty)
+            logger.info("%s; sleeping %ss (streak %s)", reason, sleep_s, consecutive_empty)
             await asyncio.sleep(sleep_s)
         else:
             consecutive_empty = 0

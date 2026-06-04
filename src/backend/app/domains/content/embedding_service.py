@@ -64,7 +64,9 @@ class EmbeddingService:
         base = os.getenv("CLILENS_LOCAL_GX10_BASE_URL", "http://localhost:11434/v1").rstrip("/")
         api_key = os.getenv("CLILENS_LOCAL_GX10_API_KEY", "ollama")
         model = os.getenv("CLILENS_EMBEDDING_MODEL", self.BGE_M3_MODEL)
-        truncated = (text or "")[:32000]
+        # bge-m3 has an 8192-token context; 32k chars overflows it and Ollama
+        # returns a 500. ~8000 chars (~2k tokens) is a safe cap for a doc embed.
+        truncated = (text or "")[:8000]
         if not truncated.strip():
             return None
         try:
