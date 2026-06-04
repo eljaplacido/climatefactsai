@@ -163,6 +163,110 @@ async def list_standards_index():
     }
 
 
+@router.get("/compare")
+async def compare_companies(
+    a: str = Query(..., description="Company A — ticker or company_id"),
+    b: str = Query(..., description="Company B — ticker or company_id"),
+):
+    """Head-to-head climate comparison of two companies (seq-13) — serves the
+    "compare two companies' sustainability" scenario.
+
+    Leaders are declared ONLY for size-independent AMBITION metrics (SBTi
+    validation, net-zero target year, % reduction target, scope-1/2 assurance).
+    Raw scope emissions are returned without a leader because absolute tonnage
+    scales with company size, so "lower" doesn't mean "greener". Declared before
+    the /{ticker} route so "compare" isn't read as a ticker.
+    """
+    db = get_postgres()
+    from app.domains.content.corporate.repository import (
+        get_company,
+        get_company_disclosures,
+    )
+
+    def _metrics(ident: str):
+        prof = get_company(db, ident)
+        if not prof:
+            return None
+        discs = get_company_disclosures(db, prof.company_id)  # reporting_year DESC
+
+        def latest(field):
+            for d in discs:
+                if d.get(field) is not None:
+                    return d.get(field)
+            return None
+
+        return {
+            "company_id": prof.company_id,
+            "name": prof.name,
+            "ticker": prof.ticker,
+            "country_code": prof.country_code,
+            "sector_nace": prof.sector_nace,
+            "disclosure_count": prof.disclosure_count,
+            "sbti_validated": prof.sbti_validated,
+            "net_zero_target_year": prof.net_zero_target_year or latest("net_zero_target_year"),
+            "target_pct_reduction": latest("target_pct_reduction"),
+            "target_year": latest("target_year"),
+            "scope1_2_verified": any(bool(d.get("scope1_2_verified")) for d in discs),
+            "scope1_tco2e": latest("scope1_tco2e"),
+            "scope2_tco2e_market": latest("scope2_tco2e_market"),
+            "scope3_tco2e": latest("scope3_tco2e"),
+        }
+
+    ca = _metrics(a)
+    cb = _metrics(b)
+    if ca is None or cb is None:
+        missing = a if ca is None else b
+        raise HTTPException(status_code=404, detail=f"Company not found: {missing!r}")
+
+    def _leader(va, vb, better: str):
+        # better: 'truth' (True beats False) | 'lower' (smaller wins, e.g. an
+        # earlier net-zero year) | 'higher' (bigger wins, e.g. % reduction).
+        if va is None and vb is None:
+            return None
+        if va is None:
+            return "b"
+        if vb is None:
+            return "a"
+        if better == "truth":
+            if bool(va) == bool(vb):
+                return "tie"
+            return "a" if va else "b"
+        if va == vb:
+            return "tie"
+        if better == "higher":
+            return "a" if va > vb else "b"
+        return "a" if va < vb else "b"  # 'lower'
+
+    comparison = {
+        "sbti_validated": {"a": ca["sbti_validated"], "b": cb["sbti_validated"],
+                           "leader": _leader(ca["sbti_validated"], cb["sbti_validated"], "truth")},
+        "net_zero_target_year": {"a": ca["net_zero_target_year"], "b": cb["net_zero_target_year"],
+                                 "leader": _leader(ca["net_zero_target_year"], cb["net_zero_target_year"], "lower")},
+        "target_pct_reduction": {"a": ca["target_pct_reduction"], "b": cb["target_pct_reduction"],
+                                 "leader": _leader(ca["target_pct_reduction"], cb["target_pct_reduction"], "higher")},
+        "scope1_2_verified": {"a": ca["scope1_2_verified"], "b": cb["scope1_2_verified"],
+                              "leader": _leader(ca["scope1_2_verified"], cb["scope1_2_verified"], "truth")},
+    }
+    a_wins = sum(1 for d in comparison.values() if d["leader"] == "a")
+    b_wins = sum(1 for d in comparison.values() if d["leader"] == "b")
+    ambition_leader = "a" if a_wins > b_wins else "b" if b_wins > a_wins else "tie"
+
+    return {
+        "company_a": ca,
+        "company_b": cb,
+        "comparison": comparison,
+        "emissions": {
+            "note": "Absolute tCO2e, not size-adjusted — no leader is declared "
+                    "(absolute emissions scale with company size).",
+            "scope1_tco2e": {"a": ca["scope1_tco2e"], "b": cb["scope1_tco2e"]},
+            "scope2_tco2e_market": {"a": ca["scope2_tco2e_market"], "b": cb["scope2_tco2e_market"]},
+            "scope3_tco2e": {"a": ca["scope3_tco2e"], "b": cb["scope3_tco2e"]},
+        },
+        "ambition_leader": ambition_leader,
+        "ambition_dimensions_won": {"a": a_wins, "b": b_wins},
+    }
+
+
 @router.get("/{ticker}")
 async def get_company(ticker: str):
     from app.domains.content.corporate.repository import (
