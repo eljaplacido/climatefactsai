@@ -437,7 +437,14 @@ PROMPTS: Dict[str, PromptTemplate] = {
             "- save_item: {{item_type, item_id, item_ref, label}} — save anything to the user's saves (article / analysis / claim / search / company / country / deep_search / feed_setting)\n"
             "- subscribe_research_topic: {{topic}} — subscribe the user to a research topic (CrossRef poller delivers new papers to /research feed)\n"
             "- explore_scenario: {{country_code, target_warming_c, horizon_year}} — interpolate IPCC AR6 SSP projections at a target warming level for a country (read-only)\n"
-            "- analyze_corporate_report: {{ticker, report_url}} — fetch a corporate sustainability report and extract+verify every claim against the disclosure ledger\n\n"
+            "- analyze_corporate_report: {{ticker, report_url}} — fetch a corporate sustainability report and extract+verify every claim against the disclosure ledger\n"
+            "- explore_entity: {{entity_id}} — drill into a knowledge-graph entity's neighborhood (connected entities, relationships, mentioning articles)\n"
+            "- explain_connection: {{article_ids, entity_ids}} — LLM 'why are these connected' across a set of articles/entities via shared bridge entities\n"
+            "- flag_off_topic: {{article_id, verdict, off_topic_category}} — mark an article off-topic / on-topic / borderline (feeds the validation corpus)\n"
+            "- suggest_company: {{company_name, ticker, country_code, report_url, reason}} — suggest a company for the Corporate Climate Tracker review queue\n"
+            "- promote_golden_example: {{artifact_kind, artifact_ref, why_golden, quality_score}} — mark an artifact as a golden example (curated best-of corpus)\n"
+            "- explore_sdg: {{goal_id}} — browse articles/research/companies tagged to a UN SDG (1-17)\n"
+            "- tag_sdgs: {{text}} — tag text with the UN SDGs it relates to (goal_ids + per-goal confidence)\n\n"
             "Rules:\n"
             "- Only suggest actions that are genuinely useful given the question and answer.\n"
             "- Each action must have type, params (object), and label (short user-facing button text).\n"
@@ -450,7 +457,7 @@ PROMPTS: Dict[str, PromptTemplate] = {
         system=(
             "You are Climatefacts.ai's climate intelligence assistant. Answer concisely "
             "using markdown. After your answer, suggest 0-3 platform actions the user "
-            "might want to take next. Use ONLY the 15 action types documented below. "
+            "might want to take next. Use ONLY the 22 action types documented below. "
             "Output format: markdown answer then a JSON actions block separated by '---'."
         ),
         max_tokens=1200,

@@ -19,18 +19,33 @@ CliLens.AI is a climate news intelligence platform that aggregates, fact-checks,
 
 ## 📐 Architecture Rules
 
-### Current Reality (December 2025)
+### Current Reality (2026-06-04)
 
 ```yaml
 working_architecture:
-  containers: [api, frontend, postgres, redis]
-  communication: "Direct HTTP → API → SQL"
-  scaling: "Vertical (single API instance)"
-  async: "None (all synchronous)"
+  cloud: "GCP — Cloud Run (api + frontend, europe-west4) + Cloud SQL (postgres) + Secret Manager"
+  communication: "HTTP → FastAPI → SQLAlchemy(text) → Cloud SQL"
+  scheduling: "Cloud Scheduler crons (cn-*) hit token-gated /api/scheduler + /api/admin endpoints"
+  llm_routing: "llm_chat_with_fallback: local-gx10 -> deepseek -> openai -> anthropic; cost logged to llm_cost_log"
+  on_prem_inference: "ASUS GX10 (Tailscale, ssh gx10) runs Ollama — enrichment (qwen2.5:14b) + embeddings (bge-m3); polls Cloud SQL directly"
+  embeddings: "articles.embedding_bge_m3 vector(1024) + HNSW (mig 062), generated on the GX10"
 
-planned_but_not_operational:
-  - Kafka event streaming
-  - Microservices workers
+quota (api/quota_service.py, free tier):
+  saved_articles: 3 lifetime
+  saved_searches: 3 lifetime
+  deep_research: 3 / month
+  url_analysis: 1 / month
+  compare: 1 / month
+  insights_extraction: 50 lifetime   # gates /api/v2/intelligence/analyze-text (2026-06-02)
+
+newer_endpoints:
+  - "GET /api/companies/compare?a=&b=  — two-company climate head-to-head"
+  - "GET /api/admin/llm/cost           — LLM spend by provider (cloud vs free GX10)"
+
+agentic_skills: "22 skills in app/domains/intelligence/skills.py (single source of truth). Prompt template + chatActionDispatcher.ts + the pin test mirrors MUST stay in lockstep (tests/api/test_agentic_skill_pin.py)."
+
+not_operational:
+  - Kafka event streaming     # never landed; do NOT assume it
   - LangGraph HITL workflows
   - Remotion video pipeline
 ```
@@ -612,6 +627,6 @@ Before marking work as "done":
 
 **This skill was created to prevent the "Documentation-Reality Mismatch" problem.**
 
-**Last Updated:** 2025-12-18  
-**Next Review:** After Phase 1 completion
+**Last Updated:** 2026-06-04 (E2E audit remediation — see docs/CURRENT_STATE.md)  
+**Next Review:** After the remaining roadmap items (seq-5b/9/10/11b/15/16)
 

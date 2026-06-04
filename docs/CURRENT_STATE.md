@@ -1,9 +1,26 @@
 # Climatefacts.ai — Current State (Authoritative)
 
-**Last Updated:** 2026-05-20
-**Previous:** 2026-03-20
+**Last Updated:** 2026-06-04
+**Previous:** 2026-05-20
 **Status:** Global Platform Operational — 194 countries, full trust infrastructure, corporate claims, agentic chat
 **This is the single source of truth for the current state of the project.**
+
+---
+
+## 2026-06-04 — E2E audit remediation wave (audit seq-1..13)
+
+Shipped + verified live this session (see `docs/improvementplans/E2E-Audit-Roadmap-2026-06-02.md`):
+
+- **Content API fixed**: `/api/v2/articles` returned `[]`/500 → now gates on `is_off_topic`/`is_synthetic` (dropped non-existent `headline`/`summary_text` columns), fully parameterized.
+- **Agentic chat now emits actions**: `_generate_answer` advertises the full 22-skill registry; `VALID_ACTION_TYPES` derives from `SKILLS_REGISTRY` (was a stale 9). Prompt template + dispatcher + pin tests aligned at **22 skills**.
+- **NEW endpoints**: `GET /api/companies/compare?a=&b=` (two-company climate head-to-head), `GET /api/admin/llm/cost` (LLM cost telemetry, cloud-vs-GX10 split).
+- **Insights endpoint gated**: `POST /api/v2/intelligence/analyze-text` now requires auth + a new **`insights_extraction`** quota (anon=0, free=50 lifetime, basic=500, professional=5000).
+- **Credibility scoring**: one ladder via `src/backend/shared/credibility_thresholds.py` (HIGH=80, MEDIUM=50; 0-100 scale); live URL credibility is now verification-backed (Step-7.5 verdicts), not a text-length heuristic. `/api/methodology` returns a real `git_revision`.
+- **Maps**: `/api/map/country/{cc}/detail` now returns `climate_risk_score`.
+- **Sources**: `/api/v2/sources` 84 unrated → 0 (name-OR-domain tier join + mig 060/061).
+- **Company tracker (B3)**: **3,960 SBTi-validated companies** (was 9) via a batched SBTi sync; monthly `cn-sbti-sync` Cloud Scheduler cron.
+- **Embeddings**: `articles.embedding_bge_m3 vector(1024)` + HNSW (mig 062); ~3,328/3,329 embedded via the GX10 `infrastructure/gx10/embedding_worker.py` (bge-m3, free).
+- **Migrations 060-063** applied. **GX10 access** via `ssh gx10` (see project memory).
 
 ---
 

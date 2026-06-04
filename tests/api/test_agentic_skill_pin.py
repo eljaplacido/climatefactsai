@@ -57,6 +57,15 @@ FRONTEND_ACTION_TYPES = {
     "subscribe_research_topic",
     "explore_scenario",
     "analyze_corporate_report",
+    # Slice 3 (2026-05-26) — KG / SDG / curation skills wired into the
+    # dispatcher; bumped here + in the prompt template 2026-06-04 (doc-align).
+    "explore_entity",
+    "explain_connection",
+    "flag_off_topic",
+    "suggest_company",
+    "promote_golden_example",
+    "explore_sdg",
+    "tag_sdgs",
 }
 
 # The mode each frontend action expects — must match SKILLS_REGISTRY.
@@ -77,6 +86,14 @@ FRONTEND_ACTION_MODES = {
     "subscribe_research_topic": "confirm",
     "explore_scenario": "auto",
     "analyze_corporate_report": "confirm",
+    # Slice 3 (2026-05-26)
+    "explore_entity": "auto",
+    "explain_connection": "confirm",
+    "flag_off_topic": "confirm",
+    "suggest_company": "confirm",
+    "promote_golden_example": "confirm",
+    "explore_sdg": "auto",
+    "tag_sdgs": "auto",
 }
 
 
@@ -159,9 +176,9 @@ class TestAgenticSkillPin:
         15 in Polish wave 1 (2026-05-25)."""
         prompt = get_prompt("chat_synthesis_with_actions")
         actual_count = len(_extract_actions_from_prompt(prompt.template))
-        assert actual_count == 15, (
+        assert actual_count == 22, (
             f"Action count drifted: {actual_count} actions in template, "
-            "but system copy still says '15 action types'. Update one or the other."
+            "but system copy still says '22 action types'. Update one or the other."
         )
 
     def test_chat_synthesis_with_actions_prompt_exists(self):
@@ -250,6 +267,11 @@ class TestCanonicalSkillsRegistry:
             "save_item",
             "subscribe_research_topic",
             "analyze_corporate_report",
+            # Slice 3 (2026-05-26) — confirm-mode (quota / mutate / submit).
+            "explain_connection",
+            "flag_off_topic",
+            "suggest_company",
+            "promote_golden_example",
         }
 
     def test_auto_mode_is_remainder(self):
