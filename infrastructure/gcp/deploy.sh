@@ -85,6 +85,11 @@ update_scheduler_urls() {
         --secret="scheduler-secret" \
         --project="${PROJECT_ID}" 2>/dev/null || echo "")"
 
+    # Must stay in sync with the ensure_scheduler_job calls in
+    # provision-infra.sh — every cron needs its real URL + SCHEDULER_SECRET
+    # stamped here after deploy (provision creates them with placeholders).
+    # The describe-guard below skips any job that doesn't exist yet, so listing
+    # a not-yet-provisioned job is harmless.
     local jobs=(
         "cn-discover:/api/scheduler/ingestion/discover"
         "cn-rss-poll:/api/scheduler/ingestion/rss"
@@ -92,6 +97,14 @@ update_scheduler_urls() {
         "cn-retry:/api/scheduler/processing/retry-failed"
         "cn-feeds:/api/scheduler/feeds/update"
         "cn-translate:/api/scheduler/translation/batch"
+        "cn-link-check:/api/admin/link-check"
+        "cn-research-poll:/api/admin/research-poll"
+        "cn-aoi-poll:/api/scheduler/aoi-poll"
+        "cn-enrich:/api/admin/scheduler/enrich-pending"
+        "cn-credibility-backfill:/api/admin/backfill/source-credibility-score"
+        "cn-html-backfill:/api/admin/backfill/extracted-text-html"
+        "cn-ner-extract:/api/admin/scheduler/extract-entities"
+        "cn-sbti-sync:/api/companies/admin/sync/sbti?wait=true"
     )
 
     for entry in "${jobs[@]}"; do

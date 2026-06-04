@@ -229,8 +229,16 @@ ensure_scheduler_job() {
     local api_path="$2"
     local schedule="$3"
     local description="$4"
+    local attempt_deadline="${5:-}"  # optional; e.g. "1800s" for long-running wait=true syncs
 
     local api_url="${API_BASE_URL}${api_path}"
+
+    # Only HTTP targets that run long (e.g. the synchronous SBTi sync) need an
+    # extended attempt deadline; everything else keeps the gcloud 180s default.
+    local extra_args=()
+    if [[ -n "${attempt_deadline}" ]]; then
+        extra_args+=(--attempt-deadline="${attempt_deadline}")
+    fi
 
     if gcloud scheduler jobs describe "${scheduler_name}" \
         --location="${REGION}" \
@@ -245,6 +253,7 @@ ensure_scheduler_job() {
             --headers="X-Scheduler-Secret=SECRET_WILL_BE_SET_AFTER_DEPLOY" \
             --oauth-service-account-email="${SA_EMAIL}" \
             --description="${description}" \
+            ${extra_args[@]+"${extra_args[@]}"} \
             --quiet || true
         log "Updated scheduler: ${scheduler_name}"
     else
@@ -258,6 +267,7 @@ ensure_scheduler_job() {
             --headers="X-Scheduler-Secret=SECRET_WILL_BE_SET_AFTER_DEPLOY" \
             --oauth-service-account-email="${SA_EMAIL}" \
             --description="${description}" \
+            ${extra_args[@]+"${extra_args[@]}"} \
             --quiet || true
         log "Created scheduler: ${scheduler_name}"
     fi
@@ -287,6 +297,15 @@ ensure_scheduler_job "cn-html-backfill"      "/api/admin/backfill/extracted-text
 # knowledge_graph schema from mig 049. Hourly cadence to catch up the
 # 1664-row corpus quickly; can drop to nightly once converged.
 ensure_scheduler_job "cn-ner-extract"        "/api/admin/scheduler/extract-entities"          "0 * * * *"    "EntityExtractionService batch_extract — KG Phase 1, mig 049"
+
+# Monthly corporate SBTi re-sync (roadmap seq-7, 2026-06-04). SBTi publishes its
+# validated-targets dashboard roughly monthly; this re-pulls the ~3,960 validated
+# companies. wait=true runs the (batched, ~1-2min) sync to completion in a worker
+# thread rather than the CPU-throttled background path, so it needs an attempt
+# deadline above the 180s gcloud default — bound it to the API's 1800s request
+# timeout. Auth via X-Scheduler-Secret (dual-gate added in a37813f). 1st of month,
+# 06:00 UTC, off-peak and after the daily backfills have settled.
+ensure_scheduler_job "cn-sbti-sync"          "/api/companies/admin/sync/sbti?wait=true"       "0 6 1 * *"    "Monthly SBTi validated-targets re-sync — POST /api/companies/admin/sync/sbti (seq-7)" "1800s"
 
 # ---------------------------------------------------------------------------
 # 8. Grant Cloud Scheduler permission to invoke Cloud Run
