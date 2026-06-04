@@ -185,16 +185,34 @@ class TestDetectSourceMixDrift:
         top_sources = {s["source_name"] for s in report.top_shifts[:2]}
         assert {"bbc", "reuters"} <= top_sources
 
-    def test_empty_windows_return_stable_with_note(self):
+    def test_empty_windows_return_insufficient_data(self):
+        # The honesty gate: 0/0 articles must NOT read as a confident 'stable'.
         report = detect_source_mix_drift(_FakeDB({}, {}))
-        assert report.verdict == "stable"
+        assert report.verdict == "insufficient_data"
         assert report.kl_divergence == 0.0
+        assert report.recent_count == 0
+        assert report.baseline_count == 0
         assert report.notes is not None
-        assert "no articles" in report.notes.lower()
+        assert "insufficient" in report.notes.lower()
+
+    def test_sparse_window_is_insufficient_not_stable(self):
+        # Identical small windows would have given KL=0 -> 'stable'. With too few
+        # samples we refuse to claim a verdict instead of painting it green.
+        recent = {"a": 3, "b": 2}     # 5 < MIN_WINDOW_SAMPLES
+        baseline = {"a": 3, "b": 2}
+        report = detect_source_mix_drift(_FakeDB(recent, baseline))
+        assert report.verdict == "insufficient_data"
+        assert report.recent_count == 5
+
+    def test_sufficient_windows_still_yield_a_real_verdict(self):
+        recent = {"reuters": 60, "bbc": 40}    # 100 >= MIN_WINDOW_SAMPLES
+        baseline = {"reuters": 600, "bbc": 400}
+        report = detect_source_mix_drift(_FakeDB(recent, baseline))
+        assert report.verdict in {"stable", "minor", "notable", "significant"}
 
     def test_report_shape(self):
-        recent = {"a": 5, "b": 5}
-        baseline = {"a": 5, "b": 5}
+        recent = {"a": 50, "b": 50}
+        baseline = {"a": 50, "b": 50}
         report = detect_source_mix_drift(_FakeDB(recent, baseline), recent_days=7, baseline_days=30)
         out = report.as_dict()
         for key in (
@@ -365,20 +383,21 @@ class TestDetectPromptFingerprintDrift:
             elif s["prompt_fingerprint"] == "bb22":
                 assert s["display"] == "classifier@v0.9"
 
-    def test_empty_windows_return_stable_with_note(self):
+    def test_empty_windows_return_insufficient_data(self):
         report = detect_prompt_fingerprint_drift(_FakeDBPrompts([], []))
-        assert report.verdict == "stable"
+        assert report.verdict == "insufficient_data"
         assert report.kl_divergence == 0.0
         assert report.recent_count == 0
         assert report.baseline_count == 0
         assert report.notes is not None
         assert "prompt" in report.notes.lower()
+        assert "insufficient" in report.notes.lower()
 
     def test_report_shape_matches_source_mix(self):
         """The endpoint surface must look the same across drift metrics so a
         single dashboard can render any metric type."""
-        recent = [_row("aa", "p", "v1", 10)]
-        baseline = [_row("aa", "p", "v1", 10)]
+        recent = [_row("aa", "p", "v1", 50)]
+        baseline = [_row("aa", "p", "v1", 50)]
         report = detect_prompt_fingerprint_drift(_FakeDBPrompts(recent, baseline))
         out = report.as_dict()
         for key in (
@@ -400,8 +419,8 @@ class TestPromptFingerprintEndpoint:
         import shared.database as _shared_db
         from api.main import app
 
-        recent = [_row("ff00", "synth", "v1.0", 5), _row("ee11", "classifier", "v0.9", 3)]
-        baseline = [_row("ff00", "synth", "v1.0", 50), _row("ee11", "classifier", "v0.9", 50)]
+        recent = [_row("ff00", "synth", "v1.0", 50), _row("ee11", "classifier", "v0.9", 30)]
+        baseline = [_row("ff00", "synth", "v1.0", 500), _row("ee11", "classifier", "v0.9", 500)]
         prior = _shared_db._postgres_client
         _shared_db._postgres_client = _FakeDBPrompts(recent, baseline)
         try:

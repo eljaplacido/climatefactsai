@@ -1060,18 +1060,22 @@ function DriftCard({
     return <div className="border border-gray-200 rounded-lg p-4"><Loading /></div>;
   }
   const verdictTone: Record<string, string> = {
+    // Neutral grey — NOT green — so a thin/empty window never reads as a
+    // confident 'stable' (the methodology page exists to show gaps honestly).
+    insufficient_data: "bg-gray-100 text-gray-600 border-gray-300",
     stable: "bg-teal-50 text-teal-800 border-teal-200",
     minor: "bg-yellow-50 text-yellow-800 border-yellow-200",
     notable: "bg-orange-50 text-orange-800 border-orange-200",
     significant: "bg-red-50 text-red-800 border-red-200",
   };
   const tone = verdictTone[data.verdict] || "bg-gray-50 text-gray-800 border-gray-200";
+  const verdictLabel = data.verdict.replace(/_/g, " ");
 
   return (
     <div className="border border-gray-200 rounded-lg p-4 space-y-3">
       <header className="flex items-center justify-between">
         <h3 className="font-semibold text-gray-900">{label}</h3>
-        <span className={`text-xs px-2 py-0.5 rounded border ${tone}`}>{data.verdict}</span>
+        <span className={`text-xs px-2 py-0.5 rounded border ${tone}`}>{verdictLabel}</span>
       </header>
       <div className="text-xs text-gray-500">
         KL divergence:{" "}

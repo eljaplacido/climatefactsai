@@ -23,6 +23,8 @@ a missing minor one). We compute KL(recent || baseline) so:
 Threshold guide (from preliminary calibration on the 2026-04 → 2026-05
 production seed):
 
+  * < MIN_WINDOW_SAMPLES articles in either window — insufficient_data;
+    no verdict is claimed (KL on a near-empty window is noise).
   * KL < 0.10  — stable mix; no action needed.
   * 0.10 ≤ KL < 0.25 — minor drift; log for trend analysis.
   * 0.25 ≤ KL < 0.50 — notable drift; flag in ops dashboard.
@@ -48,13 +50,21 @@ _logger = logging.getLogger("drift_detection")
 # both distributions keeps the comparison fair.
 SMOOTHING_EPSILON = 1e-6
 
+# Honesty gate: a KL value computed over a near-empty window is noise, not
+# signal — two windows of 0 articles are "identical" (KL=0) and would otherwise
+# render a green 'stable' badge, which is the opposite of what the methodology
+# page is for. Below this many observations in EITHER window we report
+# `verdict='insufficient_data'` (the same vocabulary the calibration surface
+# uses) instead of a confident bucket. Tunable per-deployment as volume grows.
+MIN_WINDOW_SAMPLES = 30
+
 
 @dataclass
 class DriftReport:
     """Result of a single drift check."""
     metric: str                                 # e.g. 'source_mix'
     kl_divergence: float                        # KL(recent || baseline), nats
-    verdict: str                                # 'stable' | 'minor' | 'notable' | 'significant'
+    verdict: str                                # 'insufficient_data' | 'stable' | 'minor' | 'notable' | 'significant'
     recent_window_days: int
     baseline_window_days: int
     recent_count: int                           # total articles in the recent window
@@ -132,7 +142,13 @@ def kl_divergence(p: Dict[str, float], q: Dict[str, float]) -> float:
 
 
 def verdict_for(kl: float) -> str:
-    """Bucket the KL value per the thresholds documented in the module docstring."""
+    """Bucket the KL value per the thresholds documented in the module docstring.
+
+    Note: this maps a KL value to a confidence bucket and assumes the windows
+    already cleared `MIN_WINDOW_SAMPLES`. The sufficiency check lives in the
+    `detect_*` functions, which short-circuit to `insufficient_data` before
+    ever calling this.
+    """
     if kl < 0.10:
         return "stable"
     if kl < 0.25:
@@ -140,6 +156,20 @@ def verdict_for(kl: float) -> str:
     if kl < 0.50:
         return "notable"
     return "significant"
+
+
+def _insufficient_data_note(metric_label: str, recent_total: int, baseline_total: int) -> str:
+    """Explain WHICH window is too thin to judge drift, for the report note."""
+    short = []
+    if recent_total < MIN_WINDOW_SAMPLES:
+        short.append(f"recent window has {recent_total}")
+    if baseline_total < MIN_WINDOW_SAMPLES:
+        short.append(f"baseline window has {baseline_total}")
+    detail = "; ".join(short) if short else "both windows are sparse"
+    return (
+        f"Insufficient {metric_label} to judge drift "
+        f"(need ≥{MIN_WINDOW_SAMPLES} per window): {detail}."
+    )
 
 
 def fit_thresholds(db, metric: str = "source_mix", window_days: int = 60) -> dict:
@@ -315,26 +345,32 @@ def detect_source_mix_drift(
         days_back_end=recent_days,
     )
 
-    support = sorted(set(recent_counts.keys()) | set(baseline_counts.keys()))
-    if not support:
+    recent_total = sum(recent_counts.values())
+    baseline_total = sum(baseline_counts.values())
+    now_iso = datetime.utcnow().isoformat()
+    baseline_end_iso = (datetime.utcnow() - timedelta(days=recent_days)).isoformat()
+
+    # Honesty gate — don't paint a green 'stable' badge over a near-empty
+    # window (the old behaviour returned 'stable' for 0/0 articles).
+    if recent_total < MIN_WINDOW_SAMPLES or baseline_total < MIN_WINDOW_SAMPLES:
         return DriftReport(
             metric="source_mix",
             kl_divergence=0.0,
-            verdict="stable",
+            verdict="insufficient_data",
             recent_window_days=recent_days,
             baseline_window_days=baseline_days,
-            recent_count=0,
-            baseline_count=0,
+            recent_count=recent_total,
+            baseline_count=baseline_total,
             top_shifts=[],
-            notes="No articles in either window.",
+            recent_end=now_iso,
+            baseline_end=baseline_end_iso,
+            notes=_insufficient_data_note("articles", recent_total, baseline_total),
         )
 
+    support = sorted(set(recent_counts.keys()) | set(baseline_counts.keys()))
     p_recent = normalise_distribution(recent_counts, keys=support)
     q_baseline = normalise_distribution(baseline_counts, keys=support)
     kl = kl_divergence(p_recent, q_baseline)
-
-    now_iso = datetime.utcnow().isoformat()
-    baseline_end_iso = (datetime.utcnow() - timedelta(days=recent_days)).isoformat()
 
     return DriftReport(
         metric="source_mix",
@@ -342,8 +378,8 @@ def detect_source_mix_drift(
         verdict=verdict_for(kl),
         recent_window_days=recent_days,
         baseline_window_days=baseline_days,
-        recent_count=sum(recent_counts.values()),
-        baseline_count=sum(baseline_counts.values()),
+        recent_count=recent_total,
+        baseline_count=baseline_total,
         top_shifts=top_shifts_between(p_recent, q_baseline, limit=10),
         recent_end=now_iso,
         baseline_end=baseline_end_iso,
@@ -439,20 +475,31 @@ def detect_prompt_fingerprint_drift(
     # when a fingerprint disappeared from `recent`.
     display_map: Dict[str, str] = {**baseline_display, **recent_display}
 
-    support = sorted(set(recent_counts.keys()) | set(baseline_counts.keys()))
-    if not support:
+    recent_total = sum(recent_counts.values())
+    baseline_total = sum(baseline_counts.values())
+    now_iso = datetime.utcnow().isoformat()
+    baseline_end_iso = (datetime.utcnow() - timedelta(days=recent_days)).isoformat()
+
+    # Honesty gate — see detect_source_mix_drift. An empty claim_provenance
+    # window (the common case before LLM volume accrues) must NOT read 'stable'.
+    if recent_total < MIN_WINDOW_SAMPLES or baseline_total < MIN_WINDOW_SAMPLES:
         return DriftReport(
             metric="prompt_fingerprint",
             kl_divergence=0.0,
-            verdict="stable",
+            verdict="insufficient_data",
             recent_window_days=recent_days,
             baseline_window_days=baseline_days,
-            recent_count=0,
-            baseline_count=0,
+            recent_count=recent_total,
+            baseline_count=baseline_total,
             top_shifts=[],
-            notes="No claim_provenance rows with prompt_fingerprint in either window.",
+            recent_end=now_iso,
+            baseline_end=baseline_end_iso,
+            notes=_insufficient_data_note(
+                "prompt-fingerprinted LLM calls", recent_total, baseline_total
+            ),
         )
 
+    support = sorted(set(recent_counts.keys()) | set(baseline_counts.keys()))
     p_recent = normalise_distribution(recent_counts, keys=support)
     q_baseline = normalise_distribution(baseline_counts, keys=support)
     kl = kl_divergence(p_recent, q_baseline)
@@ -465,17 +512,14 @@ def detect_prompt_fingerprint_drift(
         if isinstance(fp, str):
             s["display"] = display_map.get(fp, "?")
 
-    now_iso = datetime.utcnow().isoformat()
-    baseline_end_iso = (datetime.utcnow() - timedelta(days=recent_days)).isoformat()
-
     return DriftReport(
         metric="prompt_fingerprint",
         kl_divergence=kl,
         verdict=verdict_for(kl),
         recent_window_days=recent_days,
         baseline_window_days=baseline_days,
-        recent_count=sum(recent_counts.values()),
-        baseline_count=sum(baseline_counts.values()),
+        recent_count=recent_total,
+        baseline_count=baseline_total,
         top_shifts=shifts,
         recent_end=now_iso,
         baseline_end=baseline_end_iso,
