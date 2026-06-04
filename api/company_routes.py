@@ -655,17 +655,23 @@ async def trigger_adapter_sync(
         "wait=true completes it in minutes, bounded by the 1800s request timeout.",
     ),
     x_corporate_sync_token: Optional[str] = Header(default=None),
+    x_scheduler_secret: Optional[str] = Header(default=None),
 ):
     """Trigger an adapter sync. Default returns 202 (background); wait=true runs
     it to completion in a worker thread and returns the outcome. Status also
     checkable via GET /admin/sync/{source}."""
-    expected = os.environ.get("CORPORATE_SYNC_TOKEN")
-    if not expected:
+    # Accept CORPORATE_SYNC_TOKEN (ops curl) OR SCHEDULER_SECRET (Cloud
+    # Scheduler cron) — same dual gate as the admin backfill endpoints, so the
+    # monthly SBTi cron can drive this without the corporate token.
+    corp = os.environ.get("CORPORATE_SYNC_TOKEN")
+    sched = os.environ.get("SCHEDULER_SECRET")
+    if not corp and not sched:
         raise HTTPException(
             status_code=503,
-            detail="Adapter sync disabled — set CORPORATE_SYNC_TOKEN to enable",
+            detail="Adapter sync disabled — set CORPORATE_SYNC_TOKEN or SCHEDULER_SECRET",
         )
-    if x_corporate_sync_token != expected:
+    authed = (corp and x_corporate_sync_token == corp) or (sched and x_scheduler_secret == sched)
+    if not authed:
         raise HTTPException(status_code=401, detail="Invalid sync token")
     if source not in _VALID_SOURCES:
         raise HTTPException(
