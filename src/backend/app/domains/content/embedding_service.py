@@ -94,7 +94,7 @@ class EmbeddingService:
             vector_str = "[" + ",".join(str(x) for x in embedding) + "]"
             self.db.execute_update(
                 """UPDATE articles
-                   SET embedding_bge_m3 = :embedding::vector
+                   SET embedding_bge_m3 = CAST(:embedding AS vector)
                    WHERE article_id = :article_id""",
                 {"embedding": vector_str, "article_id": article_id},
             )
@@ -150,7 +150,7 @@ class EmbeddingService:
             vector_str = "[" + ",".join(str(x) for x in embedding) + "]"
             self.db.execute_update(
                 """UPDATE articles
-                   SET embedding = :embedding::vector
+                   SET embedding = CAST(:embedding AS vector)
                    WHERE article_id = :article_id""",
                 {"embedding": vector_str, "article_id": article_id},
             )
@@ -208,10 +208,10 @@ class EmbeddingService:
                   a.article_id, a.title, a.source_name,
                   a.published_date, a.overall_credibility,
                   a.content_category, a.country_code,
-                  1 - (a.embedding <=> :embedding::vector) AS similarity_score
+                  1 - (a.embedding <=> CAST(:embedding AS vector)) AS similarity_score
                 FROM articles a
                 WHERE {where_sql}
-                ORDER BY a.embedding <=> :embedding::vector
+                ORDER BY a.embedding <=> CAST(:embedding AS vector)
                 LIMIT :limit""",
             params,
         )
@@ -248,12 +248,12 @@ class EmbeddingService:
             """SELECT
                  a.article_id, a.title, a.source_name,
                  a.published_date, a.overall_credibility,
-                 1 - (a.embedding <=> :embedding::vector) AS similarity_score
+                 1 - (a.embedding <=> CAST(:embedding AS vector)) AS similarity_score
                FROM articles a
                WHERE a.article_id != :id
                  AND a.embedding IS NOT NULL
-                 AND 1 - (a.embedding <=> :embedding::vector) >= 0.35
-               ORDER BY a.embedding <=> :embedding::vector
+                 AND 1 - (a.embedding <=> CAST(:embedding AS vector)) >= 0.35
+               ORDER BY a.embedding <=> CAST(:embedding AS vector)
                LIMIT :limit""",
             {"id": article_id, "embedding": vector_str, "limit": limit},
         )
