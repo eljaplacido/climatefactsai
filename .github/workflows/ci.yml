@@ -101,6 +101,7 @@ jobs:
             tests/api/test_company_routes.py \
             tests/unit/domains/test_source_profiles_credibility_tiers.py \
             tests/unit/domains/test_numeric_grounding.py \
+            tests/unit/test_migration_hygiene.py \
             --override-ini="addopts=" -p no:warnings -v
 
       - name: Run adversarial probes (Phase 6 red-team gate)

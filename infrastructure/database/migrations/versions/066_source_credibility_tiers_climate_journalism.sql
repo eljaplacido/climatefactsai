@@ -1,4 +1,8 @@
--- Migration 049: source credibility tier expansion — climate journalism (2026-05-27)
+-- Migration 066: source credibility tier expansion — climate journalism
+-- (authored 2026-05-27; renamed 049 -> 066 on 2026-06-04 to break a duplicate
+-- version-prefix collision with 049_knowledge_graph_canonical.sql. The tracker
+-- keys on the NNN prefix, so this file's INSERTs were silently skipped — they
+-- finally run now. Idempotent, see ON CONFLICT below.)
 --
 -- Stage-1 B3 finding: 458 of 464 articles processed by the golden pipeline
 -- daemon showed source_credibility_score = 50 (unknown default) because the

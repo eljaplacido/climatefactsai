@@ -52,6 +52,33 @@ def _version_of(filename: str) -> str:
     return m.group(1)
 
 
+def assert_no_duplicate_versions(files) -> None:
+    """Fail loudly if two migration files share a version prefix.
+
+    A duplicate prefix is silently destructive: schema_migrations_applied keys on
+    `version` (PK), so once one file with version NNN is applied, every other file
+    with the same prefix is treated as already-applied and NEVER runs. That is
+    exactly how 049's journalism-credibility seeds were skipped for weeks. Catch
+    it before touching the DB rather than discovering it as a prod data gap.
+    """
+    seen: dict = {}
+    dupes: list = []
+    for path in files:
+        name = getattr(path, "name", str(path))
+        version = _version_of(name)
+        if version in seen:
+            dupes.append((version, seen[version], name))
+        else:
+            seen[version] = name
+    if dupes:
+        detail = "\n".join(f"  version {v}: {a}  &  {b}" for v, a, b in dupes)
+        raise SystemExit(
+            "FATAL: duplicate migration version prefix(es) — rename so every "
+            "NNN_ prefix is unique (the tracker keys on the prefix, so a "
+            f"collision silently skips a migration):\n{detail}"
+        )
+
+
 def _file_sha256(path: Path) -> str:
     import hashlib
 
@@ -131,6 +158,10 @@ def main() -> int:
     if not files:
         print(f"No migration files in {MIGRATIONS_DIR}")
         return 0
+
+    # Preflight: a duplicate version prefix silently skips a migration (see the
+    # function docstring). Abort before connecting rather than corrupt coverage.
+    assert_no_duplicate_versions(files)
 
     # Optional MIGRATIONS_FROM env var: hard floor on which versions to apply.
     # Useful for one-shot bootstrap when older migrations are known-applied
