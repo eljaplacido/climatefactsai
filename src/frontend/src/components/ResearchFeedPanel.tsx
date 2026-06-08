@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Bell, BellOff, Loader2, Plus, Trash2, ExternalLink, BookOpen, AlertCircle,
 } from "lucide-react";
+import SDGChips from "@/components/SDGChips";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
 
@@ -292,6 +293,13 @@ export default function ResearchFeedPanel() {
                       {item.doi && (
                         <span className="text-purple-700">DOI: {item.doi}</span>
                       )}
+                    </div>
+                    {/* F8c — UN SDG tags per paper, derived from the title +
+                        topic via /api/sdg/tag (same client tagger used on
+                        articles). Gives the research feed thematic metadata
+                        instead of being a bare list. */}
+                    <div className="mt-1.5">
+                      <SDGChips text={`${item.title} ${item.topic}`} maxChips={3} minMatchCount={1} compact />
                     </div>
                   </div>
                 </div>
