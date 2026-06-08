@@ -802,7 +802,8 @@ export type SavedItemType =
   | "company"
   | "feed_setting"
   | "deep_search"
-  | "country";
+  | "country"
+  | "company_comparison";
 
 export interface SavedItem {
   saved_id: string;

@@ -37,7 +37,7 @@ router = APIRouter(prefix="/api/user/saved", tags=["Saved items"])
 
 _VALID_TYPES = {
     "article", "analysis", "claim", "search", "company",
-    "feed_setting", "deep_search", "country",
+    "feed_setting", "deep_search", "country", "company_comparison",
 }
 
 # Soft caps for non-article types on Free tier.
@@ -47,13 +47,14 @@ _FREE_TIER_SOFT_CAPS = {
     "feed_setting": 3,
     "country": 10,
     "company": 5,
+    "company_comparison": 5,
     "claim": 10,
     "analysis": 5,
 }
 
 
 class SavedItemRequest(BaseModel):
-    item_type: str = Field(..., description="article|analysis|claim|search|company|feed_setting|deep_search|country")
+    item_type: str = Field(..., description="article|analysis|claim|search|company|company_comparison|feed_setting|deep_search|country")
     item_id: Optional[str] = Field(None, description="UUID PK of the target (for FK-able types)")
     item_ref: Optional[str] = Field(None, description="Free-text reference (search URL, country code, JSON payload)")
     label: Optional[str] = Field(None, max_length=255)

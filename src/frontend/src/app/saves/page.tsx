@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   Bookmark,
   Building2,
+  Scale,
   Globe,
   Newspaper,
   Search,
@@ -79,12 +80,27 @@ const TYPE_META: Record<SavedItemType, TypeMeta> = {
     href: (i) => (i.item_ref ? `/country/${i.item_ref}` : null),
     describe: (i) => i.label || i.item_ref || "Country",
   },
+  // F10b — a saved head-to-head company comparison. item_ref is "A~B"
+  // (the two tickers/ids) so the link can reconstruct the compare URL.
+  company_comparison: {
+    label: "Company comparisons",
+    icon: Scale,
+    href: (i) => {
+      if (!i.item_ref) return null;
+      const [a, b] = i.item_ref.split("~");
+      return a && b
+        ? `/companies/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`
+        : null;
+    },
+    describe: (i) => i.label || (i.item_ref ? i.item_ref.replace("~", " vs ") : "Company comparison"),
+  },
 };
 
 const TYPE_ORDER: SavedItemType[] = [
   "article",
   "analysis",
   "company",
+  "company_comparison",
   "country",
   "search",
   "deep_search",
