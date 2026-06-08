@@ -242,9 +242,9 @@ export default function MethodologyPage() {
               <div className="text-xs text-teal-700 mt-1">Internal rubric: reliability + calibration + hallucination + sustainability composite</div>
             </div>
             <div className="bg-white/80 rounded-lg border border-amber-100 p-4">
-              <div className="text-xs uppercase tracking-wider text-amber-700 font-semibold mb-2">Audited (End2End audit, 2026-05-27)</div>
+              <div className="text-xs uppercase tracking-wider text-amber-700 font-semibold mb-2">Last audited (End2End audit, 2026-05-27)</div>
               <div className="text-3xl font-bold text-amber-600">3.55<span className="text-lg text-amber-400">/5</span></div>
-              <div className="text-xs text-amber-700 mt-1">Same rubric, applied by audit against live code + data. Up from 3.05 (2026-05-26).</div>
+              <div className="text-xs text-amber-700 mt-1">Same rubric, applied by audit against live code + data. Up from 3.05 (2026-05-26). Further trust work has shipped since — pending re-audit (see below).</div>
             </div>
           </div>
 
@@ -279,15 +279,17 @@ export default function MethodologyPage() {
           </div>
 
           <div className="text-sm text-gray-600 bg-white/80 rounded border border-gray-200 p-3">
-            <strong className="text-gray-900">Current composite (2026-05-27):</strong> ~3.55/5
-            measured by the End2End audit, up from 3.05 the day before. This
-            week's polish wave 3 closed the three biggest residual gaps:
-            multi-claim extraction yield (prompt v1.1 targets 3-8 instead of
-            "up to N"), spaCy NER entity grounding (now downloaded in the API
-            Dockerfile rather than silently degrading to regex), and external
-            citation credibility (Perplexity URLs annotated with tier).
-            Calibration label volume + ND-GAIN integration + full transition-
-            risk scoring remain the highest-leverage open items — see{" "}
+            <strong className="text-gray-900">Last audited composite (2026-05-27):</strong> ~3.55/5
+            by the End2End audit, up from 3.05 the day before. That wave closed
+            the three biggest residual gaps: multi-claim extraction yield
+            (prompt v1.1 targets 3-8 instead of "up to N"), spaCy NER entity
+            grounding (now downloaded in the API Dockerfile rather than silently
+            degrading to regex), and external citation credibility (Perplexity
+            URLs annotated with tier). Trust work has continued since — see the
+            "Since the audit" card below — but those gains are not yet reflected
+            in a re-graded score, so the audited figure stands until the next
+            audit. Calibration label volume + ND-GAIN integration + full
+            transition-risk scoring remain the highest-leverage open items — see{" "}
             <a
               href="https://github.com/eljaplacido/climatefactsai/blob/main/docs/improvementplans/End2End-Audit-Benchmark-2026-05-27.md"
               target="_blank" rel="noreferrer"
@@ -313,17 +315,34 @@ export default function MethodologyPage() {
         >
           <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2.5">
             <Activity className="w-5 h-5 text-emerald-600" />
-            Recent platform updates (2026-05-25 / 26 / 27)
+            Recent platform updates (May – June 2026)
           </h2>
           <p className="text-sm text-gray-700">
-            Three days of intensive work closed the Honest-Gap-Audit v2 plus
-            the End2End audit's Section I priority list — multi-claim yield,
-            entity grounding NER, external citation credibility, source
-            stamping at ingest, and premium gating on heavy LLM endpoints.
-            Every change has file-level evidence in git + corresponding tests.
+            The 2026-05-27 audit wave closed the Honest-Gap-Audit v2 plus the
+            End2End audit's Section I priority list — multi-claim yield, entity
+            grounding NER, external citation credibility, source stamping at
+            ingest, and premium gating on heavy LLM endpoints. Work has
+            continued since: the <strong>Since the audit</strong> card below
+            lists what shipped through 2026-06-08 (semantic-search embeddings,
+            source-health monitoring, the credibility-tier completion, drift
+            honesty) — ahead of the next re-score. Every change has file-level
+            evidence in git + corresponding tests.
           </p>
           <div className="grid sm:grid-cols-2 gap-3 text-sm">
             {[
+              {
+                area: "Since the audit (May 28 – Jun 8, 2026)",
+                items: [
+                  "Semantic search resurrected — GX10 bge-m3 embedding write path (the corpus was ~0/666 embedded)",
+                  "Source-health canary — daily feed probe; a feed auto-disables after 5 consecutive failures",
+                  "Credibility tiers completed — a migration version-prefix collision had silently dropped ~55 climate-journalism tier seeds; fixed (mig 066). source_credibility_tiers now 164 rows in prod",
+                  "Drift detector honesty — thin windows report 'insufficient_data' (neutral) instead of a fake-green 'stable'",
+                  "SBTi validated-target detection fixed — 9 → ~3,900 companies",
+                  "Company head-to-head compare — size-independent ambition leader; comparisons are now saveable",
+                  "LLM cost telemetry — cloud-vs-GX10 spend is now visible",
+                  "Billing / subscription routes aligned to the DB schema (paid paths were 500-ing)",
+                ],
+              },
               {
                 area: "Truth-engine scoring",
                 items: [
