@@ -370,6 +370,69 @@ def fetch_feeds_from_registry(db, max_items_per_source: int = 10) -> List[Dict[s
     return combined
 
 
+def sync_feed_registry_from_code(db) -> Dict[str, int]:
+    """Seed/refresh rss_feed_registry from the in-code feed dict (P0 #2).
+
+    The scheduled pollers (poll_rss_feeds, scheduled_rss_ingestion) ONLY read
+    the rss_feed_registry table, but the rich feed set (215 feeds across 87
+    countries incl. AU/ZA/NG/EG/SA) lives only in eu_feeds_registry.py and was
+    never seeded into the table — so those countries had zero coverage.
+
+    Idempotent: a feed is inserted only if neither its URL nor its name already
+    exists (the table has UNIQUE on both), so existing rows — and their health /
+    is_active state — are never disturbed. country_code is normalized to a
+    storable alpha-2/'XX' (the table column is also CHAR(2)); the pan-regional
+    grouping survives in the `region` column.
+    """
+    from app.domains.content.data_sources.eu_feeds_registry import get_all_feeds
+    from app.tasks.ingestion import _normalize_country_code  # lazy: avoids import cycle
+
+    feeds = get_all_feeds()
+    inserted = skipped = errored = 0
+    for f in feeds:
+        name = (f.get("name") or "").strip()
+        url = (f.get("url") or "").strip()
+        if not name or not url:
+            skipped += 1
+            continue
+        try:
+            existing = db.execute_query(
+                "SELECT 1 FROM rss_feed_registry WHERE feed_url = :u OR feed_name = :n LIMIT 1",
+                {"u": url, "n": name[:255]},
+            )
+            if existing:
+                skipped += 1
+                continue
+            db.execute_update(
+                """
+                INSERT INTO rss_feed_registry
+                    (feed_name, feed_url, source_domain, country_code, region,
+                     reliability_tier, is_active, is_system_feed)
+                VALUES (:name, :url, :domain, :cc, :region, :tier, true, true)
+                """,
+                {
+                    "name": name[:255],
+                    "url": url,
+                    "domain": ((f.get("domain") or "")[:255]) or None,
+                    "cc": _normalize_country_code(f.get("country_code")),
+                    "region": ((f.get("region") or "")[:50]) or None,
+                    "tier": (f.get("tier") or "public")[:20],
+                },
+            )
+            inserted += 1
+        except Exception as exc:  # never let one bad feed abort the sync
+            errored += 1
+            logger.warning(f"feed-registry sync skipped {name!r}: {exc}")
+    result = {
+        "total_in_code": len(feeds),
+        "inserted": inserted,
+        "skipped_existing": skipped,
+        "errored": errored,
+    }
+    logger.info(f"feed-registry sync: {result}")
+    return result
+
+
 def fetch_global_climate_feeds(
     max_items_per_source: int = 10,
     db=None,

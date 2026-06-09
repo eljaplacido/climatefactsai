@@ -963,6 +963,30 @@ async def trigger_source_health(
     }
 
 
+@router.post("/scheduler/sync-feed-registry")
+async def trigger_feed_registry_sync(
+    x_corporate_sync_token: Optional[str] = Header(default=None),
+    x_scheduler_secret: Optional[str] = Header(default=None),
+):
+    """Seed rss_feed_registry from the in-code feed dict (P0 #2).
+
+    The scheduled pollers only read rss_feed_registry, but the 215 feeds (incl.
+    AU/ZA/NG/EG/SA) live only in eu_feeds_registry.py and were never seeded —
+    leaving whole countries at zero coverage. This adds the missing feeds
+    (idempotent; existing rows untouched). Runs at deploy time via
+    scheduled_rss_ingestion too; this endpoint forces it immediately.
+    """
+    _auth(x_corporate_sync_token, x_scheduler_secret)
+    db = get_postgres()
+
+    from app.domains.content.data_sources.rss_adapter import (
+        sync_feed_registry_from_code,
+    )
+
+    summary = await asyncio.to_thread(sync_feed_registry_from_code, db)
+    return {"status": "completed", **summary}
+
+
 @router.get("/source-health")
 async def get_source_health():
     """Per-feed liveness snapshot from the registry — public (feed URLs are

@@ -416,6 +416,19 @@ def scheduled_rss_ingestion(
 
     db = get_db()
 
+    # P0 #2 — keep rss_feed_registry in sync with the in-code feed set so the
+    # 215 feeds (AU/ZA/NG/EG/SA/… defined in eu_feeds_registry.py but never
+    # seeded) actually get polled. Idempotent + only adds missing feeds.
+    try:
+        from app.domains.content.data_sources.rss_adapter import (
+            sync_feed_registry_from_code,
+        )
+
+        sync_stats = sync_feed_registry_from_code(db)
+        logger.info("RSS ingestion: feed-registry sync", **sync_stats)
+    except Exception as sync_exc:  # never block ingestion on a sync hiccup
+        logger.warning("RSS ingestion: feed-registry sync failed", error=str(sync_exc))
+
     # Fetch from all global feeds — registry-first, hardcoded fallback
     all_articles = fetch_global_climate_feeds(
         max_items_per_source=max_items_per_source, db=db
