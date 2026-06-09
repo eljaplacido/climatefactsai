@@ -96,6 +96,8 @@ interface InteractiveClimateMapProps {
   activeLayer: ActiveLayer;
   highlightedCountries: string[];
   timelineDate?: string;
+  /** Region key (africa/asia/europe/americas/middle_east/oceania) to fly to. */
+  zoomRegion?: string | null;
 }
 
 // Color scales for each layer
@@ -204,12 +206,47 @@ function FlyToCountry({
   return null;
 }
 
+/** Quick Region Zoom — flies to a continent/region's bounds without filtering
+ * out the rest of the map's data (the old handler only set a keyword filter,
+ * which emptied statsMap and left a blank grey map). */
+const REGION_BOUNDS: Record<string, [LatLngTuple, LatLngTuple]> = {
+  africa: [[-35, -18], [38, 52]],
+  asia: [[5, 60], [55, 150]],
+  europe: [[34, -25], [71, 45]],
+  americas: [[-56, -170], [72, -34]],
+  middle_east: [[12, 25], [42, 63]],
+  oceania: [[-48, 110], [0, 180]],
+};
+
+function FlyToRegion({ region }: { region: string | null | undefined }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!region) return;
+    // region may carry a "#nonce" suffix so re-clicking the same region
+    // re-triggers this effect; strip it before the bounds lookup.
+    const key = region.split("#")[0];
+    const bounds = REGION_BOUNDS[key];
+    if (!bounds) return;
+    const timer = setTimeout(() => {
+      try {
+        map.invalidateSize();
+      } catch {
+        /* container not ready — deps re-fire */
+      }
+      map.flyToBounds(bounds, { padding: [20, 20], duration: 0.8 });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [region, map]);
+  return null;
+}
+
 export default function InteractiveClimateMap({
   countryStats,
   selectedCountry,
   onCountryClick,
   activeLayer,
   highlightedCountries,
+  zoomRegion,
 }: InteractiveClimateMapProps) {
   const [geoData, setGeoData] = useState<GeoJSON.FeatureCollection | null>(null);
   const [loading, setLoading] = useState(true);
@@ -517,6 +554,7 @@ export default function InteractiveClimateMap({
           })}
 
         <FlyToCountry selectedCountry={selectedCountry} geoData={geoData} />
+        <FlyToRegion region={zoomRegion} />
       </MapContainer>
 
       {/* Pulsing highlight overlay for agentic chat results */}

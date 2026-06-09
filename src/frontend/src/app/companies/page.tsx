@@ -36,6 +36,7 @@ interface CompaniesStats {
   total_companies: number;
   with_disclosures: number;
   sbti_validated: number;
+  net_zero_targets?: number;
   fully_disclosed: number;
 }
 
@@ -139,10 +140,10 @@ export default function CompaniesPage() {
             />
             <StatTile
               icon={Target}
-              label="Comprehensive disclosure"
-              value={stats.fully_disclosed.toLocaleString()}
+              label="With net-zero targets"
+              value={(stats.net_zero_targets ?? 0).toLocaleString()}
               color="text-amber-700"
-              hint="SBTi + scope + net-zero year"
+              hint="Companies disclosing a net-zero target year"
             />
           </div>
         )}

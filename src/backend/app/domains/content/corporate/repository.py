@@ -339,6 +339,8 @@ def companies_stats(db) -> dict:
                       THEN cd.company_id END) AS with_disclosures,
                   COUNT(DISTINCT CASE WHEN cd.sbti_validated THEN cd.company_id END) AS sbti_validated,
                   COUNT(DISTINCT CASE WHEN cd.net_zero_target_year IS NOT NULL
+                                      THEN cd.company_id END) AS net_zero_targets,
+                  COUNT(DISTINCT CASE WHEN cd.net_zero_target_year IS NOT NULL
                                        AND cd.scope1_tco2e IS NOT NULL
                                        AND cd.sbti_validated THEN cd.company_id END) AS fully_disclosed
            FROM companies c
@@ -350,6 +352,11 @@ def companies_stats(db) -> dict:
         "total_companies": int(r.get("total_companies") or 0),
         "with_disclosures": int(r.get("with_disclosures") or 0),
         "sbti_validated": int(r.get("sbti_validated") or 0),
+        # Companies with a net-zero target year — a populated, meaningful headline.
+        # `fully_disclosed` (SBTi + Scope-1 + net-zero on one row) stays in the
+        # payload but is tiny because CDP scope data is API-gated, so it's no
+        # longer the banner tile (it read a misleading "9").
+        "net_zero_targets": int(r.get("net_zero_targets") or 0),
         "fully_disclosed": int(r.get("fully_disclosed") or 0),
     }
 

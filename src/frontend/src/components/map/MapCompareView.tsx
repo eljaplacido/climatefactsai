@@ -17,8 +17,35 @@ import {
 } from "recharts";
 import Link from "next/link";
 import CountrySelector from "@/components/CountrySelector";
+import type { ActiveLayer } from "@/components/map/InteractiveClimateMap";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
+
+// Which metric the side-by-side headline leads with, per active map layer —
+// so changing the layer/scope changes what the comparison emphasises (the old
+// view always showed the same axes regardless of layer).
+const LAYER_METRIC: Record<
+  ActiveLayer,
+  {
+    label: string;
+    get?: (c: CompareCountryData) => number;
+    unit?: string;
+    higherBetter?: boolean;
+    note?: string;
+  }
+> = {
+  article_density: { label: "Article coverage", get: (c) => c.article_count, unit: " articles", higherBetter: true },
+  source_diversity: { label: "Source diversity", get: (c) => c.source_count, unit: " sources", higherBetter: true },
+  climate_risk: { label: "Climate-risk score", get: (c) => c.climate_risk, unit: " / 10", higherBetter: false },
+  temperature_anomaly: {
+    label: "Temperature anomaly",
+    note: "Temperature anomaly is shown on the map layer; a side-by-side temperature compare is coming next.",
+  },
+  biomes: {
+    label: "Biomes & climate zones",
+    note: "Köppen biome zones are shown on the map layer (they aren't a single comparable number).",
+  },
+};
 
 function getFlagEmoji(cc: string): string {
   if (!cc || cc.length !== 2) return "";
@@ -55,12 +82,14 @@ interface CompareResponse {
 interface MapCompareViewProps {
   initialCountryA?: string;
   initialCountryB?: string;
+  activeLayer?: ActiveLayer;
   onClose: () => void;
 }
 
 export default function MapCompareView({
   initialCountryA = "",
   initialCountryB = "",
+  activeLayer = "article_density",
   onClose,
 }: MapCompareViewProps) {
   const [countryA, setCountryA] = useState(initialCountryA);
@@ -279,6 +308,55 @@ export default function MapCompareView({
 
           {data && (
             <div className="space-y-6">
+              {/* Layer-aware headline — leads with the metric for the active
+                  map layer so the comparison responds to the chosen scope. */}
+              {(() => {
+                const m = LAYER_METRIC[activeLayer] ?? LAYER_METRIC.article_density;
+                if (!m.get) {
+                  return (
+                    <div className="bg-slate-700/40 rounded-xl p-4 border border-slate-600">
+                      <p className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+                        Active layer · {m.label}
+                      </p>
+                      <p className="text-xs text-slate-400">{m.note}</p>
+                    </div>
+                  );
+                }
+                const va = m.get(data.country_a);
+                const vb = m.get(data.country_b);
+                const leader =
+                  va === vb ? "tie" : (m.higherBetter ? va > vb : va < vb) ? "a" : "b";
+                const cell = (val: number, side: "a" | "b", name: string, accent: string) => (
+                  <div
+                    className={`flex-1 rounded-lg p-3 border ${
+                      leader === side ? "border-emerald-500/40 bg-emerald-500/10" : "border-slate-600 bg-slate-700/40"
+                    }`}
+                  >
+                    <p className={`text-xs ${accent}`}>{name}</p>
+                    <p className="text-2xl font-bold text-slate-100">
+                      {val.toLocaleString()}
+                      <span className="text-xs font-normal text-slate-400">{m.unit}</span>
+                    </p>
+                    {leader === side && (
+                      <p className="text-[10px] text-emerald-400 font-medium mt-0.5">
+                        {m.higherBetter ? "Higher" : "Lower"} {m.label.toLowerCase()}
+                      </p>
+                    )}
+                  </div>
+                );
+                return (
+                  <div className="bg-slate-700/40 rounded-xl p-4 border border-slate-600">
+                    <p className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">
+                      Comparing by active layer · {m.label}
+                    </p>
+                    <div className="flex items-stretch gap-3">
+                      {cell(va, "a", data.country_a.country_name, "text-teal-300")}
+                      {cell(vb, "b", data.country_b.country_name, "text-violet-300")}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Metrics comparison cards */}
               <div className="grid grid-cols-2 gap-4">
                 {/* Country A */}

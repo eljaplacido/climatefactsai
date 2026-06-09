@@ -4,7 +4,7 @@
 // can't be statically rendered.
 export const dynamic = "force-dynamic";
 
-import { Suspense, useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import nextDynamic from "next/dynamic";
 import { MapPin, ArrowLeft, Loader2 } from "lucide-react";
@@ -113,6 +113,9 @@ function MapPageInner() {
     layerSerializer,
   );
   const [highlightedCountries, setHighlightedCountries] = useState<string[]>([]);
+  // Quick Region Zoom target (region key + "#nonce" so repeat clicks re-fire).
+  const [zoomRegion, setZoomRegion] = useState<string | null>(null);
+  const zoomNonce = useRef(0);
 
   // Filter state — most filters stay session-local; only `keyword` lands
   // in the URL since it's the one users routinely want to share.
@@ -300,20 +303,11 @@ function MapPageInner() {
   }
 
   function handleRegionZoom(region: string) {
-    // This is a UI convenience - in a real scenario we would call map.flyToBounds
-    // For now we filter the keyword to the region
-    const regionKeywords: Record<string, string> = {
-      africa: "Africa",
-      asia: "Asia",
-      europe: "Europe",
-      americas: "Americas",
-      middle_east: "Middle East",
-      oceania: "Oceania",
-    };
-    setFilters((prev) => ({
-      ...prev,
-      keyword: regionKeywords[region] || "",
-    }));
+    // Fly the map to the region's bounds (handled by InteractiveClimateMap's
+    // FlyToRegion). The old version only set a keyword filter, which emptied
+    // statsMap and produced a blank grey map. Append a nonce so clicking the
+    // same region twice still re-zooms (effect deps change).
+    setZoomRegion(`${region}#${zoomNonce.current++}`);
   }
 
   // Client-side filtering for keyword (server handles the rest)
@@ -395,6 +389,7 @@ function MapPageInner() {
           activeLayer={activeLayer}
           highlightedCountries={highlightedCountries}
           timelineDate={timelineDate}
+          zoomRegion={zoomRegion}
         />
 
         {/* Layer control - top left */}
@@ -457,6 +452,7 @@ function MapPageInner() {
           <MapCompareView
             initialCountryA={compareCountryA}
             initialCountryB={compareCountryB}
+            activeLayer={activeLayer}
             onClose={() => setCompareMode(false)}
           />
         )}
