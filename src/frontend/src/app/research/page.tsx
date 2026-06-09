@@ -146,7 +146,15 @@ export default function ResearchPage() {
           extractErrorMessage(data, `Analysis failed (HTTP ${resp.status})`),
         );
       }
-      setResult(await resp.json());
+      const data = await resp.json();
+      // The service returns HTTP 200 with {status:"error", error:"..."} when it
+      // can't extract text (unreachable URL, bad DOI, empty body). The result UI
+      // only renders status==="completed", so without this the user saw nothing
+      // happen at all. Surface the error instead of swallowing it.
+      if (data?.status === "error") {
+        throw new Error(extractErrorMessage(data, data?.error || "Could not analyse that document. Check the URL/DOI is reachable, or paste the text directly."));
+      }
+      setResult(data);
     } catch (err: any) {
       setError(err?.message || "Analysis failed");
     } finally {

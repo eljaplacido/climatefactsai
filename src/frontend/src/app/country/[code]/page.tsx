@@ -671,13 +671,15 @@ function OverviewTab({ detail }: { detail: CountryDetail }) {
         countryCode={detail.country_code}
         countryName={detail.country_name}
         onAskAssistant={(q) => {
-          // Best-effort: dispatch a window event the chat panel listens
-          // for. The panel is mounted by the global layout, so we
-          // can't pass a direct callback.
+          // Dispatch the event the global AgenticAssistant actually listens
+          // for ("climatenews:assistant-prefill" with {prompt}). The old
+          // "clilens:ask-chat" event had NO listener, so suggestion clicks
+          // did nothing. The panel is mounted by the global layout, so we
+          // reach it via this window event rather than a direct callback.
           if (typeof window !== "undefined") {
             window.dispatchEvent(
-              new CustomEvent("clilens:ask-chat", {
-                detail: { question: q, source: "country-biome" },
+              new CustomEvent("climatenews:assistant-prefill", {
+                detail: { prompt: q },
               }),
             );
           }
