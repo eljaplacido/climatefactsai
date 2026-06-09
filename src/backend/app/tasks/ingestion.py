@@ -8,6 +8,7 @@ to querying existing articles from the database for pipeline testing.
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -18,6 +19,24 @@ from app.core.logging import get_logger
 from app.domains.content.source_profiles import SourceProfileService
 
 logger = get_logger(__name__)
+
+_ISO2_RE = re.compile(r"^[A-Z]{2}$")
+
+
+def _normalize_country_code(cc: Optional[str]) -> str:
+    """Map a feed/discovery country_code to a storable value (P0 — mig 067).
+
+    The articles.country_code column is CHAR(2), so pan-regional feed codes
+    like 'XX-AF' / 'XX-LA' / 'XX-AS' / 'XX-ME' get SILENTLY TRUNCATED to
+    'AF' (Afghanistan!) / 'LA' (Laos) / 'AS' (American Samoa) / 'ME'
+    (Montenegro), mislabeling pan-regional climate coverage on the map.
+    Anything that isn't a clean ISO-3166 alpha-2 (or the platform's 'EU'/'XX')
+    collapses to 'XX' (global / unattributed) rather than a wrong country.
+    """
+    if not cc:
+        return "XX"
+    c = str(cc).strip().upper()
+    return c if _ISO2_RE.match(c) else "XX"
 
 
 def _try_discover_via_perplexity(
@@ -168,7 +187,9 @@ def _insert_discovered_articles(
                         or article.get("excerpt")
                         or title
                     ),
-                    "country_code": article.get("country_code", country_code),
+                    "country_code": _normalize_country_code(
+                        article.get("country_code", country_code)
+                    ),
                     "published_date": article.get("published_date", datetime.utcnow()),
                     "content_category": article.get("content_category"),
                 },

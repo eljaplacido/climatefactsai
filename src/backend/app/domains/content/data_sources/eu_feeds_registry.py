@@ -182,7 +182,13 @@ AFRICA_CLIMATE_FEEDS: List[Dict[str, Any]] = [
     # North Africa
     {"name": "Egypt Independent", "url": "https://www.egyptindependent.com/feed/", "country_code": "EG", "tier": "public", "domain": "egyptindependent.com", "language": "en"},
     {"name": "Morocco World News", "url": "https://www.moroccoworldnews.com/feed/", "country_code": "MA", "tier": "public", "domain": "moroccoworldnews.com", "language": "en"},
-    # Pan-Africa / Research
+    # Pan-Africa / Research.
+    # NOTE: 'XX-AF' (and XX-LA/XX-AS/XX-ME below) are PAN-REGIONAL markers, not
+    # ISO codes. The articles.country_code column is CHAR(2) and would truncate
+    # them to AF/LA/AS/ME (Afghanistan/Laos/American-Samoa/Montenegro), so they
+    # are normalized to 'XX' (global/unattributed) at insert by
+    # ingestion._normalize_country_code (P0 — mig 067). Per-article geo-tagging
+    # of these multi-country feeds is a follow-up.
     {"name": "African Arguments", "url": "https://africanarguments.org/feed/", "country_code": "XX-AF", "tier": "research", "domain": "africanarguments.org", "language": "en"},
     {"name": "Africa Climate Summit", "url": "https://africaclimatesummit.org/feed/", "country_code": "XX-AF", "tier": "government", "domain": "africaclimatesummit.org", "language": "en"},
     {"name": "AllAfrica Environment", "url": "https://allafrica.com/tools/headlines/rdf/environment/headlines.rdf", "country_code": "XX-AF", "tier": "public", "domain": "allafrica.com", "language": "en"},
