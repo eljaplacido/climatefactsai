@@ -6,6 +6,7 @@ direct file upload — Deferred audit item #11), viewing analysis
 results, and weather-enriched credibility scoring.
 """
 
+import json
 from typing import Optional
 
 from fastapi import (
@@ -61,6 +62,7 @@ async def list_recent_research_analyses(
         rows = db.execute_query(
             """SELECT analysis_id::text AS analysis_id,
                       submitted_url,
+                      title,
                       status,
                       overall_credibility,
                       reliability_score,
@@ -81,6 +83,7 @@ async def list_recent_research_analyses(
             {
                 "analysis_id": r["analysis_id"],
                 "submitted_url": r.get("submitted_url"),
+                "title": r.get("title"),
                 "status": r.get("status"),
                 "overall_credibility": r.get("overall_credibility"),
                 "reliability_score": r.get("reliability_score"),
@@ -92,6 +95,68 @@ async def list_recent_research_analyses(
         ],
         "total": len(rows),
         "status_filter": status_filter,
+    }
+
+
+def _coerce_json(value, default):
+    """jsonb columns normally come back as parsed list/dict via psycopg, but
+    tolerate a raw str (older rows / different driver) by parsing it."""
+    if value is None:
+        return default
+    if isinstance(value, (list, dict)):
+        return value
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except (ValueError, TypeError):
+            return default
+    return default
+
+
+@router.get("/analyses/{analysis_id}")
+async def get_research_analysis(analysis_id: str):
+    """Full readable analysis for one completed url_analyses run (F8a).
+
+    Powers /research/analysis/{id} — a human-readable report (title, claims,
+    fact-checks, credibility) instead of the raw provenance JSON the panel used
+    to link to. Public + completed-only, matching the public list endpoint.
+    """
+    db = get_postgres()
+    try:
+        rows = db.execute_query(
+            """SELECT analysis_id::text AS analysis_id,
+                      submitted_url, title, source_name, source_domain,
+                      status, overall_credibility, reliability_score,
+                      extracted_claims, fact_checks, evidence,
+                      processing_time_ms, created_at, completed_at
+               FROM url_analyses
+               WHERE analysis_id = :id""",
+            {"id": analysis_id},
+        ) or []
+    except Exception as exc:
+        logger.warning(f"research/analyses/{analysis_id} query failed: {exc}")
+        raise HTTPException(status_code=500, detail="Could not load analysis")
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    r = rows[0]
+    if r.get("status") != "completed":
+        raise HTTPException(status_code=404, detail="Analysis not completed")
+
+    return {
+        "analysis_id": r["analysis_id"],
+        "submitted_url": r.get("submitted_url"),
+        "title": r.get("title"),
+        "source_name": r.get("source_name") or r.get("source_domain"),
+        "status": r.get("status"),
+        "overall_credibility": r.get("overall_credibility"),
+        "reliability_score": r.get("reliability_score"),
+        "claims": _coerce_json(r.get("extracted_claims"), []),
+        "fact_checks": _coerce_json(r.get("fact_checks"), []),
+        "evidence": _coerce_json(r.get("evidence"), []),
+        "processing_time_ms": r.get("processing_time_ms"),
+        "created_at": str(r["created_at"]) if r.get("created_at") else None,
+        "completed_at": str(r["completed_at"]) if r.get("completed_at") else None,
     }
 
 

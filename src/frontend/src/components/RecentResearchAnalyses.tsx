@@ -8,17 +8,21 @@
 // were invisible. This component lists them at the top of the page
 // so users can see what analyses HAVE happened on the platform.
 //
-// Each analysis links to the audit-trail page that already exists
-// at /api/methodology/audit-trail/url-analysis/{analysis_id}.
+// F8a — each analysis now links to a READABLE report at
+// /research/analysis/{id} (title, claims, fact-checks, credibility, SDGs)
+// instead of the raw provenance JSON. The JSON is still reachable as a
+// secondary link from inside the report page, for auditors.
 
 import { useEffect, useState } from "react";
-import { FileText, ExternalLink, Loader2 } from "lucide-react";
+import Link from "next/link";
+import { FileText, ExternalLink, Loader2, ArrowRight } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 interface Analysis {
   analysis_id: string;
   submitted_url: string | null;
+  title: string | null;
   status: string;
   overall_credibility: string | null;
   reliability_score: number | null;
@@ -114,16 +118,13 @@ export default function RecentResearchAnalyses() {
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
-                <a
-                  href={a.submitted_url || "#"}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <Link
+                  href={`/research/analysis/${a.analysis_id}`}
                   className="text-sm text-gray-900 font-medium hover:text-clilens-primary truncate flex items-center gap-1"
-                  title={a.submitted_url || ""}
+                  title={a.title || a.submitted_url || ""}
                 >
-                  <span className="truncate">{truncateUrl(a.submitted_url, 90)}</span>
-                  {a.submitted_url && <ExternalLink className="h-3 w-3 flex-shrink-0 text-gray-400" />}
-                </a>
+                  <span className="truncate">{a.title || truncateUrl(a.submitted_url, 90)}</span>
+                </Link>
                 <div className="text-[11px] text-gray-500 mt-0.5 flex items-center gap-2">
                   <CredibilityBadge level={a.overall_credibility} />
                   {a.reliability_score != null && (
@@ -132,20 +133,25 @@ export default function RecentResearchAnalyses() {
                   {a.completed_at && (
                     <span>· {a.completed_at.slice(0, 10)}</span>
                   )}
-                  {a.processing_time_ms && (
-                    <span>· {(a.processing_time_ms / 1000).toFixed(1)}s</span>
+                  {a.submitted_url && (
+                    <a
+                      href={a.submitted_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-0.5 hover:text-clilens-primary"
+                      title={a.submitted_url}
+                    >
+                      source <ExternalLink className="h-2.5 w-2.5" />
+                    </a>
                   )}
                 </div>
               </div>
-              <a
-                href={`${API_BASE}/api/methodology/audit-trail/url-analysis/${a.analysis_id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-slate-500 hover:underline whitespace-nowrap flex-shrink-0"
-                title="Technical provenance record (JSON) — model, prompts, sources used"
+              <Link
+                href={`/research/analysis/${a.analysis_id}`}
+                className="text-xs text-teal-700 hover:underline whitespace-nowrap flex-shrink-0 inline-flex items-center gap-0.5"
               >
-                Provenance (JSON) ↗
-              </a>
+                Read report <ArrowRight className="h-3 w-3" />
+              </Link>
             </div>
           </li>
         ))}

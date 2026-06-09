@@ -10,6 +10,7 @@ Orchestrates the complete URL analysis workflow:
 """
 
 import hashlib
+import json
 import re
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -280,7 +281,9 @@ class URLAnalyzer:
                     updated_at = NOW()
                 WHERE analysis_id = :analysis_id
                 """,
-                {"claims": str(claims), "analysis_id": analysis_id}
+                # json.dumps (NOT str()) — str() of a list emits single-quoted
+                # text that fails the ::jsonb cast, silently dropping claims.
+                {"claims": json.dumps(claims, default=str), "analysis_id": analysis_id}
             )
 
             logger.info(f"Extracted {len(claims)} claims for analysis {analysis_id}")
@@ -391,8 +394,11 @@ class URLAnalyzer:
                     "processing_ms": processing_ms,
                     "reliability_score": reliability_score,
                     "credibility_level": credibility_level,
-                    "fact_checks": str(fact_checks),
-                    "evidence": str(evidence),
+                    # json.dumps (NOT str()) — see extract_claims; str() emits
+                    # single-quoted text that fails the ::jsonb cast and marks
+                    # the whole analysis 'failed' whenever fact_checks is non-empty.
+                    "fact_checks": json.dumps(fact_checks, default=str),
+                    "evidence": json.dumps(evidence, default=str),
                     "analysis_id": analysis_id,
                 }
             )
