@@ -223,6 +223,33 @@ class TestCredibilityScalesEndpoint:
         assert f["claims_for_full_credit"] == RS.CLAIMS_FOR_FULL_CREDIT
 
 
+class TestEditorialGateEndpoint:
+    """Data-Layer audit Wave 1 'document gate': /api/methodology/editorial-gate
+    documents the topical inclusion rule + publish/hold/escalate decisions,
+    with term lists imported from the live gate (anti-drift)."""
+
+    def test_documents_both_gates(self):
+        r = client.get("/api/methodology/editorial-gate")
+        assert r.status_code == 200
+        body = r.json()
+        assert "topical_relevance_gate" in body
+        assert "editorial_decision_gate" in body
+        assert {"PUBLISH", "HOLD", "ESCALATE"} <= set(
+            body["editorial_decision_gate"]["decisions"].keys()
+        )
+
+    def test_term_lists_match_live_gate(self):
+        r = client.get("/api/methodology/editorial-gate")
+        body = r.json()
+        from app.domains.intelligence.editorial_gate import (
+            _CLIMATE_TERMS_STRONG,
+            _CLIMATE_TERMS_WEAK,
+        )
+        gate = body["topical_relevance_gate"]
+        assert set(gate["strong_terms"]) == set(_CLIMATE_TERMS_STRONG)
+        assert set(gate["weak_terms"]) == set(_CLIMATE_TERMS_WEAK)
+
+
 class TestCalibrationEndpoint:
     """Phase 5 wave 4: /api/methodology/calibration computes Brier + ECE +
     Platt over the labeled dataset."""

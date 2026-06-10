@@ -443,6 +443,68 @@ async def get_credibility_scales() -> Dict[str, Any]:
 
 
 # =============================================================================
+# Editorial / topical inclusion gate (Data-Layer audit 2026-06-10, Wave 1)
+# =============================================================================
+# The platform ingests from general-news feeds that leak off-topic stories. A
+# conservative keyword gate (classify_climate_relevance) decides what is
+# in-scope, and a separate EditorialGate decides publish/hold/escalate. The
+# audit flagged that the inclusion RULE was wired but undocumented, so a reader
+# couldn't see why an item was kept or dropped. This endpoint documents both
+# gates, reading the term lists straight from the module (anti-drift).
+
+@router.get("/editorial-gate")
+async def get_editorial_gate() -> Dict[str, Any]:
+    """Document the topical inclusion gate + the publish/hold/escalate gate.
+
+    Static (no DB). The strong/weak term lists are imported from
+    editorial_gate so this never drifts from the live gate.
+    """
+    from app.domains.intelligence.editorial_gate import (
+        _CLIMATE_TERMS_STRONG,
+        _CLIMATE_TERMS_WEAK,
+    )
+
+    return {
+        "topical_relevance_gate": {
+            "function": "app.domains.intelligence.editorial_gate.classify_climate_relevance",
+            "policy": (
+                "Conservative inclusion gate: an item is in-scope if it shows "
+                "ANY climate / sustainability / energy-transition signal. Only "
+                "items with ZERO signal are dropped — false-negatives "
+                "(dropping real climate coverage) are treated as far worse than "
+                "false-positives, so the gate errs toward inclusion."
+            ),
+            "scoring_rule": {
+                "any_strong_term": "in-scope; score = min(1.0, 0.6 + 0.1 × #strong terms)",
+                "two_or_more_weak_terms": "in-scope (climate-adjacent); score = 0.5",
+                "one_weak_term": "in-scope but flagged for review; score = 0.35",
+                "no_terms": "REJECTED; score = 0.0",
+            },
+            "strong_terms": sorted(_CLIMATE_TERMS_STRONG),
+            "weak_terms": sorted(_CLIMATE_TERMS_WEAK),
+            "matched_terms_returned": (
+                "The gate returns the matched terms in its reason string so "
+                "every inclusion/exclusion decision is reviewer-traceable."
+            ),
+        },
+        "editorial_decision_gate": {
+            "class": "app.domains.intelligence.editorial_gate.EditorialGate",
+            "decisions": {
+                "PUBLISH": "reliability_score ≥ 60, no majority-disputed claims, < 3 risk factors",
+                "HOLD": "reliability_score 30–59, or significant disputed claims, or low verification confidence",
+                "ESCALATE": "reliability_score < 30, or majority of claims disputed, or ≥ 3 risk factors",
+            },
+            "note": (
+                "The inclusion gate runs at ingest; the editorial decision gate "
+                "runs after verification using the reliability_score documented "
+                "at /api/methodology/credibility-scales."
+            ),
+        },
+        "methodology_url": "https://climatefacts.ai/methodology#editorial-gate",
+    }
+
+
+# =============================================================================
 # Audit-trail endpoints (Phase 4 wave 3)
 # =============================================================================
 # Surface per-extraction provenance to users and external auditors.
