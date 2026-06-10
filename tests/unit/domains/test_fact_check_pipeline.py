@@ -95,6 +95,32 @@ def test_auto_verify_marks_non_completed_results_failed(monkeypatch):
     assert "upstream llm unavailable" in result["results"][0]["error"]
 
 
+def test_default_verify_batch_is_25():
+    """Audit item 7: default throughput raised 10 -> 25."""
+    assert pipeline._DEFAULT_VERIFY_BATCH == 25
+
+
+def test_auto_verify_default_batch_size_reads_env(monkeypatch):
+    """When called with no batch_size (the Cloud Scheduler path), the task
+    resolves it from FACT_CHECK_BATCH_SIZE so ops can tune throughput without
+    a redeploy (audit item 7)."""
+    monkeypatch.setenv("FACT_CHECK_BATCH_SIZE", "7")
+    fake_db = _FakeDB(pending_rows=[])
+    _FakeStatusManager.stale_to_return = 0
+
+    monkeypatch.setattr(pipeline, "get_db", lambda: fake_db)
+    monkeypatch.setattr(pipeline, "ClaimsStatusManager", _FakeStatusManager)
+
+    _invoke_task(pipeline.auto_verify_pending_articles)  # no batch_size
+
+    select_params = [
+        params for (q, params) in fake_db.query_calls
+        if "limit :batch_size" in " ".join(q.split()).lower()
+    ]
+    assert select_params, "expected a pending-articles SELECT"
+    assert select_params[0]["batch_size"] == 7
+
+
 def test_retry_failed_verifications_reports_stale_recovery(monkeypatch):
     class _RetryDB(_FakeDB):
         def execute_query(self, query, params=None):

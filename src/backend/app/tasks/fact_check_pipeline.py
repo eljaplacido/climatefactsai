@@ -8,6 +8,7 @@ Runs on a Celery Beat schedule to continuously process new articles.
 from __future__ import annotations
 
 import asyncio
+import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -21,6 +22,11 @@ from app.domains.content.source_profiles import SourceProfileService
 from shared.claims_status_manager import ClaimsStatusManager
 
 logger = get_logger(__name__)
+
+# Default verification batch size. Raised 10 -> 25 (Data-Layer audit 2026-06-10,
+# item 7): at 10/run the backlog never drained against ~965 ingested/day.
+# Env-overridable so ops can tune throughput without a redeploy.
+_DEFAULT_VERIFY_BATCH = 25
 
 
 def _resolve_source_domain(url: Optional[str], source_name: Optional[str]) -> Optional[str]:
@@ -45,13 +51,17 @@ def _resolve_source_domain(url: Optional[str], source_name: Optional[str]) -> Op
 @app.task(bind=True, max_retries=2, rate_limit="3/m")
 def auto_verify_pending_articles(
     self,
-    batch_size: int = 10,
+    batch_size: Optional[int] = None,
     country_code: Optional[str] = None,
     task_metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Automated pipeline: find articles with claims_status='pending' or NULL
     and run the full verification chain on each.
+
+    batch_size defaults to the FACT_CHECK_BATCH_SIZE env var (or
+    _DEFAULT_VERIFY_BATCH) when not passed explicitly, so the Cloud Scheduler
+    cron — which calls with no args — picks up the env-tuned value.
 
     Steps per article:
       1. Mark claims_status = 'processing'
@@ -62,6 +72,13 @@ def auto_verify_pending_articles(
 
     Returns summary dict with counts and per-article results.
     """
+    if batch_size is None:
+        try:
+            batch_size = int(os.getenv("FACT_CHECK_BATCH_SIZE", str(_DEFAULT_VERIFY_BATCH)))
+        except (TypeError, ValueError):
+            batch_size = _DEFAULT_VERIFY_BATCH
+    batch_size = max(1, min(int(batch_size), 200))  # clamp defensively
+
     task_id = (task_metadata or {}).get("task_id") or self.request.id or f"autoverify-{uuid4()}"
     db = get_db()
     status_manager = ClaimsStatusManager(db)

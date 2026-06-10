@@ -183,11 +183,13 @@ app.conf.beat_schedule = {
         "schedule": crontab(minute=15, hour="*/3"),  # Every 3 hours at :15
         "kwargs": {"limit": 20},
     },
-    # Automated fact-checking: verify pending articles every 2 hours
+    # Automated fact-checking: verify pending articles hourly. No batch_size
+    # kwarg — the task reads FACT_CHECK_BATCH_SIZE (default 25) so throughput is
+    # tuned in one place (Data-Layer audit 2026-06-10, item 7: was 10/2h, the
+    # backlog never drained).
     "auto-verify-pending": {
         "task": "app.tasks.fact_check_pipeline.auto_verify_pending_articles",
-        "schedule": crontab(minute=45, hour="*/2"),  # Every 2 hours at :45
-        "kwargs": {"batch_size": 10},
+        "schedule": crontab(minute=45),  # Every hour at :45
     },
     # Retry failed verifications daily at 4 AM
     "retry-failed-verifications": {

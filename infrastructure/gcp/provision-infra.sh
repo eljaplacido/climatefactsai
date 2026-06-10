@@ -276,7 +276,7 @@ ensure_scheduler_job() {
 # Lightweight schedules for tiny launch
 ensure_scheduler_job "cn-discover"      "/api/scheduler/ingestion/discover"   "0 */6 * * *"  "Article discovery every 6 hours"
 ensure_scheduler_job "cn-rss-poll"      "/api/scheduler/ingestion/rss"       "0 */3 * * *"  "RSS polling every 3 hours"
-ensure_scheduler_job "cn-verify"        "/api/scheduler/processing/verify-pending" "0 */4 * * *"  "Auto-verify pending articles every 4 hours"
+ensure_scheduler_job "cn-verify"        "/api/scheduler/processing/verify-pending" "0 * * * *"    "Auto-verify pending hourly (batch via FACT_CHECK_BATCH_SIZE, default 25)"
 ensure_scheduler_job "cn-retry"         "/api/scheduler/processing/retry-failed"   "0 3 * * *"    "Retry failed verifications daily at 03:00 UTC"
 ensure_scheduler_job "cn-feeds"         "/api/scheduler/feeds/update"        "0 */8 * * *"  "Update feeds every 8 hours"
 ensure_scheduler_job "cn-translate"     "/api/scheduler/translation/batch"   "0 */12 * * *" "Batch translate every 12 hours"

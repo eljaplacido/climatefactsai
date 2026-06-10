@@ -10,7 +10,7 @@ import os
 import traceback
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query, status
 from pydantic import BaseModel
 
 from shared.logger import setup_logging
@@ -114,6 +114,12 @@ async def scheduled_rss_ingestion(
 @router.post("/processing/verify-pending")
 async def scheduled_verify_pending(
     background_tasks: BackgroundTasks,
+    batch_size: Optional[int] = Query(
+        default=None, ge=1, le=200,
+        description="Articles to verify this run. Defaults to the "
+                    "FACT_CHECK_BATCH_SIZE env var when omitted (Cloud "
+                    "Scheduler omits it, so the env tunes throughput).",
+    ),
     x_scheduler_secret: Optional[str] = Header(None, alias="X-Scheduler-Secret"),
 ):
     """Trigger verification of pending articles."""
@@ -122,8 +128,9 @@ async def scheduled_verify_pending(
     try:
         from app.tasks.fact_check_pipeline import auto_verify_pending_articles
 
-        background_tasks.add_task(auto_verify_pending_articles)
-        return {"status": "queued", "task": "auto_verify_pending_articles"}
+        background_tasks.add_task(auto_verify_pending_articles, batch_size=batch_size)
+        return {"status": "queued", "task": "auto_verify_pending_articles",
+                "batch_size": batch_size}
 
     except ImportError as exc:
         # Surface this as a real error so Cloud Scheduler doesn't report green
