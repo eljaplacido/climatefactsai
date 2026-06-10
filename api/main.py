@@ -12,6 +12,7 @@ from pathlib import Path
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 from datetime import datetime, date
+from urllib.parse import urlparse
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -149,8 +150,57 @@ def _row_to_article(row: Dict[str, Any]) -> Article:
         claims_error_message=row.get("claims_error_message"),
         claims_processed_at=row.get("claims_processed_at"),
         content_category=row.get("content_category"),
+        # Forward-compatible: if a query projects the 3 axes, carry them; the
+        # response handlers also resolve them by domain via _attach_source_axes.
+        editorial_score=_to_int(row.get("editorial_score")),
+        factcheck_score=_to_int(row.get("factcheck_score")),
+        transparency_score=_to_int(row.get("transparency_score")),
     )
     return article
+
+
+def _domain_for_source(url: Optional[str], source_name: Optional[str]) -> Optional[str]:
+    """Best-effort canonical domain from a URL (preferred) or source label."""
+    for cand in (url, source_name):
+        if not cand:
+            continue
+        raw = str(cand).strip()
+        try:
+            netloc = urlparse(raw).netloc or raw
+        except Exception:
+            netloc = raw
+        netloc = netloc.lower().strip()
+        if netloc.startswith("www."):
+            netloc = netloc[4:]
+        netloc = netloc.split("/")[0]
+        if "." in netloc:  # looks like a real domain, not a bare label
+            return netloc
+    return None
+
+
+def _attach_source_axes(db, article: Article) -> None:
+    """Resolve the source's 3-axis credibility scores by domain and attach
+    them. Best-effort: axis exposure is additive, so any failure (missing
+    source, DB hiccup) leaves the fields null rather than breaking the
+    response (Data-Layer audit 2026-06-10, Wave 1).
+
+    Resolution is by DOMAIN — articles store source_name as a label ("Reuters")
+    while the tier table is keyed by domain ("reuters.com"), so a name match
+    finds <10%. get_source_3axis_scores is LRU-cached by domain, so repeated
+    calls across a page are near-free after warmup.
+    """
+    if article.editorial_score is not None:
+        return  # already populated (e.g. a future JOIN-projecting query)
+    try:
+        from app.domains.trust.source_tier_service import get_source_3axis_scores
+        domain = _domain_for_source(article.url, article.source_name)
+        axes = get_source_3axis_scores(db, article.source_name or "", domain)
+        if axes:
+            (article.editorial_score,
+             article.factcheck_score,
+             article.transparency_score) = axes
+    except Exception:
+        pass
 
 
 # Initialise FastAPI
@@ -723,7 +773,10 @@ async def list_articles(
 
     try:
         rows = db.execute_query(query, params=params)
-        return [_row_to_article(row) for row in rows]
+        articles = [_row_to_article(row) for row in rows]
+        for art in articles:
+            _attach_source_axes(db, art)  # best-effort, LRU-cached by domain
+        return articles
     except Exception as exc:
         logger.error("Failed to list articles", error=str(exc))
         raise HTTPException(status_code=500, detail="Unable to fetch articles")
@@ -774,6 +827,7 @@ async def get_article_detail(article_id: str, db=Depends(get_db)):
 
     article_row = rows[0]
     article = _row_to_article(article_row)
+    _attach_source_axes(db, article)
 
     claims_query = """
         SELECT

@@ -77,6 +77,13 @@ class Article(BaseModel):
     published_date: Optional[datetime] = None
     source_name: str
     source_credibility_score: Optional[int] = Field(default=None, ge=0, le=100)
+    # 3-axis source credibility (resolved from source_credibility_tiers by
+    # domain). Null when the source isn't in the tier table. The reliability
+    # scorer already blends these into the composite; these fields expose them
+    # so the UI can show the breakdown (Data-Layer audit 2026-06-10, Wave 1).
+    editorial_score: Optional[int] = Field(default=None, ge=0, le=100)
+    factcheck_score: Optional[int] = Field(default=None, ge=0, le=100)
+    transparency_score: Optional[int] = Field(default=None, ge=0, le=100)
     excerpt: Optional[str] = None
     enriched_excerpt: Optional[str] = None
     climate_context_summary: Optional[str] = None

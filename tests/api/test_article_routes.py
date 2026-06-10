@@ -479,6 +479,61 @@ class TestStats:
         assert 0 <= data["average_confidence"] <= 100
 
 
+class TestSourceAxisExposure:
+    """Data-Layer audit Wave 1: /articles exposes the 3-axis source scores,
+    resolved by DOMAIN (source labels match the tier table <10% of the time)."""
+
+    def test_domain_for_source_prefers_url(self):
+        from api.main import _domain_for_source
+        assert _domain_for_source(
+            "https://www.reuters.com/world/x", "Reuters"
+        ) == "reuters.com"
+        # A bare label with no dot can't form a domain.
+        assert _domain_for_source(None, "Reuters") is None
+        # A source_name that is itself a domain works.
+        assert _domain_for_source(None, "yle.fi") == "yle.fi"
+
+    def test_attach_axes_sets_fields_from_resolver(self, monkeypatch):
+        import app.domains.trust.source_tier_service as sts
+        from api.main import _attach_source_axes
+        from api.models import Article
+        monkeypatch.setattr(
+            sts, "get_source_3axis_scores",
+            lambda db, name, domain: (88, 77, 66),
+        )
+        art = Article(
+            article_id="a", title="t", url="https://reuters.com/x",
+            source_name="Reuters", created_at=datetime.utcnow(),
+        )
+        _attach_source_axes(object(), art)
+        assert (art.editorial_score, art.factcheck_score, art.transparency_score) == (88, 77, 66)
+
+    def test_attach_axes_is_best_effort_on_error(self, monkeypatch):
+        import app.domains.trust.source_tier_service as sts
+        from api.main import _attach_source_axes
+        from api.models import Article
+
+        def _boom(db, name, domain):
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr(sts, "get_source_3axis_scores", _boom)
+        art = Article(
+            article_id="a", title="t", url="https://x.com/y",
+            source_name="X", created_at=datetime.utcnow(),
+        )
+        _attach_source_axes(object(), art)  # must not raise
+        assert art.editorial_score is None
+
+    def test_list_response_includes_axis_fields(self):
+        r = client.get("/api/articles?limit=1")
+        assert r.status_code == 200
+        items = r.json()
+        if not items:
+            pytest.skip("no articles in test DB")
+        for key in ("editorial_score", "factcheck_score", "transparency_score"):
+            assert key in items[0]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
 
