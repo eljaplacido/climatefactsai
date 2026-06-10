@@ -73,6 +73,7 @@ jobs:
             tests/api/test_chat_view_context.py \
             tests/api/test_deep_search_routes.py \
             tests/api/test_map_routes.py \
+            tests/api/test_country_coverage.py \
             tests/api/test_chat_routes.py \
             tests/api/test_indicators_climate_trace.py \
             tests/api/test_indicators_owid.py \
@@ -84,6 +85,7 @@ jobs:
             tests/api/test_drift_detection.py \
             tests/api/test_multi_llm_verifier.py \
             tests/api/test_anthropic_claim_extractor.py \
+            tests/unit/test_claim_json_parsing.py \
             tests/api/test_calibration.py \
             tests/api/test_calibration_store.py \
             tests/unit/api/test_rate_limiter.py \
@@ -101,6 +103,7 @@ jobs:
             tests/api/test_company_routes.py \
             tests/unit/domains/test_source_profiles_credibility_tiers.py \
             tests/unit/domains/test_numeric_grounding.py \
+            tests/backend/test_reliability_scorer_density.py \
             tests/unit/test_migration_hygiene.py \
             --override-ini="addopts=" -p no:warnings -v
 
