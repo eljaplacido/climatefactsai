@@ -1838,8 +1838,16 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
                     async def _primary_passthrough(_t, _n):
                         return _primary_claims
 
+                    # Independence over prompt-parity (audit item 5): the
+                    # secondary runs a distinct skeptical-auditor persona, not
+                    # the same claim_extraction prompt as the primary, so the
+                    # two LLMs can't share the same prompt-induced blind spot.
+                    _SECONDARY_PROMPT = "claim_extraction_auditor_persona"
+
                     async def _secondary_call(t, n):
-                        return await secondary.decompose_claims(t, n)
+                        return await secondary.decompose_claims(
+                            t, n, prompt_name=_SECONDARY_PROMPT,
+                        )
 
                     # Phase 8 B4 (2026-05-24) — numeric grounding closure.
                     # Wraps the new check_numeric_grounding pure function so
@@ -1866,20 +1874,30 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
                         max_claims=max(claims_count, 1),
                         primary_extractor=_primary_passthrough,
                         primary_model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+                        primary_prompt_name="claim_extraction",
                         secondary_extractor=_secondary_call,
                         secondary_model=secondary.model,
+                        secondary_prompt_name=_SECONDARY_PROMPT,
                         numeric_grounding_check=_ng_check,
                     )
+                    # Surface the numeric-grounding outcome + the (now distinct)
+                    # secondary prompt so provenance shows the two LLMs were
+                    # genuinely independent, not echoing one prompt (audit item 5).
+                    _ng_flags = [c.numeric_grounded for c in verification.primary_claims]
                     multi_llm_meta = {
                         "enabled": True,
                         "agreement_score": verification.agreement_score,
                         "primary_model": verification.primary_model,
                         "secondary_model": verification.secondary_model,
+                        "primary_prompt_name": verification.primary_prompt_name,
+                        "secondary_prompt_name": verification.secondary_prompt_name,
                         "primary_count": verification.primary_count,
                         "corroborated_count": verification.corroborated_count,
                         "secondary_total_claims": verification.secondary_total_claims,
                         "secondary_error": verification.secondary_error,
                         "similarity_threshold": verification.similarity_threshold,
+                        "numeric_grounded_count": sum(1 for v in _ng_flags if v is True),
+                        "numeric_ungrounded_count": sum(1 for v in _ng_flags if v is False),
                     }
                     logger.info(
                         "Multi-LLM verification for %s: "

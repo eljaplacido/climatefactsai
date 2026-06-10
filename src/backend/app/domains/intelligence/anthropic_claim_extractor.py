@@ -81,8 +81,18 @@ class AnthropicClaimExtractor:
         self,
         text: str,
         max_claims: int = 20,
+        prompt_name: str = "claim_extraction",
     ) -> List[AtomicClaim]:
         """Extract up to `max_claims` AtomicClaim objects from `text`.
+
+        `prompt_name` selects the registered prompt template. The default
+        ``claim_extraction`` matches the DeepSeek primary (agreement
+        measurement). The multi-LLM verifier passes
+        ``claim_extraction_auditor_persona`` here so the SECONDARY runs a
+        distinct skeptical-auditor prompt — independence over prompt-parity,
+        to break the shared-prompt sycophancy risk (Data-Layer audit 2026-06-10
+        item 5). The auditor prompt returns a ``{"claims": [...]}`` object,
+        which `_parse_claims` unwraps.
 
         Returns an empty list when:
           * Anthropic isn't configured (no key / no package).
@@ -103,11 +113,10 @@ class AnthropicClaimExtractor:
             )
             return []
 
-        # Resolve the versioned prompt template — same template as the
-        # DeepSeek primary so we measure agreement, not prompt drift.
+        # Resolve the versioned prompt template.
         from .prompts import get_prompt
 
-        tmpl = get_prompt("claim_extraction")
+        tmpl = get_prompt(prompt_name)
         prompt = tmpl.format(text=text[:4000], max_claims=max_claims)
 
         # synchronous SDK call — wrap in run_in_executor if we need to
@@ -151,15 +160,18 @@ class AnthropicClaimExtractor:
                 candidate = parts[i].strip()
                 if candidate.startswith("json"):
                     candidate = candidate[4:].strip()
-                if candidate.startswith("["):
+                if candidate.startswith("[") or candidate.startswith("{"):
                     json_str = candidate
                     break
 
-        # Strip a leading prose preamble like "Here are the claims: [...]"
-        if not json_str.startswith("["):
-            idx = json_str.find("[")
-            if idx >= 0:
-                json_str = json_str[idx:]
+        # Strip a leading prose preamble. Accept either a bare array
+        # (claim_extraction) or an object envelope (the auditor persona
+        # returns {"claims": [...], "greenwashing_flags": [...]}).
+        if not (json_str.startswith("[") or json_str.startswith("{")):
+            arr, obj = json_str.find("["), json_str.find("{")
+            candidates = [i for i in (arr, obj) if i >= 0]
+            if candidates:
+                json_str = json_str[min(candidates):]
 
         try:
             claims_data = json.loads(json_str)
@@ -170,9 +182,13 @@ class AnthropicClaimExtractor:
             )
             return []
 
+        # Unwrap the auditor-persona object envelope -> the claims array.
+        if isinstance(claims_data, dict):
+            claims_data = claims_data.get("claims")
+
         if not isinstance(claims_data, list):
             _logger.debug(
-                "AnthropicClaimExtractor: expected list, got %s",
+                "AnthropicClaimExtractor: expected list (or {claims:[...]}), got %s",
                 type(claims_data).__name__,
             )
             return []

@@ -821,7 +821,9 @@ class TestBackgroundProcessing:
         )
 
         # 3) Secondary (Anthropic) returns one matching claim (50% agreement).
-        async def _fake_secondary(self_arg, text, max_claims=20):
+        #    Accepts prompt_name — the verifier now drives the secondary with a
+        #    distinct auditor-persona prompt (audit item 5).
+        async def _fake_secondary(self_arg, text, max_claims=20, prompt_name="claim_extraction"):
             from app.domains.intelligence.schemas import AtomicClaim, ClaimCategory
             return [
                 AtomicClaim(
@@ -885,6 +887,10 @@ class TestBackgroundProcessing:
         assert mv["agreement_score"] == 0.5
         assert mv["corroborated_count"] == 1
         assert mv["primary_count"] == 2
+        # Audit item 5: the secondary ran a DISTINCT auditor-persona prompt, and
+        # provenance records both prompt names so independence is auditable.
+        assert mv["primary_prompt_name"] == "claim_extraction"
+        assert mv["secondary_prompt_name"] == "claim_extraction_auditor_persona"
 
     @pytest.mark.asyncio
     async def test_multi_llm_off_by_default(self, monkeypatch):

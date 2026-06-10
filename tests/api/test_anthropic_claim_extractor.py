@@ -85,6 +85,61 @@ _GOOD_JSON = json.dumps([
 ])
 
 
+# Auditor-persona output: an OBJECT envelope, not a bare array.
+_AUDITOR_JSON = json.dumps({
+    "claims": [
+        {
+            "claim_text": "The firm pledges carbon neutrality by 2030",
+            "claim_type": "prediction",
+            "claim_category": "statistical",
+            "importance_score": 0.8,
+            "claim_context": "press release",
+        },
+    ],
+    "greenwashing_flags": [
+        {"flag_type": "uncommitted_future", "text": "by 2030",
+         "reasoning": "no third-party verifier named"},
+    ],
+})
+
+
+# ---------------------------------------------------------------------------
+# Auditor-persona secondary (Data-Layer audit item 5)
+# ---------------------------------------------------------------------------
+
+class TestAuditorPersonaSecondary:
+    @pytest.mark.asyncio
+    async def test_object_envelope_is_unwrapped(self):
+        """The auditor prompt returns {"claims": [...]}; parse must unwrap it."""
+        extractor = AnthropicClaimExtractor(client=_FakeAnthropic(_AUDITOR_JSON))
+        claims = await extractor.decompose_claims(
+            "x" * 200, prompt_name="claim_extraction_auditor_persona",
+        )
+        assert len(claims) == 1
+        assert "carbon neutrality" in claims[0].claim_text
+
+    @pytest.mark.asyncio
+    async def test_prompt_name_selects_auditor_persona(self):
+        """Passing the auditor prompt_name actually sends the auditor prompt —
+        the SECONDARY is genuinely independent from the primary."""
+        fake = _FakeAnthropic(_AUDITOR_JSON)
+        extractor = AnthropicClaimExtractor(client=fake)
+        await extractor.decompose_claims(
+            "x" * 200, prompt_name="claim_extraction_auditor_persona",
+        )
+        sent = fake.last_call["messages"][0]["content"].lower()
+        assert "skeptical climate auditor" in sent
+
+    @pytest.mark.asyncio
+    async def test_default_prompt_unchanged(self):
+        """Default prompt_name keeps the bare-array claim_extraction contract."""
+        fake = _FakeAnthropic(_GOOD_JSON)
+        extractor = AnthropicClaimExtractor(client=fake)
+        claims = await extractor.decompose_claims("x" * 200)
+        assert len(claims) == 2
+        assert "skeptical climate auditor" not in fake.last_call["messages"][0]["content"].lower()
+
+
 # ---------------------------------------------------------------------------
 # Availability / short-text guards
 # ---------------------------------------------------------------------------
@@ -159,7 +214,8 @@ class TestHappyPath:
         last = extractor._injected_client.last_call
         user_content = last["messages"][0]["content"]
         assert "atomic, verifiable claims" in user_content
-        assert "Return ONLY a valid JSON array" in user_content
+        # v1.2 strict-JSON wording (Data-Layer audit P0 #3).
+        assert "raw JSON array" in user_content
 
 
 # ---------------------------------------------------------------------------
@@ -190,9 +246,11 @@ class TestParseTolerance:
         assert claims == []
 
     @pytest.mark.asyncio
-    async def test_non_list_root_returns_empty(self):
+    async def test_object_without_claims_array_returns_empty(self):
+        # A dict root with no "claims" array yields nothing. (A dict WITH a
+        # claims array is now unwrapped — see TestAuditorPersonaSecondary.)
         extractor = AnthropicClaimExtractor(
-            client=_FakeAnthropic('{"claims": [{"claim_text": "x"}]}'),
+            client=_FakeAnthropic('{"summary": "no claims array here"}'),
         )
         claims = await extractor.decompose_claims("x" * 200)
         assert claims == []

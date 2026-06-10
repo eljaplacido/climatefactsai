@@ -423,3 +423,68 @@ class TestVerifyAcceptsRawShapes:
         assert result.corroborated_count == 1
         assert result.primary_claims[0].text == "Solar grew 35%"
         assert result.primary_claims[0].importance == 0.8
+
+
+# ---------------------------------------------------------------------------
+# Numeric grounding + prompt-name independence (Data-Layer audit item 5)
+# ---------------------------------------------------------------------------
+
+class TestNumericGroundingAndPromptNames:
+    @pytest.mark.asyncio
+    async def test_ungrounded_numbers_penalised_and_flagged(self):
+        """A corroborated claim whose numbers aren't grounded gets its
+        confidence cut and numeric_grounded=False surfaced. The distinct
+        primary/secondary prompt names are recorded so provenance shows the
+        two LLMs were independent."""
+        primary = _const_extractor([
+            ExtractedClaim(text="Emissions fell 4.2 tonnes", importance=0.8),
+        ])
+        secondary = _const_extractor([
+            ExtractedClaim(text="Emissions fell 4.2 tonnes", importance=0.8),
+        ])
+
+        def _ng(claim_text, numbers):
+            return False  # number not grounded in real data
+
+        result = await verify_claims(
+            text="any",
+            max_claims=10,
+            primary_extractor=primary,
+            primary_model="A",
+            secondary_extractor=secondary,
+            secondary_model="B",
+            primary_prompt_name="claim_extraction",
+            secondary_prompt_name="claim_extraction_auditor_persona",
+            numeric_grounding_check=_ng,
+        )
+        c = result.primary_claims[0]
+        assert c.numeric_grounded is False
+        # corroborated (0.8) then numeric-ungrounded penalty (×0.5) -> 0.4
+        assert c.confidence == pytest.approx(0.4)
+        assert result.primary_prompt_name == "claim_extraction"
+        assert result.secondary_prompt_name == "claim_extraction_auditor_persona"
+
+    @pytest.mark.asyncio
+    async def test_grounded_numbers_not_penalised(self):
+        primary = _const_extractor([
+            ExtractedClaim(text="Emissions fell 4.2 tonnes", importance=0.8),
+        ])
+        secondary = _const_extractor([
+            ExtractedClaim(text="Emissions fell 4.2 tonnes", importance=0.8),
+        ])
+
+        def _ng(claim_text, numbers):
+            return True
+
+        result = await verify_claims(
+            text="any",
+            max_claims=10,
+            primary_extractor=primary,
+            primary_model="A",
+            secondary_extractor=secondary,
+            secondary_model="B",
+            numeric_grounding_check=_ng,
+        )
+        c = result.primary_claims[0]
+        assert c.numeric_grounded is True
+        assert c.confidence == pytest.approx(0.8)  # corroborated, no penalty

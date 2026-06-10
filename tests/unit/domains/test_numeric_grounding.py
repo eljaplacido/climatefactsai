@@ -18,6 +18,7 @@ from app.domains.intelligence.numeric_grounding import (
     GroundingResult,
     NumericToken,
     check_numeric_grounding,
+    check_numeric_grounding_against_indicators,
     extract_numbers,
     grounding_score,
 )
@@ -238,6 +239,53 @@ class TestGroundingScoreHelper:
 
     def test_scalar_helper_no_numbers_is_one(self):
         assert grounding_score("text only", "text only") == 1.0
+
+
+class TestGroundingAgainstIndicators:
+    """Audit item 5: ground a claim's numbers against REAL measured values
+    (country_indicators rows), not the article's own prose."""
+
+    def test_number_matching_a_real_indicator_is_grounded(self):
+        # Claim cites 4.2 tCO2e; the country's real per-capita figure is 4.21.
+        r = check_numeric_grounding_against_indicators(
+            "Per-capita emissions are 4.2 tCO2e",
+            indicators=[(4.21, "tCO2e"), (62.0, "%")],
+        )
+        assert r.grounded is True
+        assert r.grounding_score == 1.0
+
+    def test_number_absent_from_indicators_is_ungrounded(self):
+        # 99 matches no real indicator -> ungrounded.
+        r = check_numeric_grounding_against_indicators(
+            "Emissions are 99 tCO2e",
+            indicators=[(4.2, "tCO2e"), (62.0, "%")],
+        )
+        assert r.grounded is False
+        assert r.grounding_score == 0.0
+        assert r.claim_token_count == 1
+
+    def test_unit_discipline(self):
+        # 62 with no unit matches the 62% indicator (claim left unit implicit),
+        # but a 62 GtCO2e claim must NOT match a 62% indicator.
+        assert check_numeric_grounding_against_indicators(
+            "renewables reached 62", indicators=[(62.0, "%")],
+        ).grounded is True
+        assert check_numeric_grounding_against_indicators(
+            "62 GtCO2e", indicators=[(62.0, "%")],
+        ).grounded is False
+
+    def test_no_numbers_is_vacuously_grounded(self):
+        r = check_numeric_grounding_against_indicators(
+            "Emissions are falling", indicators=[(4.2, "tCO2e")],
+        )
+        assert r.grounded is True
+        assert r.claim_token_count == 0
+
+    def test_empty_indicators_ungrounds_numeric_claim(self):
+        r = check_numeric_grounding_against_indicators(
+            "Emissions are 4.2 tCO2e", indicators=[],
+        )
+        assert r.grounded is False
 
 
 class TestGroundingResultShape:

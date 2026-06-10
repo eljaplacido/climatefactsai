@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Sequence, Tuple
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +220,63 @@ def check_numeric_grounding(
             ungrounded_tokens=(),
             claim_token_count=0,
         )
+
+    grounded: list[NumericToken] = []
+    ungrounded: list[NumericToken] = []
+    for ct in claim_tokens:
+        if any(_tokens_match(ct, et, tolerance) for et in evidence_tokens):
+            grounded.append(ct)
+        else:
+            ungrounded.append(ct)
+
+    score = len(grounded) / len(claim_tokens)
+    return GroundingResult(
+        grounded=(score >= 1.0),
+        grounding_score=score,
+        grounded_tokens=tuple(grounded),
+        ungrounded_tokens=tuple(ungrounded),
+        claim_token_count=len(claim_tokens),
+    )
+
+
+def check_numeric_grounding_against_indicators(
+    claim: str,
+    indicators: Sequence[Tuple[float, Optional[str]]],
+    tolerance: float = 0.05,
+) -> GroundingResult:
+    """Ground a claim's numbers against REAL measured values, not the prose.
+
+    `indicators` is a sequence of ``(value, unit)`` pairs — e.g. the rows from
+    ``country_indicators`` for a given country (emissions_tco2e_per_capita,
+    renewable_share_electricity_percent, …). Matching semantics are identical
+    to :func:`check_numeric_grounding` (unit-compatible AND within a relative
+    tolerance, default 5%).
+
+    This is the building block the Data-Layer audit (2026-06-10, item 5) asks
+    for: grounding numerics against real data instead of the article's own
+    text (which a model may have hallucinated and then "corroborated" against
+    itself). It is only meaningful with a topical/country context that yields a
+    RELEVANT indicator set — grounding arbitrary article numbers against every
+    national indicator globally would match coincidentally and dilute the
+    signal. It therefore belongs in the country-aware article-verification
+    path; the URL-analysis path (which has no country context) keeps the
+    source-text check.
+    """
+    claim_tokens = extract_numbers(claim)
+    if not claim_tokens:
+        return GroundingResult(
+            grounded=True,
+            grounding_score=1.0,
+            grounded_tokens=(),
+            ungrounded_tokens=(),
+            claim_token_count=0,
+        )
+
+    evidence_tokens = [
+        NumericToken(value=float(v), unit=u, raw=str(v), span=(0, 0))
+        for (v, u) in indicators
+        if v is not None
+    ]
 
     grounded: list[NumericToken] = []
     ungrounded: list[NumericToken] = []
