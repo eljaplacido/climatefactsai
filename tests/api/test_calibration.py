@@ -17,9 +17,11 @@ from app.domains.intelligence.calibration import (
     CalibrationResult,
     PlattParams,
     ReliabilityBin,
+    accuracy_margin_of_error,
     apply_platt,
     brier_score,
     calibrate,
+    classify_fit_status,
     expected_calibration_error,
     fit_platt,
     reliability_diagram,
@@ -248,6 +250,47 @@ class TestCalibrateFullPipeline:
         # All values JSON-serialisable.
         import json as _json
         _json.dumps(out)
+
+
+# ---------------------------------------------------------------------------
+# Fit honesty — classify_fit_status + accuracy_margin_of_error (Wave 1)
+# ---------------------------------------------------------------------------
+
+class TestFitStatus:
+    """Tri-state honesty label. Thresholds passed in (store owns 5/50)."""
+
+    @pytest.mark.parametrize("n,expected", [
+        (0, "no_labels"),
+        (1, "insufficient_data"),
+        (4, "insufficient_data"),
+        (5, "preview"),
+        (49, "preview"),
+        (50, "stable"),
+        (200, "stable"),
+    ])
+    def test_classify_fit_status(self, n, expected):
+        assert classify_fit_status(n, preview_min=5, stable_min=50) == expected
+
+
+class TestAccuracyMargin:
+    def test_empty_returns_none(self):
+        assert accuracy_margin_of_error([]) is None
+
+    def test_margin_shrinks_as_n_grows(self):
+        # Same base rate (0.5), more labels -> tighter margin.
+        small = accuracy_margin_of_error([0, 1] * 5)    # n=10
+        large = accuracy_margin_of_error([0, 1] * 100)  # n=200
+        assert small is not None and large is not None
+        assert large < small
+
+    def test_margin_reference_value(self):
+        # p=0.5, n=100 -> 1.96 * sqrt(0.25/100) = 1.96 * 0.05 = 0.098
+        m = accuracy_margin_of_error([0, 1] * 50)
+        assert m == pytest.approx(0.098, abs=1e-4)
+
+    def test_unanimous_labels_zero_margin(self):
+        # p=1.0 -> variance 0 -> margin 0.
+        assert accuracy_margin_of_error([1, 1, 1, 1]) == 0.0
 
 
 # ---------------------------------------------------------------------------

@@ -110,6 +110,52 @@ class CalibrationResult:
 
 
 # ---------------------------------------------------------------------------
+# Fit honesty — status + margin (Data-Layer audit 2026-06-10, Wave 1)
+# ---------------------------------------------------------------------------
+# The /calibration endpoint exposed neither how many labels back the fit nor
+# any uncertainty, so a Platt fit on 6 labels read identically to one on 600.
+# These two pure helpers let the endpoint surface a tri-state fit_status and a
+# margin of error WITHOUT new labelling. Thresholds are passed in (not
+# imported) so the single source of truth stays calibration_store
+# (PREVIEW_FIT_MIN / STABLE_FIT_MIN) without a circular import.
+
+def classify_fit_status(n: int, preview_min: int, stable_min: int) -> str:
+    """Tri-state honesty label for a calibration fit, by label count.
+
+    Returns one of:
+      * "no_labels"        — n == 0 (nothing to fit)
+      * "insufficient_data" — 0 < n < preview_min (Platt not fit; floor-50 stands)
+      * "preview"          — preview_min <= n < stable_min (fit exists but is
+                             below the production fence; treat as a hint)
+      * "stable"           — n >= stable_min (production-grade)
+    Mirrors the is_preview semantics already used by calibration_store.
+    """
+    if n <= 0:
+        return "no_labels"
+    if n < preview_min:
+        return "insufficient_data"
+    if n < stable_min:
+        return "preview"
+    return "stable"
+
+
+def accuracy_margin_of_error(labels: Sequence[float], z: float = 1.96) -> Optional[float]:
+    """95%-by-default normal-approx half-width on the observed accuracy.
+
+    The observed accuracy is mean(labels) (labels are 0/1 or graded [0,1]).
+    The margin is ``z * sqrt(p*(1-p)/n)`` — how much the base rate could move
+    given how few labels we have. Returns None for empty input. Wider margin =
+    less trustworthy fit; pairs with classify_fit_status for the UI.
+    """
+    n = len(labels)
+    if n == 0:
+        return None
+    p = sum(float(y) for y in labels) / n
+    p = max(0.0, min(1.0, p))
+    return round(z * ((p * (1.0 - p) / n) ** 0.5), 4)
+
+
+# ---------------------------------------------------------------------------
 # Brier score
 # ---------------------------------------------------------------------------
 

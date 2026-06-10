@@ -213,6 +213,9 @@ class TestCalibrationEndpoint:
             assert body["signal"] == "reliability_score"
             assert body["available"] is True
             assert body["metrics"]["n_labels"] == 0
+            # Wave 1: fit_status is always present, even with zero labels.
+            assert body["metrics"]["fit_status"] == "no_labels"
+            assert body["metrics"]["margin_of_error"] is None
         finally:
             self._restore(prior)
 
@@ -263,6 +266,11 @@ class TestCalibrationEndpoint:
             assert m["platt_b"] is not None
             # Reliability diagram has the right number of bins.
             assert len(m["reliability_diagram"]) == 5
+            # Wave 1 fit honesty: 5 labels is a "preview" fit (>=5, <50) with
+            # a real margin of error; it is NOT applied at inference.
+            assert m["fit_status"] == "preview"
+            assert isinstance(m["margin_of_error"], float)
+            assert m["stable_fit_min"] == 50
         finally:
             self._restore(prior)
 
@@ -274,6 +282,7 @@ class TestCalibrationEndpoint:
         body = r.json()
         assert body["available"] is False
         assert "not supported" in body["reason"]
+        assert body["fit_status"] == "unsupported"
 
     def test_agreement_score_signal_supported(self):
         """Phase 5 wave 6: agreement_score now goes through the JSONB path query."""

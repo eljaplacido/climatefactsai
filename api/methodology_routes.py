@@ -440,9 +440,15 @@ async def methodology_calibration(
     the migration hasn't been applied — degrades gracefully so the
     methodology drawer can render an "awaiting first labels" state.
     """
-    from app.domains.intelligence.calibration import calibrate
+    from app.domains.intelligence.calibration import (
+        calibrate,
+        classify_fit_status,
+        accuracy_margin_of_error,
+    )
     from app.domains.intelligence.calibration_store import (
         SUPPORTED_SIGNALS,
+        PREVIEW_FIT_MIN,
+        STABLE_FIT_MIN,
         fetch_labelled_predictions,
     )
 
@@ -454,6 +460,7 @@ async def methodology_calibration(
                 f"signal '{signal}' not supported. "
                 f"Available: {sorted(SUPPORTED_SIGNALS)}"
             ),
+            "fit_status": "unsupported",
             "metrics": None,
         }
 
@@ -466,6 +473,11 @@ async def methodology_calibration(
             "available": True,
             "metrics": {
                 "n_labels": 0,
+                # fit_status/margin are always present so the methodology
+                # drawer can render an honest "awaiting labels" state without
+                # special-casing the empty branch (audit Wave 1).
+                "fit_status": "no_labels",
+                "margin_of_error": None,
                 "note": (
                     "No calibration labels recorded yet for this signal; "
                     "awaiting reviewer input via POST /api/methodology/calibration/labels."
@@ -474,10 +486,21 @@ async def methodology_calibration(
         }
 
     result = calibrate(predictions, labels, n_bins=max(1, min(int(n_bins), 50)))
+    metrics = result.as_dict()
+    # Surface fit honesty: how many labels back the fit, and the uncertainty.
+    # fit_status thresholds come from calibration_store (single source of truth);
+    # below STABLE_FIT_MIN the Platt fit is a preview and is NOT applied at
+    # inference (see calibration_store.apply_latest_to_reliability).
+    metrics["fit_status"] = classify_fit_status(
+        result.n, PREVIEW_FIT_MIN, STABLE_FIT_MIN
+    )
+    metrics["margin_of_error"] = accuracy_margin_of_error(labels)
+    metrics["observed_accuracy"] = round(sum(labels) / len(labels), 4)
+    metrics["stable_fit_min"] = STABLE_FIT_MIN
     return {
         "signal": signal,
         "available": True,
-        "metrics": result.as_dict(),
+        "metrics": metrics,
     }
 
 
