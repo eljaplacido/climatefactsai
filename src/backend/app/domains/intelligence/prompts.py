@@ -237,6 +237,19 @@ exhaust the article first. Do NOT return only 1-2 claims because the article
 attribution statements, scope qualifiers, comparative claims, and any sentence
 containing units (%, °C, ppm, GW, Mt, TWh, GtCO2e).
 
+ALSO EXTRACT these claim shapes — they are easy to skip but count toward the
+yield target:
+- Hedged claims — "may", "could", "is likely to", "is expected to", "risks",
+  "on track to". The hedge is part of the claim; set claim_type="prediction"
+  and keep the qualifier in claim_text (e.g. "Emissions are likely to peak by
+  2025").
+- Implicit / comparative claims — "the hottest year on record", "more than
+  double 2010 levels", "the largest such project in Africa". The comparison
+  itself is the verifiable assertion.
+- Attributed claims — "according to the IPCC…", "the agency reported…". The
+  attribution plus the asserted fact together form one claim.
+- Softly-phrased causal claims — "contributes to", "is driven by", "linked to".
+
 For each claim, provide:
 - claim_text: The exact claim
 - claim_type: "factual", "opinion", or "prediction"
@@ -244,7 +257,9 @@ For each claim, provide:
 - importance_score: 0.0-1.0 (how central to the article)
 - claim_context: Surrounding sentence for context
 
-Return ONLY a valid JSON array, no other text. Extract up to {max_claims} most important claims.
+OUTPUT FORMAT (STRICT): return ONLY a raw JSON array — start with '[' and end
+with ']'. No prose, no explanation, no markdown code fences. Extract up to
+{max_claims} most important claims.
 """
 
 
@@ -365,7 +380,7 @@ PROMPTS: Dict[str, PromptTemplate] = {
     ),
     "claim_extraction": PromptTemplate(
         name="claim_extraction",
-        version="v1.1",
+        version="v1.2",
         template=_CLAIM_EXTRACTION_TEMPLATE,
         system=None,
         max_tokens=2500,
@@ -378,12 +393,17 @@ PROMPTS: Dict[str, PromptTemplate] = {
             "verification (Phase 5) is measuring AGREEMENT, not PROMPT DRIFT."
         ),
         rationale=(
+            "v1.2 (2026-06-10, Data-Layer audit P0 #3) — v1.1's 3-8 yield "
+            "target left the corpus stuck at 2.24 claims/article (0% reaching "
+            "6+). Two changes: (a) explicit guidance to capture the claim "
+            "shapes that were being skipped — hedged/predictive, "
+            "implicit/comparative, attributed, and softly-phrased causal "
+            "claims; (b) a hardened STRICT-JSON output instruction (raw array, "
+            "no fences/prose) to cut the ~34% parse-failure rate that was "
+            "dropping whole articles to 0 claims. Paired with strict-parse + "
+            "retry in services._extract_with_deepseek. "
             "v1.1 (2026-05-27, End2End audit Section I priority #1) — explicit "
-            "yield target of 3-8 claims to fix the 1-2-claims-per-article rut. "
-            "Live audit measured average 2.24 claims/article and 0% of articles "
-            "reaching 6+ claims, which means the density factor in the "
-            "reliability scorer never reached full credit. Bumping max_tokens "
-            "to 2500 to give the model room for fuller extraction. "
+            "yield target of 3-8 claims; bumped max_tokens to 2500. "
             "v1.0 (Phase 5 wave 2, 2026-05-16) — original extraction prompt."
         ),
     ),

@@ -10,6 +10,7 @@ Multi-stage verification pipeline:
 
 import json
 import os
+import re
 from typing import Optional
 from uuid import UUID, uuid4
 from datetime import datetime
@@ -48,10 +49,79 @@ def _deepseek_chat(client, model: str, prompt: str, max_tokens: int = 2000, temp
     return result or ""
 
 
+class ClaimParseError(ValueError):
+    """Raised when an LLM claim-extraction reply can't be coerced to a JSON array."""
+
+
+def _loads_claim_array(response_text: str) -> list:
+    """Best-effort parse of an LLM reply into a list of claim dicts.
+
+    The live audit (2026-06-09) measured ~34% of DeepSeek claim replies failing
+    a bare ``json.loads`` — not because the content was bad, but because the
+    model wrapped the array in markdown fences, a prose preamble ("Here are the
+    claims:"), or a ``{"claims": [...]}`` envelope, or left a trailing comma.
+    Each of those failures dropped the *entire* article to 0 claims. This helper
+    tolerates all of those shapes; the caller retries with a stricter prompt
+    only when even this can't recover an array.
+
+    Raises:
+        ClaimParseError: if no JSON array can be salvaged.
+    """
+    if not response_text or not response_text.strip():
+        raise ClaimParseError("empty LLM response")
+
+    s = response_text.strip()
+
+    # 1. Unwrap the first fenced code block (```json ... ``` or bare ```).
+    if "```" in s:
+        parts = s.split("```")
+        for i in range(1, len(parts), 2):  # odd indices = fenced content
+            candidate = parts[i].strip()
+            if candidate.lower().startswith("json"):
+                candidate = candidate[4:].strip()
+            if candidate.startswith("[") or candidate.startswith("{"):
+                s = candidate
+                break
+
+    # 2. Build parse candidates in order of fidelity:
+    #    (a) the string as-is — handles a clean array OR a clean {"claims":[...]}
+    #        object envelope without mangling either;
+    #    (b) the first '[' to last ']' slice — strips leading/trailing prose
+    #        around a bare array.
+    candidates = [s]
+    start, end = s.find("["), s.rfind("]")
+    if start != -1 and end > start and s[start:end + 1] != s:
+        candidates.append(s[start:end + 1])
+
+    data = None
+    last_err: Optional[Exception] = None
+    for cand in candidates:
+        for attempt in (cand, re.sub(r",\s*([\]}])", r"\1", cand)):  # +trailing-comma repair
+            try:
+                data = json.loads(attempt)
+                break
+            except json.JSONDecodeError as exc:
+                last_err = exc
+        if data is not None:
+            break
+    if data is None:
+        raise ClaimParseError(f"unparseable JSON: {last_err}")
+
+    # 3. Some models wrap the array in an object — unwrap common keys.
+    if isinstance(data, dict):
+        for key in ("claims", "atomic_claims", "results", "items"):
+            if isinstance(data.get(key), list):
+                return data[key]
+        raise ClaimParseError("JSON object had no claims array")
+    if not isinstance(data, list):
+        raise ClaimParseError(f"expected a JSON array, got {type(data).__name__}")
+    return data
+
+
 class ClaimExtractor:
     """
     Extracts atomic, verifiable claims from article text using Claude.
-    
+
     Uses structured output to ensure consistent claim format.
     """
     
@@ -307,35 +377,52 @@ Example output format (return exactly this structure, no markdown, no explanatio
 
         tmpl = get_prompt("claim_extraction")
         prompt = tmpl.format(text=text[:4000], max_claims=max_claims)
+        max_tokens = tmpl.max_tokens or 2500
+        base_temp = tmpl.temperature if tmpl.temperature is not None else 0.1
         logger.info(f"Calling DeepSeek API with model: {self.deepseek_model}")
-        response_text = _deepseek_chat(
-            self.deepseek_client,
-            self.deepseek_model,
-            prompt,
-            max_tokens=tmpl.max_tokens or 2500,
-            temperature=tmpl.temperature if tmpl.temperature is not None else 0.1,
-        )
 
-        # Parse JSON from response
-        json_str = response_text.strip()
-        if "```json" in json_str:
-            json_str = json_str.split("```json")[1].split("```")[0].strip()
-        elif "```" in json_str:
-            parts = json_str.split("```")
-            for i in range(1, len(parts), 2):
-                candidate = parts[i].strip()
-                if candidate.startswith("json"):
-                    candidate = candidate[4:].strip()
-                if candidate.startswith("["):
-                    json_str = candidate
-                    break
+        # Strict-JSON + one retry. ~34% of first replies wrapped the array in
+        # prose/markdown and broke the old bare json.loads, dropping the whole
+        # article to 0 claims (2026-06-09 audit P0 #3). Recover the array
+        # tolerantly; if even that fails, retry once at temperature 0 with a
+        # hard JSON-only reminder before giving up.
+        claims_data: Optional[list] = None
+        last_err: Optional[Exception] = None
+        for attempt in range(2):
+            call_prompt = prompt if attempt == 0 else (
+                prompt
+                + "\n\nREMINDER: Your previous reply could not be parsed. Output "
+                "MUST be a raw JSON array — start with '[', end with ']'. No "
+                "prose, no markdown code fences, no explanation. Only the array."
+            )
+            response_text = _deepseek_chat(
+                self.deepseek_client,
+                self.deepseek_model,
+                call_prompt,
+                max_tokens=max_tokens,
+                temperature=0.0 if attempt else base_temp,
+            )
+            try:
+                claims_data = _loads_claim_array(response_text)
+                break
+            except ClaimParseError as exc:
+                last_err = exc
+                logger.warning(
+                    f"DeepSeek claim JSON parse failed "
+                    f"(attempt {attempt + 1}/2): {exc}"
+                )
 
-        claims_data = json.loads(json_str)
-        if not isinstance(claims_data, list):
-            raise ValueError("DeepSeek response is not a list")
+        if claims_data is None:
+            raise ValueError(
+                f"DeepSeek claim extraction unparseable after retry: {last_err}"
+            )
 
         claims = []
         for claim_dict in claims_data[:max_claims]:
+            # Skip malformed elements (non-dict, or missing the one required
+            # field) so a single bad entry can't sink the whole extraction.
+            if not isinstance(claim_dict, dict) or not claim_dict.get("claim_text"):
+                continue
             llm_category = claim_dict.get("claim_category", "statistical")
             try:
                 category = ClaimCategory(llm_category)
