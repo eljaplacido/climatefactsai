@@ -308,6 +308,17 @@ class TestOutputShape:
         assert "1 of 5 defined components" in out["formula_disclosure"]
         assert "sustainability_v2_2026_05" in out["formula_disclosure"]
 
+    def test_as_dict_contains_year_spread(self):
+        """year_spread must survive serialisation — it's the mixed-vintage
+        signal that explains the confidence band (2026-06-09 audit item 14)."""
+        score = compute_sustainability_score({
+            "emissions_tco2e_per_capita": _ind(10.0, year=2018),
+        })
+        assert score is not None
+        out = score.as_dict()
+        assert "year_spread" in out
+        assert out["year_spread"] == 0  # single indicator => no spread
+
     def test_component_contribution_includes_provenance(self):
         score = compute_sustainability_score({
             "emissions_tco2e_per_capita": _ind(
@@ -352,3 +363,45 @@ class TestComputeWithPydanticLikeObjects:
         # Weights v2 (5 components): emissions=0.30, renewable=0.25. Re-normalised
         # across the two present: 50 * (0.30/0.55) + 40 * (0.25/0.55) = 45.45.
         assert score.value == pytest.approx(45.45, abs=0.05)
+
+
+# ---------------------------------------------------------------------------
+# year_spread — mixed-vintage signal must compute AND reach the API DTO
+# (2026-06-09 audit item 14: the field was computed but the DTO dropped it)
+# ---------------------------------------------------------------------------
+
+class TestYearSpreadEndToEnd:
+    def test_mixed_vintage_widens_band_and_reports_spread(self):
+        """Averaging a 2018 indicator with a 2024 indicator is a 6-year
+        spread; the band widens by 2 points/year and the spread is reported."""
+        single = compute_sustainability_score({
+            "emissions_tco2e_per_capita": _ind(8.0, year=2022),
+            "renewable_share_electricity_percent": _ind(46.0, unit="%", year=2022),
+        })
+        mixed = compute_sustainability_score({
+            "emissions_tco2e_per_capita": _ind(8.0, year=2018),
+            "renewable_share_electricity_percent": _ind(46.0, unit="%", year=2024),
+        })
+        assert single is not None and mixed is not None
+        assert single.year_spread == 0
+        assert mixed.year_spread == 6
+        # Each year of spread adds 2.0 to the half-width band.
+        assert mixed.confidence_band == pytest.approx(single.confidence_band + 12.0)
+
+    def test_dto_round_trip_preserves_year_spread(self):
+        """The actual regression: SustainabilityScoreOut(**score.as_dict())
+        used to silently drop year_spread because the DTO never declared it."""
+        from api.green_transition_routes import SustainabilityScoreOut
+
+        score = compute_sustainability_score({
+            "emissions_tco2e_per_capita": _ind(8.0, year=2017),
+            "renewable_share_electricity_percent": _ind(46.0, unit="%", year=2023),
+        })
+        assert score is not None and score.year_spread == 6
+
+        dto = SustainabilityScoreOut(**score.as_dict())
+        assert dto.year_spread == 6, (
+            "year_spread was dropped by the DTO — audit item 14 has regressed"
+        )
+        # And it must serialise out to the wire payload too.
+        assert dto.model_dump()["year_spread"] == 6

@@ -105,6 +105,12 @@ class SustainabilityScoreOut(BaseModel):
     confidence_low: float
     confidence_high: float
     confidence_band: float
+    # max(year) - min(year) across contributing indicators. Surfaced so API
+    # consumers can see WHY the band is wide: a mixed-vintage composite (e.g.
+    # 2018 emissions averaged with 2024 ND-GAIN) widens the band by 2 points
+    # per year of spread. Previously computed but silently dropped here
+    # because the DTO never declared the field (2026-06-09 audit item 14).
+    year_spread: int = 0
     methodology_version: str
     methodology_url: str
     indicators_used: int
