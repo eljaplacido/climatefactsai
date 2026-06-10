@@ -182,8 +182,17 @@ class ReliabilityScorer:
             density_factor = min(1.0, total_claims / float(cls.CLAIMS_FOR_FULL_CREDIT))
             claims_component = claims_score * cls.WEIGHT_VERIFIED_CLAIMS * density_factor
         else:
-            # No claims found - use neutral score
-            claims_component = 60.0 * cls.WEIGHT_VERIFIED_CLAIMS
+            # No claims extracted/verified = no evidence assessed. The old
+            # neutral 60 (= 18 pts of the 30-pt claims weight) lifted EVERY
+            # empty-evidence article above the MEDIUM line, so a LOW verdict
+            # was unreachable and a top source could even reach HIGH despite
+            # zero evidence (2026-06-09 Data-Layer audit — "verdict
+            # meaningfulness"). Award no verification credit: source +
+            # relevance alone now drive the score, so a weak source
+            # legitimately falls to LOW and an unverified article structurally
+            # cannot exceed MEDIUM (max 50 + 20 = 70). The 0.50 MEDIUM
+            # threshold is deliberately left untouched.
+            claims_component = 0.0
 
         # 3. Content Relevance Component (20%)
         if content_relevance_score is not None:
@@ -291,9 +300,12 @@ class ReliabilityScorer:
         # claims to make HIGH defensible is held at MEDIUM regardless of
         # source credibility. Pairs with the density-factor penalty so
         # the headline number and the label move together.
+        # 2026-06-09 audit — the lower bound was widened from `0 <` to
+        # include zero-claims articles: an unverified article cannot be
+        # HIGH either (defensive; the no-credit math already caps it at 70).
         if (
             reliability_score >= cls.THRESHOLD_HIGH
-            and 0 < total_claims < cls.LIMITED_EVIDENCE_THRESHOLD
+            and total_claims < cls.LIMITED_EVIDENCE_THRESHOLD
         ):
             return CredibilityLevel.MEDIUM
 
@@ -598,8 +610,10 @@ class ReliabilityScorer:
         # Source quality (normalised 0-1)
         src_quality = (source_credibility_score or 50) / 100.0
 
-        # Claims verification ratio
-        claims_ratio = (verified_claims / total_claims) if total_claims > 0 else 0.5
+        # Claims verification ratio. Zero claims = no evidence assessed, NOT a
+        # neutral 0.5 — the old 0.5 floor kept empty-evidence articles out of
+        # the LOW band (2026-06-09 audit, consistent with the main scorer).
+        claims_ratio = (verified_claims / total_claims) if total_claims > 0 else 0.0
         false_penalty = (false_claims / total_claims) if total_claims > 0 else 0.0
         claims_score = max(0.0, claims_ratio - false_penalty)
 

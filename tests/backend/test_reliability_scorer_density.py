@@ -113,20 +113,56 @@ class TestClaimDensityFactor:
 
 
 class TestLimitedEvidenceLabel:
-    """The HIGH cap kicks in only when 0 < total_claims < 3. Zero claims
-    keeps the old neutral-60 behaviour so empty-claims articles don't
-    silently drop to MEDIUM via this path."""
+    """The HIGH cap kicks in when total_claims < 3 (now including zero).
+    Zero-claims articles get NO verification credit (2026-06-09 audit) so
+    empty-evidence can score LOW and can never reach HIGH."""
 
-    def test_zero_claims_keeps_neutral_path(self):
-        """Articles without claim extraction get neutral 60 + no cap."""
+    def test_zero_claims_strong_source_caps_at_medium(self):
+        """2026-06-09 audit — an unverified article (0 claims) from a strong
+        source used to score 81/HIGH on the neutral-60 path. With no
+        verification credit it now maxes at source(45)+relevance(18)=63 and
+        is held at MEDIUM: you cannot be HIGH credibility with zero evidence."""
         score, level = ReliabilityScorer.calculate_reliability_score(
             source_credibility_score=90,
             total_claims=0,
             verified_claims=0,
             content_relevance_score=0.9,
         )
-        # source=45, claims=60*.30=18, relevance=18 -> 81 HIGH
-        assert level == CredibilityLevel.HIGH
+        assert score < ReliabilityScorer.THRESHOLD_HIGH, (
+            f"zero-claims article scored {score}; must stay below HIGH"
+        )
+        assert level == CredibilityLevel.MEDIUM
+
+    def test_zero_claims_average_source_can_score_low(self):
+        """The core audit fix: empty-evidence must be ABLE to rate LOW. With
+        an average source (50) and neutral relevance (0.5) the OLD neutral-60
+        floor scored 25 + 18 + 10 = 53 -> MEDIUM. The NEW math forfeits the
+        claims credit: 25 + 0 + 10 = 35 -> LOW. This is the exact verdict that
+        used to be unreachable."""
+        score, level = ReliabilityScorer.calculate_reliability_score(
+            source_credibility_score=50,
+            total_claims=0,
+            verified_claims=0,
+            content_relevance_score=0.5,
+        )
+        assert score < ReliabilityScorer.THRESHOLD_MEDIUM, (
+            f"zero-claims average-source article scored {score}; expected LOW "
+            f"(was floored at MEDIUM=53 by the old neutral-60 default)"
+        )
+        assert level == CredibilityLevel.LOW
+
+    def test_zero_claims_top_source_max_is_medium(self):
+        """Even a perfect source + perfect relevance cannot reach HIGH with
+        zero claims: the claims weight (30 pts) is forfeited, capping the
+        ceiling at 70."""
+        score, level = ReliabilityScorer.calculate_reliability_score(
+            source_credibility_score=100,
+            total_claims=0,
+            verified_claims=0,
+            content_relevance_score=1.0,
+        )
+        assert score <= 70
+        assert level == CredibilityLevel.MEDIUM
 
     def test_two_claims_caps_high_to_medium(self):
         """Below threshold (3) — cap fires."""
