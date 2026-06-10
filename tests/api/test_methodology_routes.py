@@ -187,6 +187,42 @@ class TestIndicatorsEndpoint:
 # /api/methodology (bundle)
 # ---------------------------------------------------------------------------
 
+class TestCredibilityScalesEndpoint:
+    """Data-Layer audit item 11: /api/methodology/credibility-scales documents
+    every credibility ladder and the single HIGH/MEDIUM/LOW crosswalk, with
+    constants pulled from the canonical modules so docs can't drift."""
+
+    def test_returns_all_scales_and_canonical_levels(self):
+        r = client.get("/api/methodology/credibility-scales")
+        assert r.status_code == 200
+        body = r.json()
+        # Canonical levels reflect the live thresholds (HIGH=80, MEDIUM=50).
+        from shared.credibility_thresholds import HIGH, MEDIUM
+        assert body["canonical_levels"]["HIGH"] == f">= {HIGH}"
+        assert body["canonical_levels"]["LOW"] == f"< {MEDIUM}"
+        ids = {s["id"] for s in body["scales"]}
+        assert {
+            "article_reliability_score",
+            "source_credibility_tier",
+            "source_3axis_scores",
+            "url_analysis_reliability",
+            "calibrated_confidence",
+        } <= ids
+
+    def test_weights_match_live_scorer(self):
+        """Documented formula weights must equal the live ReliabilityScorer
+        constants — this is the anti-drift guarantee."""
+        r = client.get("/api/methodology/credibility-scales")
+        body = r.json()
+        from shared.reliability_scorer import ReliabilityScorer as RS
+        art = next(s for s in body["scales"] if s["id"] == "article_reliability_score")
+        f = art["formula"]
+        assert f["source_credibility_weight"] == RS.WEIGHT_SOURCE_CREDIBILITY
+        assert f["verified_claims_weight"] == RS.WEIGHT_VERIFIED_CLAIMS
+        assert f["content_relevance_weight"] == RS.WEIGHT_CONTENT_RELEVANCE
+        assert f["claims_for_full_credit"] == RS.CLAIMS_FOR_FULL_CREDIT
+
+
 class TestCalibrationEndpoint:
     """Phase 5 wave 4: /api/methodology/calibration computes Brier + ECE +
     Platt over the labeled dataset."""

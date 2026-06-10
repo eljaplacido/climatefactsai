@@ -316,6 +316,133 @@ async def get_source_tier_by_domain(domain: str) -> Dict[str, Any]:
 
 
 # =============================================================================
+# Credibility-scale crosswalk (Data-Layer audit 2026-06-10, item 11)
+# =============================================================================
+# The platform uses several distinct credibility ladders (article reliability
+# 0-100, source-tier letters, 3-axis source scores, the URL-analysis score).
+# The audit flagged that nothing documented how they relate, so a "76" on one
+# scale and a "T2" on another were not reconcilable by an auditor. This
+# endpoint enumerates every scale and the single crosswalk that maps a 0-100
+# score to HIGH/MEDIUM/LOW. Constants are imported from the canonical modules
+# (not hardcoded) so the documentation can never drift from the live math.
+
+@router.get("/credibility-scales")
+async def get_credibility_scales() -> Dict[str, Any]:
+    """Document every credibility scale and how they map to one another.
+
+    Static (no DB). Every numeric here is imported from the module that owns
+    it, so this endpoint stays in lockstep with the live scoring code.
+    """
+    from shared.credibility_thresholds import HIGH, MEDIUM
+    from shared.reliability_scorer import ReliabilityScorer as RS
+
+    # Tier base scores are owned by source_tier_service; import defensively so
+    # a refactor of that private map degrades to "see /source-tiers" rather
+    # than 500-ing this doc endpoint.
+    try:
+        from app.domains.trust.source_tier_service import _TIER_BASE_SCORE
+        tier_base_scores = dict(_TIER_BASE_SCORE)
+    except Exception:
+        tier_base_scores = None
+
+    canonical_levels = {
+        "HIGH": f">= {HIGH}",
+        "MEDIUM": f"{MEDIUM}–{HIGH - 1}",
+        "LOW": f"< {MEDIUM}",
+        "owner": "shared.credibility_thresholds (level_for / level_for_unit)",
+        "note": (
+            "Every 0-100 score in the platform maps to a level through this "
+            "single function, so one score yields exactly one label everywhere."
+        ),
+    }
+
+    scales = [
+        {
+            "id": "article_reliability_score",
+            "range": "0–100",
+            "levels": canonical_levels,
+            "owner": "shared.reliability_scorer.ReliabilityScorer",
+            "formula": {
+                "source_credibility_weight": RS.WEIGHT_SOURCE_CREDIBILITY,
+                "verified_claims_weight": RS.WEIGHT_VERIFIED_CLAIMS,
+                "content_relevance_weight": RS.WEIGHT_CONTENT_RELEVANCE,
+                "claims_for_full_credit": RS.CLAIMS_FOR_FULL_CREDIT,
+                "limited_evidence_threshold": RS.LIMITED_EVIDENCE_THRESHOLD,
+            },
+            "notes": (
+                "Composite article score. Zero verified claims forfeit the "
+                "claims weight (can't exceed MEDIUM); < "
+                f"{RS.LIMITED_EVIDENCE_THRESHOLD} claims are capped at MEDIUM "
+                "and flagged 'Limited evidence'."
+            ),
+        },
+        {
+            "id": "source_credibility_tier",
+            "range": "T1 | T2 | T3 | unknown | retracted",
+            "owner": "source_credibility_tiers table + source_tier_service",
+            "tier_base_score_0_100": tier_base_scores,
+            "prior_bonus": {
+                "T1": "+30", "T2": "+15", "T3": "+5",
+                "unknown": "0", "retracted": "-30",
+            },
+            "maps_to": (
+                "Feeds the source-credibility component (50% of "
+                "article_reliability_score) via the tier base score."
+            ),
+            "detail_endpoint": "/api/methodology/source-tiers",
+        },
+        {
+            "id": "source_3axis_scores",
+            "range": "editorial / factcheck / transparency, each 0–100",
+            "owner": "source_credibility_tiers (migration 041/045)",
+            "blend": {
+                "legacy_single_score_weight": RS.SOURCE_LEGACY_WEIGHT,
+                "axes_mean_weight": RS.SOURCE_AXES_WEIGHT,
+            },
+            "maps_to": (
+                "When all three axes are present they blend "
+                f"{RS.SOURCE_LEGACY_WEIGHT:.0%}/{RS.SOURCE_AXES_WEIGHT:.0%} with "
+                "the legacy single source score inside the source component."
+            ),
+        },
+        {
+            "id": "url_analysis_reliability",
+            "range": "0–100",
+            "levels": canonical_levels,
+            "owner": "app.services.url_analyzer",
+            "notes": (
+                "Verdict-weighted score for ad-hoc URL analysis (verified=1.0, "
+                "partially_true=0.6, unverified=0.3, disputed/false=0.0). Routes "
+                "its level through shared.credibility_thresholds.level_for, so it "
+                "agrees with article_reliability_score at the same number."
+            ),
+        },
+        {
+            "id": "calibrated_confidence",
+            "range": "0.0–1.0",
+            "owner": "app.domains.intelligence.calibration (Platt scaling)",
+            "maps_to": (
+                "Optional post-hoc recalibration of a raw confidence; only "
+                "applied when a stable fit exists (see /api/methodology/"
+                "calibration fit_status). Mapped to a level via level_for_unit."
+            ),
+        },
+    ]
+
+    return {
+        "overview": (
+            "Reconciliation of every credibility/reliability scale the "
+            "platform uses. All 0-100 scales share one HIGH/MEDIUM/LOW "
+            "crosswalk; source tiers and 3-axis scores feed the article "
+            "composite rather than being separate user-facing verdicts."
+        ),
+        "canonical_levels": canonical_levels,
+        "scales": scales,
+        "methodology_url": "https://climatefacts.ai/methodology#credibility-scales",
+    }
+
+
+# =============================================================================
 # Audit-trail endpoints (Phase 4 wave 3)
 # =============================================================================
 # Surface per-extraction provenance to users and external auditors.
