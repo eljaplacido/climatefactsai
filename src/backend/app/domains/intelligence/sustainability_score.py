@@ -11,16 +11,22 @@ handled by transparent re-weighting (not silent zero-substitution), and the
 output structure includes a `components` breakdown so users can see WHY a
 score landed where it did.
 
-# Methodology v1 (2026-05-16)
+# Methodology v2 (current — `sustainability_v2_2026_05`)
 
 A country's sustainability_score is the weighted sum of normalised component
-scores, each on a 0–100 scale where higher = more sustainable:
+scores, each on a 0–100 scale where higher = more sustainable. The LIVE weights
+are the `COMPONENTS` constants below; keep this table in sync with them.
 
 | Component                            | Weight | Direction | Source(s)                |
 |--------------------------------------|--------|-----------|--------------------------|
-| Per-capita emissions (inverted)      |  0.40  | lower=better | OWID, Global Carbon Project |
-| Renewable share of electricity       |  0.40  | higher=better | OWID, IEA, Ember         |
-| Climate Action Tracker policy rating |  0.20  | higher=better | CAT (adapter pending)    |
+| Per-capita emissions (inverted)      |  0.30  | lower=better | OWID, Global Carbon Project |
+| Renewable share of electricity       |  0.25  | higher=better | OWID, IEA, Ember         |
+| Climate Action Tracker policy rating |  0.20  | higher=better | CAT                      |
+| ND-GAIN index (adaptation+readiness) |  0.15  | higher=better | Notre Dame ND-GAIN       |
+| NDC target reduction %               |  0.10  | higher=better | UNFCCC NDC               |
+
+(v1, 2026-05-16, was a 3-component 0.40/0.40/0.20 emissions/renewables/CAT
+formula — superseded.)
 
 When a component's underlying indicator hasn't been synced yet for a country,
 its weight is removed from the denominator and the remaining components are

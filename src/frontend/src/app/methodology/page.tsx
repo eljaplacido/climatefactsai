@@ -89,6 +89,11 @@ interface CalibrationResponse {
     brier_score?: number;
     ece?: number;
     note?: string;
+    // Fit honesty (audit 2026-06-10): these are on the wire but were dropped.
+    fit_status?: string;
+    margin_of_error?: number | null;
+    observed_accuracy?: number;
+    stable_fit_min?: number;
   };
 }
 
@@ -999,12 +1004,36 @@ function CalibrationCard({ signal, data }: { signal: string; data: CalibrationRe
       </div>
     );
   }
+  // Fit honesty badge — a Platt fit below the production threshold is a
+  // "preview" that the platform does NOT apply at inference (audit 2026-06-10).
+  const fitStatus = m.fit_status || "";
+  const fitBadge: Record<string, { label: string; cls: string }> = {
+    stable: { label: "Stable fit", cls: "bg-green-100 text-green-800" },
+    preview: { label: "Preview fit", cls: "bg-amber-100 text-amber-800" },
+    insufficient_data: { label: "Insufficient data", cls: "bg-gray-100 text-gray-700" },
+    no_labels: { label: "No labels", cls: "bg-gray-100 text-gray-500" },
+  };
+  const badge = fitBadge[fitStatus];
   return (
     <div className="border border-gray-200 rounded-lg p-4 space-y-1">
-      <h3 className="font-semibold text-gray-900">{signal}</h3>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-semibold text-gray-900">{signal}</h3>
+        {badge && (
+          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${badge.cls}`}>
+            {badge.label}
+          </span>
+        )}
+      </div>
       <p className="text-xs text-gray-500">
         {m.n_labels} labels · Brier {(m.brier_score ?? 0).toFixed(3)} · ECE {(m.ece ?? 0).toFixed(3)}
+        {typeof m.margin_of_error === "number" ? ` · ±${m.margin_of_error.toFixed(3)}` : ""}
       </p>
+      {fitStatus === "preview" && (
+        <p className="text-[11px] text-amber-700">
+          Below the {m.stable_fit_min ?? 50}-label production threshold — shown as a
+          signal, not applied to live scores.
+        </p>
+      )}
       <p className="text-xs text-gray-600">{m.note || ""}</p>
     </div>
   );
