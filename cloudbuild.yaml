@@ -311,13 +311,19 @@ steps:
           name="${entry%%:*}"
           path="${entry##*:}"
           if gcloud scheduler jobs describe "$${name}" --location=${_REGION} --project=${_PROJECT_ID} >/dev/null 2>&1; then
-            gcloud scheduler jobs update http "$${name}" \
+            # Honest logging (2026-06-10 audit): don't print "Updated" when the
+            # update actually failed. Non-fatal — a scheduler URL refresh is not
+            # worth failing the whole deploy over — but surfaced as a warning.
+            if gcloud scheduler jobs update http "$${name}" \
               --location=${_REGION} \
               --project=${_PROJECT_ID} \
               --uri="$${API_URL}$${path}" \
               --headers="X-Scheduler-Secret=$${SCHEDULER_SECRET}" \
-              --quiet || true
-            echo "Updated scheduler: $${name}"
+              --quiet; then
+              echo "Updated scheduler: $${name}"
+            else
+              echo "WARNING: scheduler URL update failed for $${name} (non-fatal)" >&2
+            fi
           fi
         done
     waitFor:

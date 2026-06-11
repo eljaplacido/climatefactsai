@@ -245,11 +245,14 @@ main() {
     # 5. Update CORS on API to include frontend URL
     # -----------------------------------------------------------------------
     log "Updating API CORS_ORIGINS..."
+    # CORS must NOT silently drop (2026-06-10 audit + the antipatterns ledger:
+    # a swallowed CORS update has broken the app before). Fail loud — the
+    # cloudbuild path already removed its `|| true` here; align this manual path.
     gcloud run services update "${API_SERVICE}" \
         --region="${REGION}" \
         --project="${PROJECT_ID}" \
         --update-env-vars="CORS_ORIGINS=${FRONTEND_URL}" \
-        --quiet || true
+        --quiet
 
     # -----------------------------------------------------------------------
     # 6. Update Cloud Scheduler jobs with real API URL
