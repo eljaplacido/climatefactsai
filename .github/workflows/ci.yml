@@ -102,6 +102,7 @@ jobs:
             tests/api/test_skills_registry.py \
             tests/api/test_company_routes.py \
             tests/unit/domains/test_source_profiles_credibility_tiers.py \
+            tests/unit/domains/test_source_tier_service.py \
             tests/unit/domains/test_numeric_grounding.py \
             tests/backend/test_reliability_scorer_density.py \
             tests/backend/test_reliability_3axis.py \
