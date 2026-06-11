@@ -112,6 +112,10 @@ class MapQueryResponse(BaseModel):
     country_highlights: List[CountryStats] = []
     matching_articles: int = 0
     answer: Optional[str] = None
+    # Agentic next-step suggestions (audit 2026-06-10) — the frontend renders
+    # data.actions for every chat mode, so the map assistant can now act, not
+    # just answer.
+    actions: List[Dict[str, Any]] = []
     highlighted_countries: List[str] = []
     filters_applied: Dict[str, Any] = {}
     session_id: Optional[str] = None
@@ -917,9 +921,10 @@ async def query_map(
 
         # --- Generate LLM-powered answer with article citations ---------------
         answer = None
+        actions: List[Dict[str, Any]] = []
         session_id = request.session_id
         if request.query:
-            answer, session_id = await _llm_generate_map_answer(
+            answer, session_id, actions = await _llm_generate_map_answer(
                 db, request.query, highlights, total, where, params, session_id,
             )
         if answer is None and request.query and highlights:
@@ -947,6 +952,7 @@ async def query_map(
             country_highlights=highlights,
             matching_articles=total,
             answer=answer,
+            actions=actions,
             highlighted_countries=highlighted_codes,
             filters_applied=filters_applied,
             session_id=session_id,
@@ -1218,12 +1224,16 @@ async def _llm_generate_map_answer(
             "number [1], [2] etc. Be concise (2-4 sentences). Mention relevant "
             "countries and credibility when appropriate."
         )
+        from app.domains.intelligence.chat_actions import (
+            actions_prompt_suffix, split_actions,
+        )
         user_prompt = (
             f"{session_context}"
             f"ARTICLES:\n{articles_context}\n"
             f"STATS: {total} articles across {len(highlights)} countries. "
             f"Top: {top_countries}.\n\n"
             f"QUESTION: {query}"
+            f"{actions_prompt_suffix()}"
         )
 
         response = client.chat.completions.create(
@@ -1232,10 +1242,13 @@ async def _llm_generate_map_answer(
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            max_tokens=500,
+            max_tokens=600,
             temperature=0.3,
         )
         answer = response.choices[0].message.content.strip()
+        # Strip the trailing JSON actions block from the display text so the
+        # chips render but the raw JSON never leaks into the bubble.
+        answer, actions = split_actions(answer)
 
         # Generate or reuse session_id
         if not session_id:
@@ -1248,10 +1261,10 @@ async def _llm_generate_map_answer(
             "ts": time.time(),
         }
 
-        return answer, session_id
+        return answer, session_id, actions
     except Exception as e:
         logger.warning(f"LLM map answer generation failed: {e}")
-        return None, session_id
+        return None, session_id, []
 
 
 # ---------------------------------------------------------------------------

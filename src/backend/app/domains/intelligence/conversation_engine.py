@@ -87,6 +87,15 @@ class ConversationEngine:
         # Build grounded prompt with optional conversation history
         prompt = self._build_prompt(question, context, conversation_context, external_context)
 
+        # Agentic actions (2026-06-10 audit): let the article assistant suggest
+        # next-step skills (explore_entity, explain_connection, flag_off_topic…)
+        # so the chat ACTS on article pages, not just answers. The trailing JSON
+        # block is stripped from the stored/displayed answer below.
+        from app.domains.intelligence.chat_actions import (
+            actions_prompt_suffix, split_actions,
+        )
+        prompt = f"{prompt}{actions_prompt_suffix()}"
+
         if scope == "external":
             system_prompt = (
                 "You are Climatefacts.ai's research analyst. Answer the user's question "
@@ -155,6 +164,10 @@ class ConversationEngine:
                     "scope": scope,
                 }
 
+            # Split the trailing JSON actions block out before storing/scoring,
+            # so the stored answer + confidence estimate use clean text.
+            answer, actions = split_actions(answer)
+
             # Estimate confidence based on context relevance
             confidence = self._estimate_confidence(question, context, answer)
 
@@ -171,6 +184,7 @@ class ConversationEngine:
             return {
                 "conversation_id": str(conversation_id) if conversation_id else None,
                 "answer": answer,
+                "actions": actions,
                 "confidence": confidence,
                 "context_used": context.get("sources_used", []),
                 "model": used_model,

@@ -26,11 +26,11 @@ router = APIRouter(prefix="/api/skills", tags=["Skills"])
 async def list_skills_endpoint():
     """Return the full agentic skills registry.
 
-    Response shape:
+    Response shape (counts computed live from the registry, not fixed):
       {
         "skills": [{name, description, mode, parameters[], target_surfaces[]}, ...],
-        "total": 9,
-        "modes": {"auto": 6, "confirm": 3}
+        "total": 22,
+        "modes": {"auto": 11, "confirm": 11}
       }
     """
     return serialize_registry()

@@ -355,7 +355,7 @@ class TestMapQueryViewContext:
             map_routes, "_llm_parse_query", AsyncMock(return_value={})
         )
         monkeypatch.setattr(
-            map_routes, "_llm_generate_map_answer", AsyncMock(return_value=(None, None))
+            map_routes, "_llm_generate_map_answer", AsyncMock(return_value=(None, None, []))
         )
 
         resp = client.post(
@@ -377,7 +377,7 @@ class TestMapQueryViewContext:
             map_routes, "_llm_parse_query", AsyncMock(return_value={})
         )
         monkeypatch.setattr(
-            map_routes, "_llm_generate_map_answer", AsyncMock(return_value=(None, None))
+            map_routes, "_llm_generate_map_answer", AsyncMock(return_value=(None, None, []))
         )
 
         resp = client.post(
@@ -399,7 +399,7 @@ class TestMapQueryViewContext:
             map_routes, "_llm_parse_query", AsyncMock(return_value={})
         )
         monkeypatch.setattr(
-            map_routes, "_llm_generate_map_answer", AsyncMock(return_value=(None, None))
+            map_routes, "_llm_generate_map_answer", AsyncMock(return_value=(None, None, []))
         )
 
         resp = client.post(

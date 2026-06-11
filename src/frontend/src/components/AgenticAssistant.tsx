@@ -29,6 +29,7 @@ interface Message {
   clarification_needed?: string[];
   mode?: string;
   actions?: ChatActionSpec[];
+  model?: string;
 }
 
 interface AgenticAssistantProps {
@@ -460,6 +461,9 @@ export default function AgenticAssistant({
           data.text ||
           "No response generated.",
         mode,
+        // Real model that produced this answer (from the fallback chain), so
+        // the provenance badge is honest rather than hardcoded.
+        model: typeof data.model === "string" ? data.model : undefined,
       };
 
       if (Array.isArray(data.highlighted_countries)) {
@@ -644,9 +648,12 @@ export default function AgenticAssistant({
                       <div className="mt-2">
                         <AIProvenanceBadge
                           provenance={{
-                            model: "deepseek-chat",
-                            prompt_name: "chat_synthesis_with_actions",
-                            prompt_version: "v1.0",
+                            // Honest provenance (audit 2026-06-10): the real
+                            // model from the fallback chain, not a hardcoded
+                            // one. prompt_name omitted — /api/chat builds its
+                            // synthesis prompt inline, so stamping a registered
+                            // template name here was misleading.
+                            model: msg.model || "unknown",
                             retrieval_strategy: "hybrid_rag",
                             timestamp: new Date().toISOString(),
                           }}

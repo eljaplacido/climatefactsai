@@ -6,7 +6,7 @@ Tier-limited: free=2/article/day, basic=10, pro=unlimited.
 Supports multi-turn conversational context.
 """
 
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Depends, Query
@@ -45,6 +45,10 @@ class ConversationEntry(BaseModel):
     conversation_id: Optional[str] = None
     question: str
     answer: str
+    # Agentic next-step suggestions (audit 2026-06-10) — the article assistant
+    # can now act (explore entity, explain connection, flag off-topic…), not
+    # just answer. The frontend renders data.actions for every chat mode.
+    actions: List[Dict[str, Any]] = []
     confidence: float = 0.0
     context_used: List[str] = []
     model: Optional[str] = None
@@ -166,6 +170,7 @@ async def ask_article_question(
             conversation_id=result.get("conversation_id"),
             question=request.question,
             answer=result["answer"],
+            actions=result.get("actions", []),
             confidence=result.get("confidence", 0.0),
             context_used=result.get("context_used", []),
             model=result.get("model"),
