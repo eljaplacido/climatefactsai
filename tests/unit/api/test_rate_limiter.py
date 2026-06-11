@@ -280,3 +280,60 @@ class TestCheckLimit:
         assert current == 0
         assert limit == 10
         assert allowed is True
+
+
+class TestResolveUserFromToken:
+    """2026-06-10 audit: the middleware must populate request.state.user from
+    the bearer token, else every authenticated request fell to the anonymous
+    branch and the tier ladder was dead. Pins that decoding."""
+
+    def _req(self, headers):
+        class _R:
+            def __init__(self, h):
+                self.headers = h
+        return _R(headers)
+
+    def test_valid_access_token_resolves_user_and_tier(self):
+        from api.rate_limiter import RateLimitMiddleware
+        from api.auth_utils import TokenManager
+        tok = TokenManager.create_access_token(
+            user_id="u-123", email="a@b.c", subscription_tier="professional",
+        )
+        u = RateLimitMiddleware._resolve_user_from_token(
+            self._req({"Authorization": f"Bearer {tok}"})
+        )
+        assert u is not None
+        assert u["user_id"] == "u-123"
+        assert u["subscription_tier"] == "professional"
+
+    def test_missing_header_is_anonymous(self):
+        from api.rate_limiter import RateLimitMiddleware
+        assert RateLimitMiddleware._resolve_user_from_token(self._req({})) is None
+
+    def test_non_bearer_header_is_anonymous(self):
+        from api.rate_limiter import RateLimitMiddleware
+        assert RateLimitMiddleware._resolve_user_from_token(
+            self._req({"Authorization": "Basic abc"})
+        ) is None
+
+    def test_garbage_token_is_anonymous(self):
+        from api.rate_limiter import RateLimitMiddleware
+        assert RateLimitMiddleware._resolve_user_from_token(
+            self._req({"Authorization": "Bearer not.a.jwt"})
+        ) is None
+
+    def test_non_access_token_rejected(self):
+        # Only access tokens carry the tier; a valid-signature non-access
+        # token (e.g. a refresh token) must not resolve a user.
+        import jwt as _jwt
+        from datetime import datetime, timedelta
+        import api.auth_utils as au
+        from api.rate_limiter import RateLimitMiddleware
+        tok = _jwt.encode(
+            {"sub": "u-9", "type": "refresh",
+             "exp": datetime.utcnow() + timedelta(minutes=5)},
+            au.SECRET_KEY, algorithm=au.ALGORITHM,
+        )
+        assert RateLimitMiddleware._resolve_user_from_token(
+            self._req({"Authorization": f"Bearer {tok}"})
+        ) is None

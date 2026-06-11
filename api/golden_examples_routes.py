@@ -30,6 +30,7 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from api.auth_routes import get_current_user, get_optional_user
+from api.admin_pipeline_routes import require_admin
 from shared.database import get_postgres
 from shared.logger import setup_logging
 
@@ -60,7 +61,12 @@ async def promote_to_golden(
     current_user: dict = Depends(get_current_user),
 ):
     """Mark an artifact as a golden example. Idempotent per (kind, ref)
-    — re-promoting updates the why_golden + quality_score in place."""
+    — re-promoting updates the why_golden + quality_score in place.
+
+    Admin/curator-gated (2026-06-10 audit): golden examples seed LoRA training
+    data for the GX10 specialists, so promotion must not be open to any
+    logged-in user. Enterprise tier or an ADMIN_EMAILS address only."""
+    require_admin(current_user or {})
     if payload.artifact_kind not in ARTIFACT_KINDS:
         raise HTTPException(
             status_code=400,

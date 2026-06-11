@@ -107,6 +107,13 @@ class TestExplain:
         r = client.post("/api/semantic/explain", json={"article_ids": ["one"]})
         assert r.status_code == 400
 
+    def test_explain_quota_gates_anonymous(self):
+        """2026-06-10 audit: /explain runs an LLM and was unmetered. Anonymous
+        callers (deep_research quota 0) must now get 429, matching deep-search."""
+        r = client.post("/api/semantic/explain",
+                        json={"article_ids": ["a1", "a2"]})
+        assert r.status_code == 429
+
     def test_explain_with_no_bridges_returns_explainer(self):
         stub = _StubDB([
             # titles
@@ -115,7 +122,8 @@ class TestExplain:
             # shared entities — empty
             [],
         ])
-        with patch("api.semantic_routes.get_postgres", return_value=stub):
+        with patch("api.semantic_routes.get_postgres", return_value=stub), \
+             patch("api.quota_service.QuotaService.check_and_raise", return_value=None):
             r = client.post("/api/semantic/explain",
                             json={"article_ids": ["a1", "a2"]})
         assert r.status_code == 200
@@ -137,6 +145,7 @@ class TestExplain:
             return ("These two articles both discuss COP30 outcomes in the Amazon.",
                     "local-gx10", "qwen2.5:7b-instruct")
         with patch("api.semantic_routes.get_postgres", return_value=stub), \
+             patch("api.quota_service.QuotaService.check_and_raise", return_value=None), \
              patch("app.domains.content.article_enrichment_service.ArticleEnrichmentService._call_llm",
                    new=_fake_llm):
             r = client.post("/api/semantic/explain",

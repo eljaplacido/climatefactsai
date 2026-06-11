@@ -288,6 +288,32 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 ip=ip, usage_type=usage_type
             )
 
+    @staticmethod
+    def _resolve_user_from_token(request: Request) -> Optional[dict]:
+        """Decode the bearer access token into a {user_id, subscription_tier}
+        dict, or None. Middleware runs BEFORE route dependencies, so a
+        Depends(get_current_user) can't populate request.state in time — we
+        must decode here for the tier-aware limits to fire. Best-effort: a
+        missing, expired, or invalid token returns None (anonymous limits).
+        """
+        auth = request.headers.get("Authorization") or request.headers.get("authorization")
+        if not auth or not auth.lower().startswith("bearer "):
+            return None
+        token = auth[7:].strip()
+        if not token:
+            return None
+        try:
+            from api.auth_utils import TokenManager
+            payload = TokenManager.decode_token(token)
+        except Exception:
+            return None
+        if payload.get("type") != "access" or not payload.get("sub"):
+            return None
+        return {
+            "user_id": payload["sub"],
+            "subscription_tier": payload.get("tier", "freemium"),
+        }
+
     async def dispatch(self, request: Request, call_next):
         # HTTPException raised inside BaseHTTPMiddleware.dispatch is wrapped
         # by starlette's TaskGroup and surfaces as a 500 instead of the
@@ -308,8 +334,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if request.url.path.startswith("/api/auth") or request.url.path in ["/", "/health", "/api/stats"]:
             return await call_next(request)
 
-        # Get user from request state (set by auth dependency)
+        # Resolve the authenticated user from the bearer token so the
+        # tier-aware limits below actually fire. Without this, request.state.user
+        # was never set, every authenticated request fell to the anonymous IP
+        # branch, and the documented tier ladder was dead code (2026-06-10 audit).
         user = getattr(request.state, "user", None)
+        if user is None:
+            user = self._resolve_user_from_token(request)
+            request.state.user = user
 
         # For article views, enforce limits
         if request.url.path.startswith("/api/articles/") and request.method == "GET":

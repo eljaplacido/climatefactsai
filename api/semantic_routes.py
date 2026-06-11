@@ -31,9 +31,10 @@ from __future__ import annotations
 import os
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from api.auth_routes import get_optional_user
 from shared.database import get_postgres
 from shared.logger import setup_logging
 
@@ -217,7 +218,10 @@ class ExplainRequest(BaseModel):
 
 
 @router.post("/explain")
-async def explain_connection(payload: ExplainRequest):
+async def explain_connection(
+    payload: ExplainRequest,
+    current_user: Any = Depends(get_optional_user),
+):
     """LLM-driven "why are these connected" for a pair / small set.
 
     Strategy:
@@ -239,6 +243,22 @@ async def explain_connection(payload: ExplainRequest):
         raise HTTPException(status_code=400, detail="Need at least 2 article_ids")
     if payload.entity_ids and len(payload.entity_ids) < 2:
         raise HTTPException(status_code=400, detail="Need at least 2 entity_ids")
+
+    # Quota gate (2026-06-10 audit): this runs an LLM per call and was fully
+    # anonymous + unmetered. Meter it against deep_research — matching the
+    # frontend copy ("Counts against your deep-search quota") and its existing
+    # 429 handling. Anonymous callers get the anonymous envelope.
+    user_tier = "anonymous"
+    user_id = None
+    if current_user is not None:
+        user_tier = getattr(current_user, "subscription_tier", "freemium") or "freemium"
+        user_id = getattr(current_user, "user_id", None)
+    from api.quota_service import QuotaService
+    QuotaService.check_and_raise(
+        user_id=str(user_id) if user_id else None,
+        tier=user_tier,
+        quota_key="deep_research",
+    )
 
     db = get_postgres()
 
