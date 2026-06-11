@@ -149,8 +149,8 @@ class SemanticQueryService:
         category: Optional[str] = None,
         limit: int = 20,
     ) -> List[Dict]:
-        """pgvector cosine similarity search using query embedding."""
-        embedding = await self.embedding_service.generate_embedding(query)
+        """pgvector cosine similarity search on the live bge-m3 column."""
+        embedding = await self.embedding_service.generate_bge_m3_embedding(query)
         if not embedding:
             return []
 
@@ -173,11 +173,11 @@ class SemanticQueryService:
                 a.article_id, a.title, a.source_name, a.country_code,
                 a.content_category, a.overall_credibility, a.reliability_score,
                 a.published_date, a.excerpt,
-                1 - (a.embedding <=> :embedding::vector) AS similarity
+                1 - (a.embedding_bge_m3 <=> :embedding::vector) AS similarity
             FROM articles a
-            WHERE a.embedding IS NOT NULL
+            WHERE a.embedding_bge_m3 IS NOT NULL
               AND {where_clause}
-            ORDER BY a.embedding <=> :embedding::vector
+            ORDER BY a.embedding_bge_m3 <=> :embedding::vector
             LIMIT :limit
         """
 
@@ -223,7 +223,7 @@ class SemanticQueryService:
 
         # Use the combined claim text as a search query
         combined = " ".join(r.get("claim_text", "") for r in rows)[:2000]
-        embedding = await self.embedding_service.generate_embedding(combined)
+        embedding = await self.embedding_service.generate_bge_m3_embedding(combined)
         if not embedding:
             return []
 
@@ -233,12 +233,12 @@ class SemanticQueryService:
             SELECT
                 a.article_id, a.title, a.source_name,
                 a.overall_credibility, a.published_date,
-                1 - (a.embedding <=> :embedding::vector) AS similarity
+                1 - (a.embedding_bge_m3 <=> :embedding::vector) AS similarity
             FROM articles a
             WHERE a.article_id != :article_id
-              AND a.embedding IS NOT NULL
-              AND 1 - (a.embedding <=> :embedding::vector) >= 0.4
-            ORDER BY a.embedding <=> :embedding::vector
+              AND a.embedding_bge_m3 IS NOT NULL
+              AND 1 - (a.embedding_bge_m3 <=> :embedding::vector) >= 0.4
+            ORDER BY a.embedding_bge_m3 <=> :embedding::vector
             LIMIT :limit
             """,
             {"article_id": article_id, "embedding": vector_str, "limit": limit},

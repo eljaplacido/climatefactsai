@@ -1,8 +1,18 @@
 """
 Embedding service for article similarity using pgvector.
 
-Generates embeddings via OpenAI text-embedding-ada-002 and finds
-similar articles using pgvector cosine distance operator.
+LIVE COLUMN = ``articles.embedding_bge_m3`` (1024-dim, multilingual, free).
+The GX10 worker populates it for the whole corpus; the legacy
+``articles.embedding`` (ada-002, 1536-dim) is UNPOPULATED and effectively
+deprecated (2026-06-11 audit — "semantic split-brain"). Every read path below
+queries the bge-m3 column so the stored vectors are actually used.
+
+Note on query-string search: the API runs on Cloud Run, whose egress to the
+GX10 Ollama endpoint is blocked, so a query string can't be embedded with
+bge-m3 at request time — those paths return [] and the caller (search_routes)
+falls back to full-text search. Article-to-article similarity (``find_similar``)
+needs NO query embedding — it compares two STORED bge-m3 vectors — so it works
+fully from Cloud Run and powers the "Similar Articles" surface.
 """
 
 import os
@@ -185,12 +195,17 @@ class EmbeddingService:
         limit: int = 10,
         filters: Optional[dict] = None,
     ) -> List[dict]:
-        """Search articles by semantic similarity to a query string."""
-        embedding = await self.generate_embedding(query)
+        """Search articles by semantic similarity to a query string.
+
+        Embeds the query with bge-m3 to match the live column. Returns [] when
+        the embed is unavailable (e.g. GX10 unreachable from Cloud Run) so the
+        caller falls back to full-text search.
+        """
+        embedding = await self.generate_bge_m3_embedding(query)
         if not embedding:
             return []
 
-        where_clauses = ["a.embedding IS NOT NULL"]
+        where_clauses = ["a.embedding_bge_m3 IS NOT NULL"]
         params: dict = {"limit": limit}
 
         if filters:
@@ -210,10 +225,10 @@ class EmbeddingService:
                   a.article_id, a.title, a.source_name,
                   a.published_date, a.overall_credibility,
                   a.content_category, a.country_code,
-                  1 - (a.embedding <=> CAST(:embedding AS vector)) AS similarity_score
+                  1 - (a.embedding_bge_m3 <=> CAST(:embedding AS vector)) AS similarity_score
                 FROM articles a
                 WHERE {where_sql}
-                ORDER BY a.embedding <=> CAST(:embedding AS vector)
+                ORDER BY a.embedding_bge_m3 <=> CAST(:embedding AS vector)
                 LIMIT :limit""",
             params,
         )
@@ -241,21 +256,23 @@ class EmbeddingService:
             return await self.find_similar(article_id, limit=limit)
 
         combined_text = " ".join(r.get("claim_text", "") for r in claim_rows)[:4000]
-        embedding = await self.generate_embedding(combined_text)
+        embedding = await self.generate_bge_m3_embedding(combined_text)
         if not embedding:
-            return []
+            # No query embedding (e.g. GX10 unreachable) — fall back to stored
+            # article-vector similarity, which needs no query embed.
+            return await self.find_similar(article_id, limit=limit)
 
         vector_str = "[" + ",".join(str(x) for x in embedding) + "]"
         results = self.db.execute_query(
             """SELECT
                  a.article_id, a.title, a.source_name,
                  a.published_date, a.overall_credibility,
-                 1 - (a.embedding <=> CAST(:embedding AS vector)) AS similarity_score
+                 1 - (a.embedding_bge_m3 <=> CAST(:embedding AS vector)) AS similarity_score
                FROM articles a
                WHERE a.article_id != :id
-                 AND a.embedding IS NOT NULL
-                 AND 1 - (a.embedding <=> CAST(:embedding AS vector)) >= 0.35
-               ORDER BY a.embedding <=> CAST(:embedding AS vector)
+                 AND a.embedding_bge_m3 IS NOT NULL
+                 AND 1 - (a.embedding_bge_m3 <=> CAST(:embedding AS vector)) >= 0.35
+               ORDER BY a.embedding_bge_m3 <=> CAST(:embedding AS vector)
                LIMIT :limit""",
             {"id": article_id, "embedding": vector_str, "limit": limit},
         )
@@ -295,15 +312,18 @@ class EmbeddingService:
         limit: int = 5,
         min_similarity: float = 0.5,
     ) -> List[dict]:
-        """Find similar articles using pgvector cosine distance."""
-        # First check if the article has an embedding
+        """Find similar articles via pgvector cosine distance on the STORED
+        bge-m3 vectors (no query embedding needed, so this works from Cloud
+        Run regardless of GX10 reachability)."""
+        # First check if the target article has a bge-m3 embedding.
         rows = self.db.execute_query(
-            "SELECT embedding FROM articles WHERE article_id = :id AND embedding IS NOT NULL",
+            "SELECT embedding_bge_m3 FROM articles WHERE article_id = :id AND embedding_bge_m3 IS NOT NULL",
             {"id": article_id},
         )
         if not rows:
-            # Try to generate it first
-            success = await self.populate_embedding(article_id)
+            # Try to generate it first (best-effort — needs the GX10 endpoint;
+            # if unreachable this returns False and we yield no matches).
+            success = await self.populate_bge_m3_embedding(article_id)
             if not success:
                 return []
 
@@ -314,15 +334,15 @@ class EmbeddingService:
                  a.source_name,
                  a.published_date,
                  a.overall_credibility,
-                 1 - (a.embedding <=> target.embedding) AS similarity_score
+                 1 - (a.embedding_bge_m3 <=> target.embedding_bge_m3) AS similarity_score
                FROM articles a
                CROSS JOIN (
-                 SELECT embedding FROM articles WHERE article_id = :id
+                 SELECT embedding_bge_m3 FROM articles WHERE article_id = :id
                ) target
                WHERE a.article_id != :id
-                 AND a.embedding IS NOT NULL
-                 AND 1 - (a.embedding <=> target.embedding) >= :min_sim
-               ORDER BY a.embedding <=> target.embedding
+                 AND a.embedding_bge_m3 IS NOT NULL
+                 AND 1 - (a.embedding_bge_m3 <=> target.embedding_bge_m3) >= :min_sim
+               ORDER BY a.embedding_bge_m3 <=> target.embedding_bge_m3
                LIMIT :limit""",
             {"id": article_id, "limit": limit, "min_sim": min_similarity},
         )

@@ -221,21 +221,19 @@ async def semantic_search(
 
     db = get_postgres()
 
-    # Generate query embedding
+    # Generate the query embedding with bge-m3 — the LIVE column (2026-06-11
+    # audit, semantic split-brain). The old ada-002 OpenAI embed matched the
+    # EMPTY `embedding` column, so it spent on OpenAI and still degraded to FTS.
+    # On Cloud Run the GX10 endpoint is unreachable, so this returns None and we
+    # fall back to FTS — but without the wasted ada-002 call.
     query_embedding = None
     try:
-        import os
-        api_key = os.getenv("OPENAI_API_KEY")
-        if api_key:
-            import openai
-            client = openai.OpenAI(api_key=api_key)
-            emb_response = client.embeddings.create(
-                model="text-embedding-ada-002",
-                input=request.query[:8000],
-            )
-            query_embedding = emb_response.data[0].embedding
+        from app.domains.content.embedding_service import EmbeddingService
+        query_embedding = await EmbeddingService(db).generate_bge_m3_embedding(
+            request.query[:8000]
+        )
     except Exception as emb_err:
-        logger.warning(f"Embedding generation failed, falling back to FTS: {emb_err}")
+        logger.warning(f"bge-m3 query embedding failed, falling back to FTS: {emb_err}")
 
     if query_embedding:
         # Hybrid search: 0.6 semantic + 0.4 FTS
@@ -244,11 +242,11 @@ async def semantic_search(
         query_sql = """
             WITH semantic AS (
                 SELECT article_id,
-                       1 - (embedding <=> :embedding::vector) AS sem_score
+                       1 - (embedding_bge_m3 <=> :embedding::vector) AS sem_score
                 FROM articles
                 WHERE is_synthetic = FALSE
                   AND is_off_topic = FALSE
-                  AND embedding IS NOT NULL
+                  AND embedding_bge_m3 IS NOT NULL
             ),
             fts AS (
                 SELECT article_id,

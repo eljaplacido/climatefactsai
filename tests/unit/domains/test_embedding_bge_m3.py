@@ -66,6 +66,58 @@ class TestStore:
         assert params["article_id"] == "aid-1"
 
 
+class TestReadPathsUseBgeM3:
+    """Split-brain fix (2026-06-11 audit): every read path must query the
+    populated embedding_bge_m3 column, NOT the empty ada-002 `embedding`."""
+
+    def test_find_similar_queries_bge_m3_stored_vectors(self):
+        db = MagicMock()
+        # target has a bge-m3 vector (skip populate); main query returns nothing.
+        db.execute_query.side_effect = [[{"embedding_bge_m3": "x"}], []]
+        svc = EmbeddingService(db)
+        asyncio.run(svc.find_similar("aid-1"))
+        sqls = " ".join(c.args[0] for c in db.execute_query.call_args_list)
+        assert "embedding_bge_m3" in sqls
+        assert "a.embedding <=>" not in sqls
+
+    def test_semantic_search_queries_bge_m3(self):
+        db = MagicMock()
+        db.execute_query.return_value = []
+        svc = EmbeddingService(db)
+        with patch.object(svc, "generate_bge_m3_embedding",
+                          new=AsyncMock(return_value=[0.1] * 1024)):
+            asyncio.run(svc.semantic_search("renewable energy"))
+        sql = db.execute_query.call_args.args[0]
+        assert "embedding_bge_m3" in sql
+        assert "a.embedding <=>" not in sql
+
+    def test_semantic_search_no_embedding_returns_empty_no_query(self):
+        # GX10 unreachable → embed None → [] so the caller can FTS-fall-back.
+        db = MagicMock()
+        svc = EmbeddingService(db)
+        with patch.object(svc, "generate_bge_m3_embedding",
+                          new=AsyncMock(return_value=None)):
+            out = asyncio.run(svc.semantic_search("x"))
+        assert out == []
+        db.execute_query.assert_not_called()
+
+    def test_cross_reference_falls_back_to_find_similar_on_no_embed(self):
+        db = MagicMock()
+        db.execute_query.side_effect = [
+            [{"claim_text": "Emissions rose 4%."}],  # claims lookup
+            [{"embedding_bge_m3": "x"}],             # find_similar target check
+            [],                                      # find_similar main query
+        ]
+        svc = EmbeddingService(db)
+        with patch.object(svc, "generate_bge_m3_embedding",
+                          new=AsyncMock(return_value=None)):
+            out = asyncio.run(svc.cross_reference_articles("aid-1"))
+        assert out == []
+        sqls = " ".join(c.args[0] for c in db.execute_query.call_args_list)
+        assert "embedding_bge_m3" in sqls
+        assert "a.embedding <=>" not in sqls
+
+
 class TestBatch:
     def test_batch_summary_accounting(self):
         db = MagicMock()

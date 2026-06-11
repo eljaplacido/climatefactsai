@@ -705,7 +705,8 @@ class DeepSearchService:
         synthesis path that previously fabricated answers from
         zero-relevance Slovenian celebrity articles for India queries.
         """
-        embedding = await self.embedding_service.generate_embedding(query)
+        # Live column is bge-m3 (2026-06-11 audit); ada-002 is unpopulated.
+        embedding = await self.embedding_service.generate_bge_m3_embedding(query)
 
         results = []
 
@@ -733,12 +734,12 @@ class DeepSearchService:
                     a.article_id, a.title, a.source_name, a.country_code,
                     a.content_category, a.overall_credibility, a.reliability_score,
                     a.published_date, a.excerpt,
-                    1 - (a.embedding <=> :embedding::vector) AS similarity
+                    1 - (a.embedding_bge_m3 <=> :embedding::vector) AS similarity
                 FROM articles a
-                WHERE a.embedding IS NOT NULL
-                  AND (1 - (a.embedding <=> :embedding::vector)) >= :min_sim
+                WHERE a.embedding_bge_m3 IS NOT NULL
+                  AND (1 - (a.embedding_bge_m3 <=> :embedding::vector)) >= :min_sim
                   AND {where_clause}
-                ORDER BY a.embedding <=> :embedding::vector
+                ORDER BY a.embedding_bge_m3 <=> :embedding::vector
                 LIMIT :limit
             """
 

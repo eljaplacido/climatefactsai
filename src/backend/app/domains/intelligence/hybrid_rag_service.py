@@ -67,13 +67,13 @@ class HybridRAGService:
         limit: int = 30,
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
-        """Cosine-distance search on articles.embedding via pgvector."""
+        """Cosine-distance search on articles.embedding_bge_m3 via pgvector."""
         embedding = await self._generate_query_embedding(query)
         if embedding is None:
             return []
 
         where_clauses = [
-            "a.embedding IS NOT NULL",
+            "a.embedding_bge_m3 IS NOT NULL",
         ]
         params: Dict[str, Any] = {
             "embedding": embedding,
@@ -91,10 +91,10 @@ class HybridRAGService:
                 a.excerpt,
                 a.overall_credibility,
                 a.country_code,
-                1 - (a.embedding <=> :embedding::vector) AS similarity_score
+                1 - (a.embedding_bge_m3 <=> :embedding::vector) AS similarity_score
             FROM articles a
             WHERE {where_sql}
-            ORDER BY a.embedding <=> :embedding::vector
+            ORDER BY a.embedding_bge_m3 <=> :embedding::vector
             LIMIT :limit
             """,
             params,
@@ -348,23 +348,21 @@ class HybridRAGService:
     # ------------------------------------------------------------------
 
     async def _generate_query_embedding(self, text: str) -> Optional[str]:
-        """Generate embedding vector string for pgvector from query text."""
-        if not self._openai_api_key:
-            logger.debug("OPENAI_API_KEY not set, semantic search unavailable")
-            return None
+        """Generate a bge-m3 query-embedding vector string for pgvector.
 
+        Uses the live bge-m3 column (2026-06-11 audit, semantic split-brain) —
+        the old ada-002 embed matched the empty `embedding` column. Returns
+        None when the GX10 endpoint is unreachable (e.g. from Cloud Run), so the
+        caller degrades to FTS rather than vector search.
+        """
         try:
-            import openai
-
-            client = openai.OpenAI(api_key=self._openai_api_key)
-            response = client.embeddings.create(
-                model="text-embedding-ada-002",
-                input=text[:8000],
-            )
-            embedding = response.data[0].embedding
+            from app.domains.content.embedding_service import EmbeddingService
+            embedding = await EmbeddingService(self.db).generate_bge_m3_embedding(text[:8000])
+            if not embedding:
+                return None
             return "[" + ",".join(str(v) for v in embedding) + "]"
         except Exception as e:
-            logger.warning(f"Query embedding generation failed: {e}")
+            logger.warning(f"bge-m3 query embedding generation failed: {e}")
             return None
 
     @staticmethod

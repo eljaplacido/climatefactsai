@@ -104,7 +104,7 @@ class RAGEvidenceRetriever:
             db = get_db()
 
             check = db.execute_query(
-                "SELECT COUNT(*) as cnt FROM articles WHERE embedding IS NOT NULL"
+                "SELECT COUNT(*) as cnt FROM articles WHERE embedding_bge_m3 IS NOT NULL"
             )
             if not check or check[0]["cnt"] == 0:
                 return []
@@ -119,12 +119,12 @@ class RAGEvidenceRetriever:
                     a.article_id, a.title, a.url, a.source_name,
                     a.reliability_score, a.overall_credibility,
                     a.claims_count, a.verified_claims_count,
-                    1 - (a.embedding <=> :embedding::vector) as similarity
+                    1 - (a.embedding_bge_m3 <=> :embedding::vector) as similarity
                 FROM articles a
-                WHERE a.embedding IS NOT NULL
+                WHERE a.embedding_bge_m3 IS NOT NULL
                   AND a.claims_status = 'completed'
-                  AND 1 - (a.embedding <=> :embedding::vector) > :threshold
-                ORDER BY a.embedding <=> :embedding::vector
+                  AND 1 - (a.embedding_bge_m3 <=> :embedding::vector) > :threshold
+                ORDER BY a.embedding_bge_m3 <=> :embedding::vector
                 LIMIT :max_results
                 """,
                 {
@@ -173,13 +173,14 @@ class RAGEvidenceRetriever:
         Returns the vector as a string for pgvector, or None if unavailable.
         """
         try:
-            from app.domains.content.embedding_service import generate_embedding
-            embedding = await generate_embedding(text)
+            # bge-m3 is the live column (2026-06-11 audit). The old import of a
+            # module-level generate_embedding never existed (ImportError every
+            # call), so this path was dead. Use the EmbeddingService bge-m3
+            # method; None when the GX10 endpoint is unreachable.
+            from app.domains.content.embedding_service import EmbeddingService
+            embedding = await EmbeddingService(get_db()).generate_bge_m3_embedding(text)
             if embedding:
-                # Format as pgvector string: [0.1, 0.2, ...]
                 return f"[{','.join(str(v) for v in embedding)}]"
-        except ImportError:
-            logger.debug("Embedding service not available")
         except Exception as e:
             logger.warning(f"Claim embedding generation failed: {e}")
 
