@@ -161,18 +161,18 @@ def extract_excerpt(text: str, max_length: int = 300, prefer_first_paragraph: bo
     # Clean text first
     text = clean_whitespace(strip_markdown(text))
 
+    # When the caller asks for the first paragraph, isolate it BEFORE the
+    # length check (2026-06-11 audit). The old code returned the whole text
+    # whenever it fit under max_length, so a short multi-paragraph article
+    # leaked its second paragraph into the "first paragraph" excerpt.
+    if prefer_first_paragraph:
+        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+        if paragraphs:
+            first = paragraphs[0]
+            return first if len(first) <= max_length else truncate_text(first, max_length)
+
     if len(text) <= max_length:
         return text
-
-    if prefer_first_paragraph:
-        # Try to extract first paragraph
-        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
-        if paragraphs and len(paragraphs[0]) <= max_length:
-            return paragraphs[0]
-
-        # If first paragraph too long, truncate it
-        if paragraphs:
-            return truncate_text(paragraphs[0], max_length)
 
     # Truncate to max length
     return truncate_text(text, max_length)

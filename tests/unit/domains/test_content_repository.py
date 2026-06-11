@@ -11,7 +11,8 @@ class DummyDB:
 def test_row_to_article_includes_trust_fields():
     repo = ArticleRepository(DummyDB())
     row = {
-        "article_id": "sample-001",
+        # Article.article_id is a UUID (model tightened); use a real one.
+        "article_id": "550e8400-e29b-41d4-a716-446655440000",
         "title": "Sample Title",
         "url": "https://example.com/article",
         "source_name": "Example Source",
@@ -40,7 +41,7 @@ def test_row_to_article_includes_trust_fields():
     }
 
     article = repo._row_to_article(row)
-    assert article.article_id == "sample-001"
+    assert str(article.article_id) == "550e8400-e29b-41d4-a716-446655440000"
     assert article.trust_score == 88
     assert article.publisher_trust_score == 90
     assert article.compliance_flags == {"passed": True, "tdm_opt_out": False}

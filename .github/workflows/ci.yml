@@ -116,6 +116,8 @@ jobs:
             tests/unit/domains/test_llm_routing.py \
             tests/unit/core/test_redis_client.py \
             tests/unit/core/test_compliance.py \
+            tests/backend/unit/test_text_utils.py \
+            tests/unit/domains/test_content_repository.py \
             tests/api/test_premium_feature_matrix.py \
             tests/api/test_golden_examples_gate.py \
             tests/unit/test_migration_hygiene.py \
