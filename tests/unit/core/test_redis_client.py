@@ -4,6 +4,7 @@ Unit tests for Redis client module.
 Tests RedisClient functionality with mocked Redis.
 """
 
+import os
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 import json
@@ -17,9 +18,17 @@ from app.core.redis_client import (
 class TestRedisSettings:
     """Test RedisSettings class."""
 
-    def test_default_settings(self):
-        """Test default Redis settings."""
-        settings = RedisSettings()
+    def test_default_settings(self, monkeypatch):
+        """Test default Redis settings.
+
+        Hermetic: ignore a developer's .env (which sets REDIS_HOST=redis for
+        docker) and any REDIS_* env so the DEFAULTS are what's asserted. The
+        env-override path is covered by test_environment_override.
+        """
+        for k in list(os.environ):
+            if k.startswith("REDIS_"):
+                monkeypatch.delenv(k, raising=False)
+        settings = RedisSettings(_env_file=None)
 
         assert settings.host == "localhost"
         assert settings.port == 6379

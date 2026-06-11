@@ -9,39 +9,35 @@ from typing import Optional, Any
 import json
 from redis import Redis, ConnectionPool
 from redis.exceptions import RedisError
-from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class RedisSettings(BaseSettings):
-    """Redis configuration settings."""
+    """Redis configuration settings.
 
-    host: str = Field(default="localhost", env="REDIS_HOST")
-    port: int = Field(default=6379, env="REDIS_PORT")
-    password: Optional[str] = Field(default=None, env="REDIS_PASSWORD")
-    db: int = Field(default=0, env="REDIS_DB")
+    2026-06-10 audit fix: the per-field ``Field(env="REDIS_HOST")`` syntax is
+    a pydantic-v1 idiom that pydantic-settings v2 SILENTLY IGNORES — so
+    REDIS_HOST/PORT/PASSWORD env vars never overrode the defaults and Redis
+    always pointed at localhost:6379. Use ``env_prefix`` instead: the field
+    names below map to REDIS_HOST, REDIS_PORT, … exactly as before.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="REDIS_",
+        env_file=".env",
+        extra="ignore",  # Allow extra env vars
+    )
+
+    host: str = "localhost"
+    port: int = 6379
+    password: Optional[str] = None
+    db: int = 0
 
     # Connection pool settings
-    max_connections: int = Field(
-        default=50,
-        env="REDIS_MAX_CONNECTIONS"
-    )
-    socket_timeout: int = Field(
-        default=5,
-        env="REDIS_SOCKET_TIMEOUT"
-    )
-    socket_connect_timeout: int = Field(
-        default=5,
-        env="REDIS_SOCKET_CONNECT_TIMEOUT"
-    )
-    retry_on_timeout: bool = Field(
-        default=True,
-        env="REDIS_RETRY_ON_TIMEOUT"
-    )
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"  # Allow extra env vars
+    max_connections: int = 50
+    socket_timeout: int = 5
+    socket_connect_timeout: int = 5
+    retry_on_timeout: bool = True
 
 
 class RedisClient:
