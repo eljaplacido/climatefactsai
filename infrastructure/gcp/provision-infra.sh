@@ -204,6 +204,13 @@ if [[ -f "${ENV_FILE}" ]]; then
             DEEPSEEK_API_KEY) secret_name="deepseek-api-key" ;;
             NOAA_API_TOKEN) secret_name="noaa-api-token" ;;
             NASA_API_KEY) secret_name="nasa-api-key" ;;
+            # 2026-06-11 audit: these were created elsewhere (wire-gx10.sh) and
+            # mounted by cloudbuild, but a fresh provision-infra run never made
+            # them — closing the 3-way secret drift.
+            CORPORATE_SYNC_TOKEN) secret_name="corporate-sync-token" ;;
+            CLILENS_LOCAL_GX10_BASE_URL) secret_name="clilens-local-gx10-base-url" ;;
+            CLILENS_LOCAL_GX10_API_KEY) secret_name="clilens-local-gx10-api-key" ;;
+            CLILENS_LOCAL_GX10_MODEL) secret_name="clilens-local-gx10-model" ;;
         esac
 
         if [[ -n "$secret_name" && -n "$value" ]]; then

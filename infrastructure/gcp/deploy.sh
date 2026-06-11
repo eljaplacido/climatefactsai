@@ -165,6 +165,13 @@ main() {
         --set-secrets="DEEPSEEK_API_KEY=deepseek-api-key:latest"
         --set-secrets="NOAA_API_TOKEN=noaa-api-token:latest"
         --set-secrets="NASA_API_KEY=nasa-api-key:latest"
+        # 2026-06-11 audit: align with cloudbuild.yaml — these were missing
+        # here, so a manual deploy.sh dropped the corporate-sync endpoint auth
+        # and the GX10 LLM routing secrets.
+        --set-secrets="CORPORATE_SYNC_TOKEN=corporate-sync-token:latest"
+        --set-secrets="CLILENS_LOCAL_GX10_BASE_URL=clilens-local-gx10-base-url:latest"
+        --set-secrets="CLILENS_LOCAL_GX10_API_KEY=clilens-local-gx10-api-key:latest"
+        --set-secrets="CLILENS_LOCAL_GX10_MODEL=clilens-local-gx10-model:latest"
         --set-env-vars="ENVIRONMENT=production"
         --set-env-vars="LOG_LEVEL=INFO"
         --set-env-vars="LOG_FORMAT=json"
