@@ -133,6 +133,21 @@ interface DriftResponse {
   notes?: string | null;
 }
 
+interface SelfAuditAxis {
+  axis: string;
+  score: number;
+  status: "measured" | "partial" | "preview" | "insufficient_data" | "unavailable";
+  detail: string;
+}
+
+interface SelfAuditResponse {
+  composite: number;
+  max: number;
+  axes: SelfAuditAxis[];
+  computed_at?: string;
+  note?: string;
+}
+
 async function fetchJson<T>(path: string): Promise<T | null> {
   try {
     const r = await fetch(`${API_BASE_URL}${path}`, {
@@ -157,6 +172,7 @@ export default function MethodologyPage() {
   const [halRates, setHalRates] = useState<HallucinationResponse | null>(null);
   const [sourceDrift, setSourceDrift] = useState<DriftResponse | null>(null);
   const [promptDrift, setPromptDrift] = useState<DriftResponse | null>(null);
+  const [selfAudit, setSelfAudit] = useState<SelfAuditResponse | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -187,6 +203,11 @@ export default function MethodologyPage() {
       ]);
       setSourceDrift(src);
       setPromptDrift(prm);
+    })();
+
+    // Live self-audit — replaces the hardcoded 3.55 (seq-5b, 2026-06-14).
+    (async () => {
+      setSelfAudit(await fetchJson<SelfAuditResponse>("/api/methodology/self-audit"));
     })();
   }, []);
 
@@ -242,16 +263,66 @@ export default function MethodologyPage() {
 
           <div className="grid md:grid-cols-2 gap-4">
             <div className="bg-white/80 rounded-lg border border-teal-100 p-4">
-              <div className="text-xs uppercase tracking-wider text-teal-700 font-semibold mb-2">Self-claimed (May 2026 engineering review)</div>
-              <div className="text-3xl font-bold text-teal-600">4.78<span className="text-lg text-teal-400">/5</span></div>
-              <div className="text-xs text-teal-700 mt-1">Internal rubric: reliability + calibration + hallucination + sustainability composite</div>
+              <div className="text-xs uppercase tracking-wider text-teal-700 font-semibold mb-2">
+                Live composite (backend-driven)
+              </div>
+              <div className="text-3xl font-bold text-teal-600">
+                {selfAudit?.composite != null ? (
+                  <>{selfAudit.composite}<span className="text-lg text-teal-400">/5</span></>
+                ) : (
+                  <span className="text-2xl text-teal-400">Loading…</span>
+                )}
+              </div>
+              <div className="text-xs text-teal-700 mt-1">
+                {selfAudit?.computed_at ? (
+                  <>Computed {new Date(selfAudit.computed_at).toLocaleString()} &middot; {selfAudit.axes.length} axes</>
+                ) : (
+                  "Live composite from calibration, source tiers, embeddings, coverage, and provenance data"
+                )}
+              </div>
             </div>
             <div className="bg-white/80 rounded-lg border border-amber-100 p-4">
-              <div className="text-xs uppercase tracking-wider text-amber-700 font-semibold mb-2">Last audited (End2End audit, 2026-05-27)</div>
+              <div className="text-xs uppercase tracking-wider text-amber-700 font-semibold mb-2">Last audited (End2End, 2026-05-27)</div>
               <div className="text-3xl font-bold text-amber-600">3.55<span className="text-lg text-amber-400">/5</span></div>
-              <div className="text-xs text-amber-700 mt-1">Same rubric, applied by audit against live code + data. Up from 3.05 (2026-05-26). Further trust work has shipped since — pending re-audit (see below).</div>
+              <div className="text-xs text-amber-700 mt-1">
+                Same rubric, applied by audit against live code + data. Up from 3.05 (2026-05-26).
+                The live composite (left) now drives from backend data — it replaces the
+                previously hardcoded 4.78 self-claim.
+              </div>
             </div>
           </div>
+
+          {/* Live axes breakdown */}
+          {selfAudit?.axes && selfAudit.axes.length > 0 && (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs mt-4">
+              {selfAudit.axes.map((axis) => (
+                <div
+                  key={axis.axis}
+                  className="bg-white/80 rounded border border-gray-200 p-2 flex justify-between items-start"
+                >
+                  <div>
+                    <div className="font-medium text-gray-900 capitalize">
+                      {axis.axis.replace(/_/g, " ")}
+                    </div>
+                    <div className="text-gray-500">{axis.detail}</div>
+                  </div>
+                  <div className="flex items-center gap-1.5 ml-2 shrink-0">
+                    <span className="font-mono text-sm font-bold text-gray-800">
+                      {axis.score}
+                    </span>
+                    <span className="text-gray-400">/5</span>
+                    {axis.status === "insufficient_data" || axis.status === "unavailable" ? (
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                    ) : axis.status === "preview" || axis.status === "partial" ? (
+                      <HelpCircle className="w-3.5 h-3.5 text-blue-500" />
+                    ) : (
+                      <CheckCircle className="w-3.5 h-3.5 text-teal-500" />
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div>
             <h3 className="font-semibold text-gray-900 text-sm mb-2">What the audit found</h3>

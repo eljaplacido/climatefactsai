@@ -12,6 +12,7 @@ from typing import Optional
 from app.core.logging import get_logger
 from app.core.database import get_db
 from .schemas import Evidence
+from shared.credibility_thresholds import HIGH, MEDIUM, level_for
 
 logger = get_logger(__name__)
 
@@ -140,15 +141,15 @@ class RAGEvidenceRetriever:
                 credibility = row.get("overall_credibility", "")
 
                 supports = None
-                if credibility == "HIGH" and reliability and reliability >= 70:
+                if credibility == "HIGH" and reliability and reliability >= HIGH:
                     supports = True
-                elif credibility == "LOW" or (reliability and reliability < 30):
+                elif credibility == "LOW" or (reliability and reliability < MEDIUM):
                     supports = False
 
                 evidence.append(Evidence(
                     source=f"CliLens Corpus ({row.get('source_name', 'Unknown')})",
                     source_url=row.get("url", ""),
-                    source_reliability="high" if reliability and reliability >= 70 else "medium",
+                    source_reliability=level_for(reliability).lower() if reliability else "medium",
                     content_excerpt=(
                         f"Similar verified article: \"{row.get('title', '')}\". "
                         f"Credibility: {credibility}, Reliability: {reliability}/100, "

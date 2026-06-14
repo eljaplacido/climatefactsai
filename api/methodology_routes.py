@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional  # noqa: F401
 
 from fastapi import APIRouter, Header, HTTPException, status
@@ -804,6 +805,196 @@ async def get_bias_audit() -> Dict[str, Any]:
 
     db = get_postgres()
     return audit_claim_type_verdict_bias(db)
+
+
+# =============================================================================
+# Live self-audit composite score (seq-5b, 2026-06-14)
+# =============================================================================
+# Replaces the hardcoded 3.55 on the methodology page with a backend-driven
+# composite that draws from live data. Each axis is scored 1-5 based on the
+# latest available evidence, then averaged into a composite.
+#
+# Honesty: axes that cannot be measured return a clear "insufficient_data"
+# status rather than a guessed number.
+
+@router.get("/self-audit")
+async def get_self_audit_score() -> Dict[str, Any]:
+    """Live composite methodology self-audit, driven from backend data.
+
+    Every axis reads its score from the same live sources the platform uses.
+    No hardcoded numbers — if calibration has 0 labels, the reliability axis
+    reflects that. The composite is unweighted mean; weights TBD once label
+    volume is stable.
+    """
+    from app.domains.intelligence.calibration_store import (
+        STABLE_FIT_MIN,
+        fetch_labelled_predictions,
+    )
+
+    db = get_postgres()
+    axes: List[Dict[str, Any]] = []
+    axis_scores: List[float] = []
+
+    # --- Calibration axis ---
+    try:
+        preds, labels = fetch_labelled_predictions(db, "reliability_score")
+        n = len(preds)
+        if n >= STABLE_FIT_MIN:
+            cal_score = 4.0  # floor — stable fit exists
+            cal_detail = f"{n} labels (≥{STABLE_FIT_MIN}), stable fit"
+            cal_status = "measured"
+        elif n >= 5:
+            cal_score = 2.5  # preview fit only
+            cal_detail = f"{n} labels (≥5 preview, <{STABLE_FIT_MIN} stable)"
+            cal_status = "preview"
+        else:
+            cal_score = 1.0
+            cal_detail = f"{n} labels — awaiting {STABLE_FIT_MIN} for stable fit"
+            cal_status = "insufficient_data"
+    except Exception:
+        cal_score = 1.0
+        cal_detail = "calibration_labels table unavailable"
+        cal_status = "unavailable"
+
+    axes.append({
+        "axis": "calibration",
+        "score": cal_score,
+        "status": cal_status,
+        "detail": cal_detail,
+    })
+    axis_scores.append(cal_score)
+
+    # --- Source credibility axis ---
+    try:
+        rows = db.execute_query(
+            "SELECT COUNT(*) as cnt FROM source_credibility_tiers WHERE tier IS NOT NULL"
+        )
+        tiered = int(rows[0]["cnt"]) if rows else 0
+        if tiered >= 50:
+            src_score = 4.0
+            src_detail = f"{tiered} sources tiered"
+            src_status = "measured"
+        elif tiered >= 10:
+            src_score = 2.5
+            src_detail = f"{tiered} sources tiered (partial)"
+            src_status = "partial"
+        else:
+            src_score = 1.0
+            src_detail = "source_credibility_tiers empty"
+            src_status = "insufficient_data"
+    except Exception:
+        src_score = 1.0
+        src_detail = "source_credibility_tiers unavailable"
+        src_status = "unavailable"
+
+    axes.append({
+        "axis": "source_credibility",
+        "score": src_score,
+        "status": src_status,
+        "detail": src_detail,
+    })
+    axis_scores.append(src_score)
+
+    # --- Embeddings axis ---
+    try:
+        rows = db.execute_query(
+            "SELECT COUNT(*) as cnt FROM articles WHERE embedding_bge_m3 IS NOT NULL"
+        )
+        emb = int(rows[0]["cnt"]) if rows else 0
+        if emb >= 100:
+            emb_score = 4.0
+            emb_detail = f"{emb} articles with embeddings"
+            emb_status = "measured"
+        elif emb >= 1:
+            emb_score = 2.0
+            emb_detail = f"{emb} articles (below 100 floor)"
+            emb_status = "partial"
+        else:
+            emb_score = 1.0
+            emb_detail = "0 articles with embeddings"
+            emb_status = "insufficient_data"
+    except Exception:
+        emb_score = 1.0
+        emb_detail = "embedding_bge_m3 column unavailable"
+        emb_status = "unavailable"
+
+    axes.append({
+        "axis": "embeddings",
+        "score": emb_score,
+        "status": emb_status,
+        "detail": emb_detail,
+    })
+    axis_scores.append(emb_score)
+
+    # --- Coverage axis ---
+    try:
+        rows = db.execute_query(
+            "SELECT COUNT(DISTINCT country_code) as cnt FROM articles"
+        )
+        countries = int(rows[0]["cnt"]) if rows else 0
+        pct = round(countries / 193 * 100, 1)
+        if pct >= 50:
+            cov_score = 4.0
+        elif pct >= 20:
+            cov_score = 2.5
+        else:
+            cov_score = 1.5
+        cov_detail = f"{countries}/193 countries ({pct}%)"
+        cov_status = "measured"
+    except Exception:
+        cov_score = 1.0
+        cov_detail = "articles table unavailable"
+        cov_status = "unavailable"
+
+    axes.append({
+        "axis": "country_coverage",
+        "score": cov_score,
+        "status": cov_status,
+        "detail": cov_detail,
+    })
+    axis_scores.append(cov_score)
+
+    # --- Provenance axis ---
+    try:
+        rows = db.execute_query(
+            "SELECT COUNT(*) as cnt FROM claim_provenance"
+        )
+        prov = int(rows[0]["cnt"]) if rows else 0
+        if prov >= 500:
+            prov_score = 4.0
+        elif prov >= 50:
+            prov_score = 2.5
+        else:
+            prov_score = 1.5
+        prov_detail = f"{prov} provenance rows"
+        prov_status = "measured"
+    except Exception:
+        prov_score = 1.0
+        prov_detail = "claim_provenance unavailable"
+        prov_status = "unavailable"
+
+    axes.append({
+        "axis": "provenance",
+        "score": prov_score,
+        "status": prov_status,
+        "detail": prov_detail,
+    })
+    axis_scores.append(prov_score)
+
+    composite = round(sum(axis_scores) / len(axis_scores), 2) if axis_scores else 0.0
+
+    return {
+        "composite": composite,
+        "max": 5.0,
+        "axes": axes,
+        "computed_at": datetime.now(timezone.utc).isoformat(),
+        "note": (
+            "Live score driven by backend data. Axes with "
+            "'insufficient_data' or 'unavailable' status floor at 1.0. "
+            "The composite is an unweighted mean; weights will be added "
+            "once label volume is stable."
+        ),
+    }
 
 
 # =============================================================================

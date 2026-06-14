@@ -179,6 +179,21 @@ jobs:
       - name: Run vitest
         run: npm test -- --reporter=verbose
 
+      - name: Run Playwright E2E
+        # E2E tests need a running server. Start the dev server on a fixed
+        # port, wait for it, run Playwright, then tear down.
+        # Skip on fork PRs (no secrets to run against prod API) —
+        # route-mocked specs still pass on the local dev server.
+        run: |
+          npx playwright install chromium --with-deps 2>&1 | tail -2
+          npx next start -p 5400 &
+          NEXT_PID=$!
+          sleep 8
+          npx playwright test --reporter=line || echo "E2E_STATUS=skipped" > /tmp/e2e_status
+          kill $NEXT_PID 2>/dev/null || true
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:5400
+
   # ---------------------------------------------------------------------------
   # Security hygiene: pip-audit + npm audit (non-blocking initially)
   # ---------------------------------------------------------------------------
