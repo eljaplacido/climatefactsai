@@ -346,7 +346,7 @@ def scheduled_multi_country_ingestion(
     Reads INGESTION_COUNTRIES from env, dispatches discover_articles for each
     country with 5-minute stagger to avoid API rate limits.
     """
-    countries_str = os.getenv("INGESTION_COUNTRIES", "FI,SE,DE,FR,NL,ES,IT,NO,DK,PL,US,GB,KE,NG,ZA,BR,MX,IN,JP,AE")
+    countries_str = os.getenv("INGESTION_COUNTRIES", "US,GB,CA,AU,NZ,JP,KR,IN,CN,FI,SE,NO,DK,DE,FR,NL,BE,CH,AT,PL,ES,PT,IT,GR,IE,BR,MX,AR,CL,CO,PE,ZA,NG,KE,EG,MA,ET,GH,SN,AE,SA,IL,TR,RU,UA,KZ,UZ,ID,VN,TH,PH,MY,SG,PK,BD,LK,RO,BG,CZ,HU,SK,SI,HR,EE,LV,LT,MT,CY,IS,LU,EC,UY,CR,PA,GT,DO,BO,VE,DZ,TN,NP,MM,KH")
     countries = [c.strip().upper() for c in countries_str.split(",") if c.strip()]
     max_per_country = int(os.getenv("MAX_ARTICLES_PER_COUNTRY", "5"))
 
