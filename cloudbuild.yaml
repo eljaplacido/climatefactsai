@@ -223,6 +223,11 @@ steps:
       - "--update-secrets=CLILENS_LOCAL_GX10_BASE_URL=clilens-local-gx10-base-url:latest"
       - "--update-secrets=CLILENS_LOCAL_GX10_API_KEY=clilens-local-gx10-api-key:latest"
       - "--update-secrets=CLILENS_LOCAL_GX10_MODEL=clilens-local-gx10-model:latest"
+      # 2026-06-14 — Stripe Basic ($10) and Pro ($20) price IDs.
+      # These map 1:1 to the STRIPE_PRICE_ID_BASIC / STRIPE_PRICE_ID_PRO
+      # env vars read by subscription_routes.py.
+      - "--update-secrets=STRIPE_PRICE_ID_BASIC=stripe-price-basic:latest"
+      - "--update-secrets=STRIPE_PRICE_ID_PRO=stripe-price-pro:latest"
       - "--update-env-vars=ENVIRONMENT=production"
       - "--update-env-vars=LOG_LEVEL=INFO"
       - "--update-env-vars=API_HOST=0.0.0.0"

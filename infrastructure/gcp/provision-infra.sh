@@ -211,6 +211,9 @@ if [[ -f "${ENV_FILE}" ]]; then
             CLILENS_LOCAL_GX10_BASE_URL) secret_name="clilens-local-gx10-base-url" ;;
             CLILENS_LOCAL_GX10_API_KEY) secret_name="clilens-local-gx10-api-key" ;;
             CLILENS_LOCAL_GX10_MODEL) secret_name="clilens-local-gx10-model" ;;
+            # 2026-06-14 — Stripe Basic ($10) and Pro ($20) subscription price IDs.
+            STRIPE_PRICE_ID_BASIC) secret_name="stripe-price-basic" ;;
+            STRIPE_PRICE_ID_PRO) secret_name="stripe-price-pro" ;;
         esac
 
         if [[ -n "$secret_name" && -n "$value" ]]; then

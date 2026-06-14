@@ -172,6 +172,9 @@ main() {
         --set-secrets="CLILENS_LOCAL_GX10_BASE_URL=clilens-local-gx10-base-url:latest"
         --set-secrets="CLILENS_LOCAL_GX10_API_KEY=clilens-local-gx10-api-key:latest"
         --set-secrets="CLILENS_LOCAL_GX10_MODEL=clilens-local-gx10-model:latest"
+        # 2026-06-14 — Stripe Basic ($10) and Pro ($20) price IDs.
+        --set-secrets="STRIPE_PRICE_ID_BASIC=stripe-price-basic:latest"
+        --set-secrets="STRIPE_PRICE_ID_PRO=stripe-price-pro:latest"
         --set-env-vars="ENVIRONMENT=production"
         --set-env-vars="LOG_LEVEL=INFO"
         --set-env-vars="LOG_FORMAT=json"
