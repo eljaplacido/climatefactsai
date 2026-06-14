@@ -25,9 +25,14 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
 # Price IDs (set these in .env)
+# Tier ladder: freemium ($0) → basic ($10) → pro ($20) → enterprise (custom)
+# "basic" and "standard" are aliases; the canonical slug for the $10 tier is "basic".
 PRICE_IDS = {
-    "standard": os.getenv("STRIPE_PRICE_ID_STANDARD", ""),
-    "professional": os.getenv("STRIPE_PRICE_ID_PROFESSIONAL", ""),
+    "basic": os.getenv("STRIPE_PRICE_ID_BASIC", os.getenv("STRIPE_PRICE_ID_STANDARD", "")),
+    "standard": os.getenv("STRIPE_PRICE_ID_BASIC", os.getenv("STRIPE_PRICE_ID_STANDARD", "")),
+    "pro": os.getenv("STRIPE_PRICE_ID_PRO", os.getenv("STRIPE_PRICE_ID_PROFESSIONAL", "")),
+    "professional": os.getenv("STRIPE_PRICE_ID_PRO", os.getenv("STRIPE_PRICE_ID_PROFESSIONAL", "")),
+    "enterprise": os.getenv("STRIPE_PRICE_ID_ENTERPRISE", ""),
 }
 
 # =============================================================================
@@ -47,13 +52,13 @@ class SubscriptionInfo(BaseModel):
 
 class CreateSubscriptionRequest(BaseModel):
     """Request to create a new subscription"""
-    tier: str = Field(..., pattern="^(standard|professional)$")
+    tier: str = Field(..., pattern="^(basic|standard|pro|professional|enterprise)$")
     payment_method_id: str = Field(..., description="Stripe payment method ID")
 
 
 class UpgradeSubscriptionRequest(BaseModel):
     """Request to upgrade/downgrade subscription"""
-    new_tier: str = Field(..., pattern="^(standard|professional)$")
+    new_tier: str = Field(..., pattern="^(basic|standard|pro|professional|enterprise)$")
 
 
 class PaymentHistoryItem(BaseModel):

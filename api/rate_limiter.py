@@ -78,8 +78,12 @@ TIER_LIMITS = {
     },
 }
 
-# Backwards-compatible alias: "basic" → "standard"
+# Backwards-compatible aliases:
+#   "basic"    → "standard" ($10/mo platform tier)
+#   "pro"      → "professional" ($20/mo platform + API tier)
+#   "standard" is kept for legacy compatibility
 TIER_LIMITS["basic"] = TIER_LIMITS["standard"]
+TIER_LIMITS["pro"] = TIER_LIMITS["professional"]
 
 
 def _coerce_user_uuid(user_id: Optional[str]) -> Optional[str]:

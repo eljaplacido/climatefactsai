@@ -91,6 +91,7 @@ opentelemetry-instrumentation-requests==0.49b2 # requests traces
 opentelemetry-instrumentation-sqlalchemy==0.49b2 # SQLAlchemy traces
 opentelemetry-instrumentation-redis==0.49b2    # Redis traces
 opentelemetry-instrumentation-celery==0.49b2   # Celery traces
+celery[redis]==5.4.0                 # Task queue (required by api/main.py import)
 opentelemetry-exporter-otlp==1.28.2    # OTLP exporter
 prometheus-client==0.21.0          # Prometheus metrics
 
