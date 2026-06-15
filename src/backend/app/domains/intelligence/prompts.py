@@ -100,19 +100,33 @@ EXTERNAL RESEARCH:
 {weather_section}
 ---
 
-Synthesize a clear, well-structured answer that:
-1. Leads with the most important findings
-2. Notes where internal and external sources agree or disagree
-3. Indicates credibility levels of sources cited
-4. Includes relevant weather/climate data if available
-5. Flags any limitations or areas of uncertainty
+Synthesize a clear, well-structured answer. Return ONLY a valid JSON object with this exact shape:
 
-Use markdown formatting. Be factual and concise."""
+{{
+  "summary": "2-3 sentence executive summary of the most important finding(s).",
+  "key_findings": ["finding 1 verbatim as a single sentence", "finding 2", "finding 3"],
+  "agreement_areas": ["where internal and external sources agree — be specific"],
+  "disagreement_areas": ["where sources conflict or diverge"],
+  "evidence_strength": "strong|moderate|weak",
+  "limitations": ["known gaps or caveats in this answer"],
+  "confidence_score": 0.0-1.0,
+  "prose_answer": "Your full markdown narrative here. Write for a curious general reader. Inline-cite sources by name (e.g., 'According to BBC Climate, ...'). Lead with important findings. Note where sources agree/disagree. Flag limitations."
+}}
+
+Guidelines:
+- key_findings: 3-5 single-sentence, self-contained claims.
+- agreement_areas / disagreement_areas: be concrete — name specific sources or claims, not generic "sources agree."
+- evidence_strength: "strong" if 5+ sources corroborate; "moderate" for 2-4 sources; "weak" for 1 or thin evidence.
+- limitations: what the retrieval missed, temporal gaps, or methodological caveats.
+- prose_answer: a conversational markdown narrative (not dry bullet points). The structured fields above are the summary; the prose is the full context.
+- confidence_score: your honest assessment, calibrated — 0.9+ is "multiple verified sources confirm this," 0.5 is "plausible but thin evidence."
+"""
 
 _DEEP_SEARCH_SYNTHESIS_SYSTEM = (
     "You are CliLens.AI's research assistant. Synthesize climate research "
     "from multiple sources with emphasis on source credibility and data "
-    "accuracy."
+    "accuracy. Return STRICT JSON only — no prose, no code fences, no "
+    "commentary outside the JSON object."
 )
 
 
@@ -295,23 +309,24 @@ Extract up to {max_claims} claims. greenwashing_flags can be empty if none found
 PROMPTS: Dict[str, PromptTemplate] = {
     "deep_search_synthesis": PromptTemplate(
         name="deep_search_synthesis",
-        version="v1.0",
+        version="v2.0",
         template=_DEEP_SEARCH_SYNTHESIS_TEMPLATE,
         system=_DEEP_SEARCH_SYNTHESIS_SYSTEM,
-        max_tokens=1500,
+        max_tokens=2000,
         temperature=0.2,
         description=(
             "Synthesises internal corpus + external Perplexity + weather "
-            "context into a single markdown-formatted research answer with "
-            "explicit credibility / agreement / disagreement annotations."
+            "context into a structured JSON research answer with summary, "
+            "key_findings, agreement/disagreement areas, limitations, and "
+            "full prose narrative."
         ),
         rationale=(
-            "v1.0 is the prompt that has been in production since "
-            "2026-03 — extracted from the inline f-string in "
-            "deep_search_service.py during Phase 4 wave 1 (2026-05-16) "
-            "without behavioural change. Future revisions should preserve "
-            "the credibility-emphasis instruction (#3) — it's how the "
-            "methodology drawer's source attribution stays honest."
+            "v2.0 (2026-06-14) upgrades from an unstructured markdown blob "
+            "to structured JSON with explicit key_findings, agreement tracking, "
+            "evidence_strength, and a confidence_score. The frontend renders "
+            "the structured fields visually (bulleted findings, agreement "
+            "diff block, evidence gauge) while the prose_answer provides "
+            "the full narrative context."
         ),
     ),
     "deep_search_synthesis_low_evidence": PromptTemplate(

@@ -8,7 +8,9 @@ Gated to Professional+ tiers.
 """
 
 import asyncio
+import json
 import os
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -167,12 +169,32 @@ class DeepSearchService:
             } if low_eval.get("confidence") or low_eval.get("confidence_reason") else None
             low_evidence_refinements = low_eval.get("suggested_refinements")
         else:
-            synthesis = await self._synthesize_answer(
+            raw_synthesis = await self._synthesize_answer(
                 query=query,
                 internal_articles=internal_results or [],
                 perplexity_answer=perplexity_results.get("answer", ""),
                 weather_context=weather_context,
             )
+            # v2.0 structured prompt — try JSON parse; fall back to markdown.
+            structured = None
+            try:
+                cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", raw_synthesis).strip()
+                parsed = json.loads(cleaned)
+                if isinstance(parsed, dict) and "prose_answer" in parsed:
+                    synthesis = parsed.get("prose_answer") or raw_synthesis
+                    structured = {
+                        "summary": parsed.get("summary", ""),
+                        "key_findings": parsed.get("key_findings") or [],
+                        "agreement_areas": parsed.get("agreement_areas") or [],
+                        "disagreement_areas": parsed.get("disagreement_areas") or [],
+                        "evidence_strength": parsed.get("evidence_strength", "unknown"),
+                        "limitations": parsed.get("limitations") or [],
+                        "confidence_score": parsed.get("confidence_score"),
+                    }
+                else:
+                    synthesis = raw_synthesis
+            except (json.JSONDecodeError, TypeError, Exception):
+                synthesis = raw_synthesis
 
         # Hallucination grounding check (T4 — the detector was implemented
         # but never called on this path; the audit flagged the resulting
@@ -397,6 +419,10 @@ class DeepSearchService:
             # low-evidence prompt ran. Clients render per-sentence pills.
             "sentence_grounding": sentence_grounding,
             "confidence_envelope": confidence_envelope,
+            # v2.0 structured synthesis (2026-06-14): present when the
+            # high-evidence prompt returned parseable JSON. Renders as
+            # visual blocks (key findings, agreement diff, evidence gauge).
+            "structured_synthesis": structured,
             "citations": citations,
             "internal_articles_count": internal_count,
             "external_sources_count": external_count,

@@ -515,9 +515,91 @@ function DeepSearchPageInner() {
                 confidence={searchResult.confidence_envelope ?? null}
               />
             ) : (
-              <div className="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-slate-200 whitespace-pre-wrap">
-                <TranslatableText text={searchResult.answer} as="div" maxLength={5000} />
-              </div>
+              <>
+                {/* v2.0 structured synthesis (2026-06-14) — key findings,
+                    agreement/disagreement, evidence gauge, limitations. */}
+                {searchResult.structured_synthesis && (
+                  <div className="space-y-4 mb-4">
+                    {/* Key Findings */}
+                    {searchResult.structured_synthesis.key_findings.length > 0 && (
+                      <div className="rounded-lg border border-teal-200 bg-teal-50/50 p-4">
+                        <h3 className="text-sm font-semibold text-teal-800 mb-2 flex items-center gap-1.5">
+                          <CheckCircle className="w-4 h-4" /> Key Findings
+                        </h3>
+                        <ul className="space-y-1.5">
+                          {searchResult.structured_synthesis.key_findings.map((f, i) => (
+                            <li key={i} className="text-sm text-teal-900 flex gap-2">
+                              <span className="font-bold text-teal-500 shrink-0">{i + 1}.</span>
+                              <span>{f}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Agreement / Disagreement */}
+                    {(searchResult.structured_synthesis.agreement_areas.length > 0 ||
+                      searchResult.structured_synthesis.disagreement_areas.length > 0) && (
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        {searchResult.structured_synthesis.agreement_areas.length > 0 && (
+                          <div className="rounded-lg border border-green-200 bg-green-50/50 p-3">
+                            <h3 className="text-xs font-semibold text-green-700 mb-1.5 flex items-center gap-1">
+                              <CheckCircle className="w-3.5 h-3.5" /> Sources Agree
+                            </h3>
+                            <ul className="space-y-1">
+                              {searchResult.structured_synthesis.agreement_areas.map((a, i) => (
+                                <li key={i} className="text-xs text-green-800">{a}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {searchResult.structured_synthesis.disagreement_areas.length > 0 && (
+                          <div className="rounded-lg border border-red-200 bg-red-50/50 p-3">
+                            <h3 className="text-xs font-semibold text-red-700 mb-1.5 flex items-center gap-1">
+                              <AlertTriangle className="w-3.5 h-3.5" /> Sources Disagree
+                            </h3>
+                            <ul className="space-y-1">
+                              {searchResult.structured_synthesis.disagreement_areas.map((d, i) => (
+                                <li key={i} className="text-xs text-red-800">{d}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Evidence Strength + Limitations */}
+                    <div className="flex flex-wrap gap-2 items-center text-xs">
+                      <span className={`
+                        px-2 py-0.5 rounded-full font-medium
+                        ${searchResult.structured_synthesis.evidence_strength === "strong"
+                          ? "bg-green-100 text-green-700"
+                          : searchResult.structured_synthesis.evidence_strength === "moderate"
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-red-100 text-red-700"}
+                      `}>
+                        Evidence: {searchResult.structured_synthesis.evidence_strength}
+                      </span>
+                      {searchResult.structured_synthesis.confidence_score != null && (
+                        <span className="text-gray-500">
+                          Confidence: {(searchResult.structured_synthesis.confidence_score * 100).toFixed(0)}%
+                        </span>
+                      )}
+                    </div>
+
+                    {searchResult.structured_synthesis.limitations.length > 0 && (
+                      <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3">
+                        <span className="font-medium text-gray-600">Limitations: </span>
+                        {searchResult.structured_synthesis.limitations.join(" · ")}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-slate-200 whitespace-pre-wrap">
+                  <TranslatableText text={searchResult.answer} as="div" maxLength={5000} />
+                </div>
+              </>
             )}
             {/* Slice 6 (2026-05-25) — inline follow-up chat. Replaces
                 the prior fire-and-forget "open in global assistant"

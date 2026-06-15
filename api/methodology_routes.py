@@ -998,6 +998,89 @@ async def get_self_audit_score() -> Dict[str, Any]:
 
 
 # =============================================================================
+# API endpoint catalog — developer portal (2026-06-14)
+# =============================================================================
+# Every public API endpoint the platform exposes, annotated with tier access,
+# rate limits, and description. Static catalogue — powers the developer portal
+# page and the /api/methodology/endpoints public endpoint.
+
+@router.get("/endpoints")
+async def list_api_endpoints() -> Dict[str, Any]:
+    """Full catalogue of public API endpoints with tier access and rate limits.
+
+    Grouped by domain. Each entry lists the HTTP method, path, authentication
+    requirement, minimum tier, and quota key. Static — no DB, always available.
+    """
+    endpoints = [
+        # -- Articles --
+        {"domain": "Articles", "method": "GET", "path": "/api/articles", "auth": "optional", "tier": "freemium", "quota": "articles_per_day", "description": "List climate articles with filters"},
+        {"domain": "Articles", "method": "GET", "path": "/api/articles/{id}", "auth": "optional", "tier": "freemium", "quota": "articles_per_day", "description": "Get one article with full detail"},
+        {"domain": "Articles", "method": "GET", "path": "/api/articles/{id}/infographic", "auth": "required", "tier": "basic", "quota": "infographics", "description": "Generate infographic for article"},
+
+        # -- Search --
+        {"domain": "Search", "method": "GET", "path": "/api/search", "auth": "optional", "tier": "freemium", "quota": "searches_per_day", "description": "Full-text and faceted article search"},
+
+        # -- URL Analysis --
+        {"domain": "URL Analysis", "method": "POST", "path": "/api/url-analysis", "auth": "optional", "tier": "freemium", "quota": "url_analyses_per_month", "description": "Analyze a URL for climate claims"},
+        {"domain": "URL Analysis", "method": "GET", "path": "/api/url-analysis/{id}", "auth": "optional", "tier": "freemium", "quota": None, "description": "Get analysis result"},
+
+        # -- Deep Search --
+        {"domain": "Deep Search", "method": "POST", "path": "/api/deep-search", "auth": "required", "tier": "basic", "quota": "deep_search", "description": "Synthesize research from internal corpus + external sources"},
+        {"domain": "Deep Search", "method": "GET", "path": "/api/deep-search/compare", "auth": "required", "tier": "pro", "quota": "comparative_analysis", "description": "Compare two climate research topics"},
+
+        # -- Map --
+        {"domain": "Map", "method": "GET", "path": "/api/map", "auth": "optional", "tier": "freemium", "quota": None, "description": "Interactive map data — article density, climate layers"},
+        {"domain": "Map", "method": "GET", "path": "/api/map/country/{cc}", "auth": "optional", "tier": "freemium", "quota": None, "description": "Country-specific climate intelligence"},
+
+        # -- Companies --
+        {"domain": "Companies", "method": "GET", "path": "/api/companies", "auth": "optional", "tier": "freemium", "quota": None, "description": "List tracked companies with climate disclosures"},
+        {"domain": "Companies", "method": "GET", "path": "/api/companies/{ticker}", "auth": "optional", "tier": "freemium", "quota": None, "description": "Single company climate profile"},
+        {"domain": "Companies", "method": "GET", "path": "/api/companies/compare", "auth": "optional", "tier": "basic", "quota": "comparative_analysis", "description": "Head-to-head climate comparison"},
+
+        # -- Chat / Agentic --
+        {"domain": "Chat", "method": "POST", "path": "/api/chat", "auth": "required", "tier": "freemium", "quota": "qa_per_article_per_day", "description": "Agentic chat — 22 skills, actions, and synthesis"},
+        {"domain": "Chat", "method": "GET", "path": "/api/skills", "auth": "none", "tier": "freemium", "quota": None, "description": "List all agentic skills registry"},
+
+        # -- Research --
+        {"domain": "Research", "method": "POST", "path": "/api/research/analyze", "auth": "required", "tier": "basic", "quota": "url_analyses_per_month", "description": "Analyze a research paper by URL/DOI"},
+        {"domain": "Research", "method": "POST", "path": "/api/research/upload", "auth": "required", "tier": "pro", "quota": "document_ingestion", "description": "Upload and analyze a PDF document"},
+
+        # -- Intelligence --
+        {"domain": "Intelligence", "method": "POST", "path": "/api/v2/intelligence/analyze-text", "auth": "required", "tier": "basic", "quota": "insights_extraction", "description": "Extract climate claims from raw text"},
+
+        # -- Country Passport --
+        {"domain": "Country", "method": "GET", "path": "/api/country/{cc}", "auth": "optional", "tier": "freemium", "quota": None, "description": "Country climate passport — indicators, projections, biomes"},
+
+        # -- Subscribe / User --
+        {"domain": "User", "method": "GET", "path": "/api/user/saved", "auth": "required", "tier": "freemium", "quota": "saved_articles", "description": "List saved items (articles, analyses, searches)"},
+        {"domain": "User", "method": "POST", "path": "/api/user/saved", "auth": "required", "tier": "freemium", "quota": "saved_articles", "description": "Save an item for later"},
+        {"domain": "User", "method": "GET", "path": "/api/subscription/current", "auth": "required", "tier": "freemium", "quota": None, "description": "Current subscription tier and status"},
+
+        # -- Export --
+        {"domain": "Export", "method": "POST", "path": "/api/export/article/{id}/pdf", "auth": "required", "tier": "pro", "quota": "export_formats", "description": "Export article as PDF"},
+        {"domain": "Export", "method": "POST", "path": "/api/export/search/csv", "auth": "required", "tier": "basic", "quota": "export_formats", "description": "Export search results as CSV"},
+
+        # -- Methodology (public) --
+        {"domain": "Methodology", "method": "GET", "path": "/api/methodology", "auth": "none", "tier": "freemium", "quota": None, "description": "Full methodology snapshot — prompts, formula, indicators"},
+        {"domain": "Methodology", "method": "GET", "path": "/api/methodology/endpoints", "auth": "none", "tier": "freemium", "quota": None, "description": "This catalogue — all API endpoints"},
+        {"domain": "Methodology", "method": "GET", "path": "/api/methodology/calibration", "auth": "none", "tier": "freemium", "quota": None, "description": "Live calibration metrics (Brier, ECE, Platt)"},
+        {"domain": "Methodology", "method": "GET", "path": "/api/methodology/self-audit", "auth": "none", "tier": "freemium", "quota": None, "description": "Live 5-axis composite self-audit score"},
+    ]
+
+    return {
+        "endpoints": endpoints,
+        "total": len(endpoints),
+        "tier_legend": {
+            "freemium": "$0 — 5 articles/day, basic search",
+            "basic": "$10/mo — 100 articles/day, 5 URL analyses/mo, deep search",
+            "pro": "$20/mo — unlimited articles, API access, PDF/CSV export",
+            "enterprise": "Custom — unlimited everything, SLA, on-prem GX10",
+        },
+        "docs_url": "/api/methodology",
+    }
+
+
+# =============================================================================
 # Hallucination-rate dashboard (Phase 6 wave 6)
 # =============================================================================
 # Aggregates `claim_provenance.hallucination_score` across the recent window

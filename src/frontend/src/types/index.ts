@@ -491,6 +491,16 @@ export interface SentenceGrounding {
   reason?: string;
 }
 
+export interface StructuredSynthesis {
+  summary: string;
+  key_findings: string[];
+  agreement_areas: string[];
+  disagreement_areas: string[];
+  evidence_strength: "strong" | "moderate" | "weak" | "unknown" | string;
+  limitations: string[];
+  confidence_score?: number | null;
+}
+
 export interface ConfidenceEnvelope {
   confidence: "low" | "medium" | "high" | string;
   reason?: string | null;
@@ -502,6 +512,9 @@ export interface DeepSearchResult {
   // Present only when the low-evidence prompt ran (internal+external<3).
   sentence_grounding?: SentenceGrounding[] | null;
   confidence_envelope?: ConfidenceEnvelope | null;
+  // v2.0 structured synthesis (2026-06-14): rendered as visual blocks
+  // when the high-evidence prompt returns parseable JSON.
+  structured_synthesis?: StructuredSynthesis | null;
   citations: DeepSearchCitation[];
   internal_articles_count: number;
   external_sources_count: number;
