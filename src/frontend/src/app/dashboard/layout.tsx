@@ -20,7 +20,7 @@ import { useAuth, ProtectedRoute } from "@/lib/auth";
 const SIDEBAR_ITEMS = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true },
   { href: "/dashboard/history", label: "History", icon: History, exact: false },
-  { href: "/dashboard/saved", label: "Saved", icon: Bookmark, exact: false },
+  { href: "/saves", label: "Saved", icon: Bookmark, exact: false },
   {
     href: "/dashboard/subscription",
     label: "Subscription",

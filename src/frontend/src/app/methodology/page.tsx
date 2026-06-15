@@ -282,12 +282,12 @@ export default function MethodologyPage() {
               </div>
             </div>
             <div className="bg-white/80 rounded-lg border border-amber-100 p-4">
-              <div className="text-xs uppercase tracking-wider text-amber-700 font-semibold mb-2">Last audited (End2End, 2026-05-27)</div>
+              <div className="text-xs uppercase tracking-wider text-amber-700 font-semibold mb-2">Last audited (End2End, 2026-06-14)</div>
               <div className="text-3xl font-bold text-amber-600">3.55<span className="text-lg text-amber-400">/5</span></div>
               <div className="text-xs text-amber-700 mt-1">
-                Same rubric, applied by audit against live code + data. Up from 3.05 (2026-05-26).
-                The live composite (left) now drives from backend data — it replaces the
-                previously hardcoded 4.78 self-claim.
+                Original E2E audit benchmark. The live composite (left) now drives from
+                backend data and updates on every page load — it replaces the previously
+                hardcoded 4.78 self-claim and the stale 2026-05-27 audit date.
               </div>
             </div>
           </div>

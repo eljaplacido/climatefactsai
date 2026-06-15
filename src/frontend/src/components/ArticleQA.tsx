@@ -191,7 +191,7 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
           <MessageCircle className="h-5 w-5 text-clilens-primary" />
           <span className="font-semibold text-sm">Ask about this article</span>
           {conversations.length > 0 && (
-            <span className="text-xs bg-clilens-primary/10 text-clilens-primary px-2 py-0.5 rounded-full">
+            <span className="text-xs bg-clilens-primary/10 text-teal-700 px-2 py-0.5 rounded-full">
               {conversations.length}
             </span>
           )}
@@ -289,7 +289,7 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
                   <button
                     key={sq}
                     onClick={() => handleAsk(sq)}
-                    className="inline-flex items-center gap-1 text-xs bg-clilens-primary/5 hover:bg-clilens-primary/10 text-clilens-primary border border-clilens-primary/20 px-3 py-1.5 rounded-full transition-colors"
+                    className="inline-flex items-center gap-1 text-xs bg-clilens-primary/5 hover:bg-clilens-primary/10 text-teal-700 border border-clilens-primary/20 px-3 py-1.5 rounded-full transition-colors"
                   >
                     <ArrowRight className="h-3 w-3" />
                     {sq}
@@ -362,7 +362,7 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
                 onClick={() => setScope("article")}
                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border ${
                   scope === "article"
-                    ? "bg-clilens-primary/10 text-clilens-primary border-clilens-primary/30"
+                    ? "bg-clilens-primary/10 text-teal-700 border-clilens-primary/30"
                     : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
                 }`}
               >
@@ -373,7 +373,7 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
                 onClick={() => setScope("external")}
                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border ${
                   scope === "external"
-                    ? "bg-clilens-primary/10 text-clilens-primary border-clilens-primary/30"
+                    ? "bg-clilens-primary/10 text-teal-700 border-clilens-primary/30"
                     : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
                 }`}
               >
