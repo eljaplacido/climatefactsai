@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
 const SOURCE_URL =
-  "https://raw.githubusercontent.com/eljasuhonen/climatenews/main/docs/compliance/TERMS_OF_SERVICE.md";
+  "https://raw.githubusercontent.com/eljaplacido/climatefactsai/main/docs/compliance/TERMS_OF_SERVICE.md";
 
 export default function TermsPage() {
   const [markdown, setMarkdown] = useState<string | null>(null);

@@ -9,6 +9,7 @@ import { AuthProvider } from '@/lib/auth'
 import { I18nProvider } from '@/lib/i18n-context'
 import { ViewContextProvider } from '@/lib/view-context'
 import { ToastProvider } from '@/components/Toast'
+import { ThemeProvider } from '@/components/ThemeProvider'
 
 // Slice 5b (2026-05-25) — metadataBase makes per-page generateMetadata
 // relative URLs (og:image, twitter:image, canonical) resolve to absolute
@@ -34,32 +35,26 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    // Pin color-scheme to light: the platform's dark-mode support is
-    // partial (some components have `dark:` variants, most don't, and
-    // no toggle wires `html.dark` to OS preference). Without this meta,
-    // user OS dark mode + a stray `dark:text-gray-300` on a card with
-    // no `dark:bg-...` partner produces 'light text on white' bug the
-    // user reported. Forcing color-scheme=light gives every component
-    // a known background to render against until a real theme system
-    // ships. Audit loop 4 / slice S14 / gap §user-dashboard.
-    <html lang="en" className="light" style={{ colorScheme: "light" }} suppressHydrationWarning>
-      <body className="bg-gray-50" suppressHydrationWarning>
-        <AuthProvider>
-          <I18nProvider>
-            <ViewContextProvider>
-              <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-teal-600 focus:text-white focus:rounded">Skip to main content</a>
-              <GlobalNav />
-              <ErrorBoundary>
-                <main className="pb-14">
-                  {children}
-                </main>
-              </ErrorBoundary>
-              <PageTranslator />
-              <ContextualAssistant />
-              <FirstTimerTour />
-            </ViewContextProvider>
-          </I18nProvider>
-        </AuthProvider>
+    <html lang="en" suppressHydrationWarning>
+      <body className="bg-gray-50 dark:bg-slate-900" suppressHydrationWarning>
+        <ThemeProvider>
+          <AuthProvider>
+            <I18nProvider>
+              <ViewContextProvider>
+                <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-teal-600 focus:text-white focus:rounded">Skip to main content</a>
+                <GlobalNav />
+                <ErrorBoundary>
+                  <main className="pb-14">
+                    {children}
+                  </main>
+                </ErrorBoundary>
+                <PageTranslator />
+                <ContextualAssistant />
+                <FirstTimerTour />
+              </ViewContextProvider>
+            </I18nProvider>
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   )

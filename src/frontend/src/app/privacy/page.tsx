@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
 const SOURCE_URL =
-  "https://raw.githubusercontent.com/eljasuhonen/climatenews/main/docs/compliance/PRIVACY_POLICY.md";
+  "https://raw.githubusercontent.com/eljaplacido/climatefactsai/main/docs/compliance/PRIVACY_POLICY.md";
 
 export default function PrivacyPage() {
   const [markdown, setMarkdown] = useState<string | null>(null);

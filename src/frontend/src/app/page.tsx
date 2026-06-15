@@ -321,9 +321,9 @@ export default function Home() {
             <div>
               <h3 className="font-semibold text-gray-900 mb-4">Legal</h3>
               <ul className="space-y-2 text-sm text-gray-600">
-                <li><a href="#" className="hover:text-clilens-primary">Privacy policy</a></li>
-                <li><a href="#" className="hover:text-clilens-primary">Terms of service</a></li>
-                <li><a href="#" className="hover:text-clilens-primary">Cookie policy</a></li>
+                <li><Link href="/privacy" className="hover:text-clilens-primary">Privacy policy</Link></li>
+                <li><Link href="/terms" className="hover:text-clilens-primary">Terms of service</Link></li>
+                <li><Link href="/cookies" className="hover:text-clilens-primary">Cookie policy</Link></li>
               </ul>
             </div>
           </div>

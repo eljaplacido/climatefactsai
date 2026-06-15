@@ -8,7 +8,7 @@ import {
   MapPin, FileText, Menu, X, BarChart3,
   Shield, Info, LogOut, LayoutDashboard, Rss, Settings,
   LogIn, UserPlus, Lightbulb, Loader2,
-  Building2, Bookmark,
+  Building2, Bookmark, Sun, Moon,
 } from "lucide-react";
 import {
   SUPPORTED_LANGUAGES,
@@ -17,6 +17,7 @@ import {
 } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n-context";
 import { useAuth } from "@/lib/auth";
+import { useTheme } from "next-themes";
 
 const NAV_ITEMS = [
   { href: "/", labelKey: "nav.news", fallback: "News", icon: Home },
@@ -67,20 +68,9 @@ export default function GlobalNav() {
   //     near-white-on-white that's invisible. User reported this on
   //     Featured Analysis + article detail.
   //
-  // Until a proper theme system ships (every card paired bg/text in
-  // both modes), force light. Existing localStorage flag from prior
-  // sessions gets cleared so users stuck in "dark" don't have to
-  // toggle anything.
-  const [theme] = useState<"light">("light");
-
-  useEffect(() => {
-    try {
-      localStorage.removeItem("clilens_theme");
-    } catch {
-      /* private-mode no-op */
-    }
-    document.documentElement.classList.remove("dark");
-  }, []);
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   // Close menus on outside click
   useEffect(() => {
@@ -150,8 +140,21 @@ export default function GlobalNav() {
 
           {/* Right controls */}
           <div className="flex items-center space-x-1">
-            {/* 2026-05-28 — theme toggle removed; see top-of-file
-                comment. Will return when full dark mode ships. */}
+            {/* Theme toggle — system-aware, persisted via next-themes */}
+            {mounted && (
+              <button
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+                title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              >
+                {theme === "dark" ? (
+                  <Sun className="h-4 w-4" />
+                ) : (
+                  <Moon className="h-4 w-4" />
+                )}
+              </button>
+            )}
 
             {/* Language selector with globe icon and flag emoji */}
             <div className="relative" ref={langRef}>

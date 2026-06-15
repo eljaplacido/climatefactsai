@@ -8,6 +8,16 @@
   --background-end-rgb: 255, 255, 255;
 }
 
+/* Dark theme CSS variables — 2026-06-14: re-added with next-themes
+   ThemeProvider. Body bg is handled by Tailwind classes on <body>
+   (bg-gray-50 dark:bg-slate-900). These variables provide base
+   text/background for any component using rgb(var(...)) patterns. */
+.dark {
+  --foreground-rgb: 229, 231, 235;
+  --background-start-rgb: 15, 23, 42;
+  --background-end-rgb: 17, 24, 39;
+}
+
 body {
   color: rgb(var(--foreground-rgb));
   background: linear-gradient(
@@ -18,14 +28,44 @@ body {
     rgb(var(--background-start-rgb));
 }
 
-/* 2026-05-28 — removed `.dark` overrides + .dark :root vars.
-   Dark mode was half-implemented: text colors flipped to slate-100
-   via these rules, but gradient stops (to-white, to-blue-50) and
-   most card-specific bg classes had no dark variants, producing
-   white-text-on-white-bg invisibility on Featured Analysis +
-   article detail. GlobalNav now strips the localStorage flag and
-   the theme cycler is removed, so .dark should never be on <html>
-   until a proper full theme system ships. */
+/* Solid dark backgrounds for components that only have light classes.
+   These are intentionally conservative — they only target well-known
+   light-only patterns and never override explicit dark: classes. */
+.dark .bg-white {
+  background-color: rgb(30, 41, 59);  /* slate-800 */
+}
+
+.dark .bg-gray-50 {
+  background-color: rgb(15, 23, 42);  /* slate-900 */
+}
+
+.dark .border-gray-200 {
+  border-color: rgb(51, 65, 85);  /* slate-700 */
+}
+
+.dark .border-gray-100 {
+  border-color: rgb(30, 41, 59);  /* slate-800 */
+}
+
+.dark .text-gray-900 {
+  color: rgb(241, 245, 249);  /* slate-100 */
+}
+
+.dark .text-gray-800 {
+  color: rgb(226, 232, 240);  /* slate-200 */
+}
+
+.dark .text-gray-700 {
+  color: rgb(203, 213, 225);  /* slate-300 */
+}
+
+.dark .text-gray-600 {
+  color: rgb(148, 163, 184);  /* slate-400 */
+}
+
+.dark .text-gray-500 {
+  color: rgb(100, 116, 139);  /* slate-500 */
+}
 
 /* Smooth transitions for interactive elements */
 @layer utilities {

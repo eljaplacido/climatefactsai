@@ -184,6 +184,14 @@ WORKLOAD_DEFAULTS: dict[str, WorkloadRouting] = {
     # NEW (added by GX10 strategy): third independent verifier in the
     # cross-check, from a different family than primary + secondary.
     "claim_extraction_tertiary": WorkloadRouting("local-gx10", ()),
+    # 2026-06-14: verdict adjudication — structured JSON output,
+    # 200-600 calls/day. Good candidate for GX10 offload.
+    "verdict_adjudication": WorkloadRouting("deepseek", ("local-gx10",)),
+    # 2026-06-14: causal analysis + contradiction detection — low-volume
+    # structured JSON. Already latency-tolerant.
+    "causal_analysis": WorkloadRouting("deepseek", ("local-gx10",)),
+    "contradiction_detection": WorkloadRouting("deepseek", ("local-gx10",)),
+    "intelligence_brief": WorkloadRouting("deepseek", ("local-gx10",)),
 }
 
 

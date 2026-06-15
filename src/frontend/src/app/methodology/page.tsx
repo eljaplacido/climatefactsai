@@ -746,16 +746,16 @@ export default function MethodologyPage() {
           intro="Required reading for EU users and enterprise customers. The full documents are version-controlled in the repository; older versions remain reachable by git SHA."
         >
           <ul className="space-y-2 text-sm">
-            <DocLink href="https://github.com/eljaplacido/climatenews/blob/main/docs/compliance/PRIVACY_POLICY.md"
+            <DocLink href="https://github.com/eljaplacido/climatefactsai/blob/main/docs/compliance/PRIVACY_POLICY.md"
                      label="Privacy Policy"
                      description="What we collect, why, who we share with, your rights" />
-            <DocLink href="https://github.com/eljaplacido/climatenews/blob/main/docs/compliance/TERMS_OF_SERVICE.md"
+            <DocLink href="https://github.com/eljaplacido/climatefactsai/blob/main/docs/compliance/TERMS_OF_SERVICE.md"
                      label="Terms of Service"
                      description="The contract between the platform and you" />
-            <DocLink href="https://github.com/eljaplacido/climatenews/blob/main/docs/compliance/GDPR_DPIA.md"
+            <DocLink href="https://github.com/eljaplacido/climatefactsai/blob/main/docs/compliance/GDPR_DPIA.md"
                      label="GDPR DPIA"
                      description="Article 35 Data Protection Impact Assessment" />
-            <DocLink href="https://github.com/eljaplacido/climatenews/blob/main/docs/compliance/DATA_PROCESSING.md"
+            <DocLink href="https://github.com/eljaplacido/climatefactsai/blob/main/docs/compliance/DATA_PROCESSING.md"
                      label="Sub-processor inventory"
                      description="Every third party that touches user data" />
           </ul>
