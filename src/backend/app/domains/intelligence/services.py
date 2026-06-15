@@ -970,12 +970,18 @@ Respond ONLY with valid JSON:
                 raise RuntimeError("No LLM client available — DEEPSEEK_API_KEY not configured")
 
             try:
-                response_text = _deepseek_chat(
-                    self.deepseek_client, self.deepseek_model, prompt, max_tokens=adjudication_max_tokens, temperature=0.1
+                from app.domains.intelligence.llm_routing import route_chat
+                response_text = route_chat(
+                    prompt=prompt,
+                    workload="verdict_adjudication",
+                    max_tokens=adjudication_max_tokens,
+                    temperature=0.1,
                 )
-                used_model = f"deepseek:{self.deepseek_model}"
-            except Exception as ds_err:
-                logger.warning(f"DeepSeek {self.deepseek_model} failed: {ds_err}, retrying with deepseek-chat")
+                if response_text is None:
+                    raise RuntimeError("All providers exhausted for verdict adjudication")
+                used_model = f"router:verdict_adjudication"
+            except Exception as route_err:
+                logger.warning(f"Router failed for verdict adjudication: {route_err}, falling back to direct DeepSeek")
                 response_text = _deepseek_chat(
                     self.deepseek_client, "deepseek-chat", prompt, max_tokens=adjudication_max_tokens, temperature=0.1
                 )

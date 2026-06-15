@@ -248,6 +248,17 @@ def _insert_discovered_articles(
                     ))
             except Exception as kg_exc:
                 logger.warning("Post-ingest entity extraction failed", article_id=article_id, error=str(kg_exc))
+
+            # Enrich article (climate context + executive brief). Best-effort;
+            # the batch backfill catches anything that skips here. Runs inline
+            # so newly-discovered articles are readable immediately.
+            try:
+                import asyncio
+                from app.domains.content.article_enrichment_service import ArticleEnrichmentService
+                enrich_svc = ArticleEnrichmentService(db)
+                asyncio.run(enrich_svc.enrich_article(article_id))
+            except Exception as enrich_exc:
+                logger.warning("Post-ingest enrichment failed", article_id=article_id, error=str(enrich_exc))
         except Exception as exc:
             logger.error("Failed to insert article", title=title[:80], error=str(exc))
 

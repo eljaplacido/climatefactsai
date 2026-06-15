@@ -38,10 +38,9 @@ def _translate_text(
     target_lang: str,
 ) -> Dict:
     """
-    Translate text via DeepL API.
+    Translate text via DeepL API with GX10 LLM fallback.
 
     Returns dict with translated_text, detected_source_language, confidence.
-    Falls back gracefully when API key is missing.
     """
     if not text or not text.strip():
         return {
@@ -50,50 +49,67 @@ def _translate_text(
             "confidence": 0.0,
         }
 
-    if not DEEPL_API_KEY:
-        logger.warning("DEEPL_API_KEY not set — skipping translation")
-        return {
-            "translated_text": text,
-            "detected_source_language": source_lang,
-            "confidence": 0.0,
-        }
+    # Try DeepL first (specialised MT, best quality)
+    if DEEPL_API_KEY:
+        src = source_lang.upper()[:2]
+        tgt = target_lang.upper()[:2]
+        if tgt == "EN":
+            tgt = "EN-US"
 
-    # Normalize language codes for DeepL
-    src = source_lang.upper()[:2]
-    tgt = target_lang.upper()[:2]
+        try:
+            response = requests.post(
+                DEEPL_API_URL,
+                data={
+                    "auth_key": DEEPL_API_KEY,
+                    "text": text,
+                    "source_lang": src,
+                    "target_lang": tgt,
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+            data = response.json()
+            translation = data["translations"][0]
+            return {
+                "translated_text": translation["text"],
+                "detected_source_language": translation.get(
+                    "detected_source_language", source_lang
+                ).lower(),
+                "confidence": 1.0,
+            }
+        except requests.RequestException as e:
+            logger.warning("DeepL API request failed, trying GX10 fallback: %s", e)
 
-    # DeepL uses EN-US/EN-GB for target, but EN for source
-    if tgt == "EN":
-        tgt = "EN-US"
-
+    # GX10 LLM fallback — use route_chat for free translation
     try:
-        response = requests.post(
-            DEEPL_API_URL,
-            data={
-                "auth_key": DEEPL_API_KEY,
-                "text": text,
-                "source_lang": src,
-                "target_lang": tgt,
-            },
-            timeout=30,
+        from app.domains.intelligence.llm_routing import route_chat
+        lang_names = {
+            "en": "English", "zh": "Chinese", "es": "Spanish", "hi": "Hindi",
+            "ar": "Arabic", "fr": "French", "pt": "Portuguese", "ru": "Russian",
+            "ja": "Japanese", "de": "German", "fi": "Finnish",
+        }
+        tgt_name = lang_names.get(target_lang.lower()[:2], target_lang)
+        prompt = f"Translate the following text to {tgt_name}. Return ONLY the translation, no commentary:\n\n{text[:3000]}"
+        result = route_chat(
+            workload="translation",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1500,
+            temperature=0.1,
         )
-        response.raise_for_status()
-        data = response.json()
-        translation = data["translations"][0]
-        return {
-            "translated_text": translation["text"],
-            "detected_source_language": translation.get(
-                "detected_source_language", source_lang
-            ).lower(),
-            "confidence": 1.0,
-        }
-    except requests.RequestException as e:
-        logger.error("DeepL API request failed: %s", e)
-        return {
-            "translated_text": text,
-            "detected_source_language": source_lang,
-            "confidence": 0.0,
-        }
+        if result:
+            return {
+                "translated_text": result.strip(),
+                "detected_source_language": source_lang,
+                "confidence": 0.85,
+            }
+    except Exception as e:
+        logger.warning("GX10 translation fallback failed: %s", e)
+
+    return {
+        "translated_text": text,
+        "detected_source_language": source_lang,
+        "confidence": 0.0,
+    }
 
 
 @app.task(

@@ -272,7 +272,7 @@ class EntityExtractionService:
     async def _llm_extract(self, title: str, text: str) -> Optional[Dict[str, Any]]:
         """Call LLM to extract entities and relationships as structured JSON."""
         try:
-            from app.domains.intelligence.llm_client import llm_chat
+            from app.domains.intelligence.llm_routing import route_chat
 
             truncated_text = text[:6000]
             prompt = (
@@ -281,8 +281,9 @@ class EntityExtractionService:
                 "Extract the entities and relationships as described."
             )
 
-            response = llm_chat(
+            response = route_chat(
                 prompt=prompt,
+                workload="entity_extraction",
                 system_prompt=EXTRACTION_SYSTEM_PROMPT,
                 max_tokens=2000,
                 temperature=0.1,

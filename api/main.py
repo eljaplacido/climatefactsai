@@ -550,7 +550,7 @@ async def translate_text_generic(
     request: GenericTranslateRequest,
     current_user: Optional[dict] = Depends(get_optional_user),
 ):
-    """Translate arbitrary text to a target language using DeepSeek or Anthropic."""
+    """Translate arbitrary text to a target language using GX10/DeepSeek/Anthropic chain."""
     target = request.target_language.lower()[:2]
     if target == "en":
         return {"translated_text": request.text, "source_language": "en", "target_language": "en"}
@@ -561,7 +561,25 @@ async def translate_text_generic(
         f"{request.text}"
     )
 
-    # Try Anthropic first
+    # Route through GX10-first workload chain (translation = deepseek primary, gx10 fallback)
+    try:
+        from app.domains.intelligence.llm_routing import route_chat
+        result = route_chat(
+            prompt=prompt,
+            workload="translation",
+            max_tokens=2000,
+            temperature=0.1,
+        )
+        if result:
+            return {
+                "translated_text": result.strip(),
+                "source_language": "en",
+                "target_language": target,
+            }
+    except Exception as e:
+        logger.warning(f"Router translation failed: {e}")
+
+    # Fallback to direct Anthropic
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
     if anthropic_key:
         try:
@@ -580,30 +598,7 @@ async def translate_text_generic(
                     "target_language": target,
                 }
         except Exception as e:
-            logger.warning(f"Anthropic translation failed: {e}")
-
-    # Fallback to DeepSeek
-    deepseek_key = os.getenv("DEEPSEEK_API_KEY")
-    if deepseek_key:
-        try:
-            from openai import OpenAI as OpenAIClient
-            client = OpenAIClient(
-                api_key=deepseek_key,
-                base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
-            )
-            response = client.chat.completions.create(
-                model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=2000,
-                temperature=0.1,
-            )
-            return {
-                "translated_text": response.choices[0].message.content.strip(),
-                "source_language": "en",
-                "target_language": target,
-            }
-        except Exception as e:
-            logger.warning(f"DeepSeek translation failed: {e}")
+            logger.warning(f"Anthropic translation fallback failed: {e}")
 
     raise HTTPException(status_code=503, detail="Translation service unavailable")
 

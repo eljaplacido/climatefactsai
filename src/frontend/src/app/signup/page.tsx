@@ -197,11 +197,11 @@ export default function SignupPage() {
           </Link>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
-          <h1 className="text-2xl font-bold text-gray-900 text-center mb-2">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100 text-center mb-2">
             Create your account
           </h1>
-          <p className="text-sm text-gray-500 text-center mb-8">
+          <p className="text-sm text-gray-500 dark:text-slate-400 text-center mb-8">
             Join thousands of climate-conscious professionals
           </p>
 
