@@ -93,7 +93,7 @@ class TestPromptRegistry:
     def test_get_prompt_returns_registered(self):
         p = get_prompt("deep_search_synthesis")
         assert p.name == "deep_search_synthesis"
-        assert p.version == "v1.0"
+        assert p.version == "v2.0"
 
     def test_get_prompt_unknown_raises_with_registered_list(self):
         with pytest.raises(KeyError) as exc:
