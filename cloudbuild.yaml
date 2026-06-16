@@ -84,7 +84,7 @@ steps:
   # (JWT_SECRET_KEY is fail-closed at import). The cloud-sql-proxy is NOT
   # needed — unit/api tests either mock DB or use the dummy-DB path.
   # -------------------------------------------------------------------------
-  - name: "python:3.13-slim"
+  - name: "python:3.11-slim"
     id: "run-tests"
     waitFor: ["run-migrations"]
     env:
@@ -98,8 +98,6 @@ steps:
       - "-c"
       - |
         set -e
-        apt-get update -qq
-        apt-get install -y -qq libpq-dev gcc
         pip install --quiet -r requirements.txt
         pip install --quiet pytest pytest-asyncio pytest-mock httpx
         pytest -p no:warnings -x \
