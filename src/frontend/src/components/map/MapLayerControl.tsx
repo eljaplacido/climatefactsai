@@ -1,55 +1,7 @@
 "use client";
 
-import {
-  BarChart3,
-  Thermometer,
-  ShieldAlert,
-  Network,
-  Leaf,
-} from "lucide-react";
-import type { ActiveLayer } from "./InteractiveClimateMap";
-
-interface LayerOption {
-  id: ActiveLayer;
-  label: string;
-  description: string;
-  icon: React.ReactNode;
-}
-
-const LAYERS: LayerOption[] = [
-  {
-    id: "article_density",
-    label: "Article Density",
-    description: "Number of climate articles per country",
-    icon: <BarChart3 className="h-4 w-4" />,
-  },
-  {
-    id: "temperature_anomaly",
-    label: "Temperature Anomaly",
-    description: "Deviation from historical temperature averages",
-    icon: <Thermometer className="h-4 w-4" />,
-  },
-  {
-    id: "climate_risk",
-    label: "Climate Risk",
-    description: "Composite climate risk score by country",
-    icon: <ShieldAlert className="h-4 w-4" />,
-  },
-  {
-    id: "source_diversity",
-    label: "Source Diversity",
-    description: "Number of distinct sources covering each country",
-    icon: <Network className="h-4 w-4" />,
-  },
-  {
-    // Phase 11 (2026-05-25) — biome + Köppen-Geiger climate zone layer.
-    // Colour fill by climate zone (A/B/C/D/E) + biome emoji at centroid.
-    id: "biomes",
-    label: "Biomes & Climate",
-    description: "Biome type + Köppen climate zone per country",
-    icon: <Leaf className="h-4 w-4" />,
-  },
-];
+import type { ActiveLayer } from "./layers/registry";
+import { MAP_LAYERS } from "./layers/registry";
 
 interface MapLayerControlProps {
   activeLayer: ActiveLayer;
@@ -69,8 +21,9 @@ export default function MapLayerControl({
           </h3>
         </div>
         <div className="p-1.5 space-y-0.5">
-          {LAYERS.map((layer) => {
+          {MAP_LAYERS.map((layer) => {
             const isActive = activeLayer === layer.id;
+            const Icon = layer.icon;
             return (
               <button
                 key={layer.id}
@@ -87,7 +40,7 @@ export default function MapLayerControl({
                     isActive ? "text-teal-400" : "text-slate-500"
                   }`}
                 >
-                  {layer.icon}
+                  <Icon className="h-4 w-4" />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">

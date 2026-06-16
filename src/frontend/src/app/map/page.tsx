@@ -7,8 +7,10 @@ export const dynamic = "force-dynamic";
 import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import nextDynamic from "next/dynamic";
-import { MapPin, ArrowLeft, Loader2 } from "lucide-react";
-import type { ActiveLayer, CountryStatEntry } from "@/components/map/InteractiveClimateMap";
+import { MapPin, ArrowLeft, Loader2, Briefcase, User } from "lucide-react";
+import type { ActiveLayer } from "@/components/map/layers/registry";
+import { getLayer, MAP_LAYERS } from "@/components/map/layers/registry";
+import type { CountryStatEntry } from "@/components/map/InteractiveClimateMap";
 import MapLayerControl from "@/components/map/MapLayerControl";
 import MapFilterPanel from "@/components/map/MapFilterPanel";
 import MapCountryPanel from "@/components/map/MapCountryPanel";
@@ -19,6 +21,9 @@ import MapWalkthrough, { MapWalkthroughTrigger } from "@/components/map/MapWalkt
 import MapBiomeLegend from "@/components/map/MapBiomeLegend";
 import { useViewContext } from "@/lib/view-context";
 import { useUrlState, URL_STATE_SERIALIZERS } from "@/lib/useUrlState";
+import type { ViewMode } from "@/lib/plainLanguage";
+import type { ChatActionSpec } from "@/lib/chatActionDispatcher";
+import { ACTION_MODES } from "@/lib/chatActionDispatcher";
 
 // Dynamic import of the Leaflet-based map (no SSR)
 const InteractiveClimateMap = nextDynamic(
@@ -68,12 +73,7 @@ const INITIAL_FILTERS: MapFilters = {
 const layerSerializer = {
   encode: (v: ActiveLayer) => (v === "article_density" ? null : v),
   decode: (raw: string | null): ActiveLayer => {
-    const known: ActiveLayer[] = [
-      "article_density",
-      "temperature_anomaly",
-      "climate_risk",
-      "source_diversity",
-    ];
+    const known = MAP_LAYERS.map((l) => l.id);
     return (known.find((k) => k === raw) ?? "article_density") as ActiveLayer;
   },
 };
@@ -81,6 +81,11 @@ const layerSerializer = {
 const compareModeSerializer = {
   encode: (v: boolean) => (v ? "1" : null),
   decode: (raw: string | null): boolean => raw === "1" || raw === "true",
+};
+
+const viewModeSerializer = {
+  encode: (v: ViewMode) => (v === "business" ? "business" : null),
+  decode: (raw: string | null): ViewMode => (raw === "business" ? "business" : "public"),
 };
 
 export default function MapPage() {
@@ -111,6 +116,11 @@ function MapPageInner() {
     "layer",
     "article_density",
     layerSerializer,
+  );
+  const [viewMode, setViewMode] = useUrlState<ViewMode>(
+    "view",
+    "public",
+    viewModeSerializer,
   );
   const [highlightedCountries, setHighlightedCountries] = useState<string[]>([]);
   // Quick Region Zoom target (region key + "#nonce" so repeat clicks re-fire).
@@ -310,6 +320,38 @@ function MapPageInner() {
     setZoomRegion(`${region}#${zoomNonce.current++}`);
   }
 
+  // Phase 0 map extensions (2026-06-16) — execute chat-suggested actions
+  const handleActionClick = useCallback(
+    (action: ChatActionSpec) => {
+      const p = action.params || {};
+      switch (action.type) {
+        case "open_country":
+          if (typeof p.code === "string" && p.code.length === 2)
+            setSelectedCountry(p.code.toUpperCase());
+          break;
+        case "apply_map_filters":
+          if (p.layer) setActiveLayer(p.layer as ActiveLayer);
+          if (p.country && typeof p.country === "string")
+            setSelectedCountry(p.country.toUpperCase());
+          break;
+        case "navigate":
+          if (typeof p.path === "string") window.location.assign(p.path);
+          break;
+        case "open_company":
+          if (typeof p.ticker === "string")
+            window.location.assign(`/companies/${encodeURIComponent(p.ticker.toUpperCase())}`);
+          break;
+        case "start_deep_search":
+          if (typeof p.q === "string")
+            window.location.assign(`/deep-search?q=${encodeURIComponent(p.q)}`);
+          break;
+        // Other actions (confirm-mode) are handled by the global chat's
+        // dispatchChatAction — the MapAgenticChat only fires auto-mode actions
+      }
+    },
+    [setSelectedCountry, setActiveLayer],
+  );
+
   // Client-side filtering for keyword (server handles the rest)
   const filteredStats =
     filters.keyword && !loading
@@ -353,18 +395,40 @@ function MapPageInner() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Stats summary */}
-            <div className="hidden md:flex items-center gap-4 text-xs text-slate-400">
-              <span>
-                <strong className="text-slate-200">{countryStats.length}</strong>{" "}
-                countries
-              </span>
-              <span>
-                <strong className="text-slate-200">
-                  {countryStats.reduce((sum, s) => sum + s.article_count, 0).toLocaleString()}
-                </strong>{" "}
-                articles
-              </span>
+            {/* View mode toggle — public / business */}
+            <div
+              role="radiogroup"
+              aria-label="View mode"
+              className="flex items-center gap-1 p-0.5 bg-slate-700 rounded-md"
+            >
+              <button
+                type="button"
+                role="radio"
+                aria-checked={viewMode === "public"}
+                onClick={() => setViewMode("public")}
+                className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded transition-colors ${
+                  viewMode === "public"
+                    ? "bg-slate-600 text-slate-100 shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <User className="h-3 w-3" />
+                Public
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={viewMode === "business"}
+                onClick={() => setViewMode("business")}
+                className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded transition-colors ${
+                  viewMode === "business"
+                    ? "bg-slate-600 text-slate-100 shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <Briefcase className="h-3 w-3" />
+                Business
+              </button>
             </div>
 
             {/* Compare button */}
@@ -426,6 +490,7 @@ function MapPageInner() {
             countryCode={selectedCountry}
             onClose={() => setSelectedCountry(null)}
             onCompare={(cc) => handleOpenCompare(cc)}
+            viewMode={viewMode}
           />
         )}
 
@@ -445,6 +510,7 @@ function MapPageInner() {
               ? [compareCountryA, compareCountryB]
               : undefined
           }
+          onActionClick={handleActionClick}
         />
 
         {/* Compare overlay */}
@@ -478,73 +544,19 @@ function MapPageInner() {
   );
 }
 
-/** Inline legend that changes based on the active layer */
+/** Inline legend that pulls from the layer registry */
 function LayerLegend({ activeLayer }: { activeLayer: ActiveLayer }) {
-  const legends: Record<
-    ActiveLayer,
-    { label: string; items: { color: string; text: string }[] }
-  > = {
-    article_density: {
-      label: "Article Density",
-      items: [
-        { color: "bg-teal-200", text: "Low" },
-        { color: "bg-teal-300", text: "Medium" },
-        { color: "bg-teal-500", text: "High" },
-        { color: "bg-teal-600", text: "Very High" },
-      ],
-    },
-    temperature_anomaly: {
-      label: "Temp Anomaly",
-      items: [
-        { color: "bg-blue-500", text: "< -1\u00B0C" },
-        { color: "bg-blue-200", text: "-1 to 0\u00B0C" },
-        { color: "bg-yellow-200", text: "0 to +1\u00B0C" },
-        { color: "bg-yellow-400", text: "+1 to +2\u00B0C" },
-        { color: "bg-orange-500", text: "+2 to +3\u00B0C" },
-        { color: "bg-red-600", text: "> +3\u00B0C" },
-      ],
-    },
-    climate_risk: {
-      label: "Climate Risk",
-      items: [
-        { color: "bg-green-300", text: "Low" },
-        { color: "bg-yellow-400", text: "Moderate" },
-        { color: "bg-orange-500", text: "High" },
-        { color: "bg-red-600", text: "Very High" },
-      ],
-    },
-    source_diversity: {
-      label: "Source Diversity",
-      items: [
-        { color: "bg-violet-100", text: "1-2" },
-        { color: "bg-violet-300", text: "3-5" },
-        { color: "bg-violet-400", text: "6-10" },
-        { color: "bg-violet-600", text: "10+" },
-      ],
-    },
-    biomes: {
-      // Phase 11 (2026-05-25) — inline legend shows the 5 Köppen zones.
-      // Full taxonomy lives in the MapBiomeLegend corner overlay.
-      label: "Climate zone",
-      items: [
-        { color: "bg-[#E76F51]", text: "Tropical" },
-        { color: "bg-[#F4A261]", text: "Arid" },
-        { color: "bg-[#2A9D8F]", text: "Temperate" },
-        { color: "bg-[#264653]", text: "Continental" },
-        { color: "bg-[#A8DADC]", text: "Polar" },
-      ],
-    },
-  };
-
-  const legend = legends[activeLayer];
+  const layer = getLayer(activeLayer);
+  const legendItems = layer?.legend ?? [];
+  const label = layer?.label ?? activeLayer.replace(/_/g, " ");
 
   return (
     <div>
       <p className="text-[10px] text-slate-400 mb-1.5 font-medium">
-        {legend.label}
+        {label}
       </p>
       <div className="flex items-center gap-2">
-        {legend.items.map((item) => (
+        {legendItems.map((item) => (
           <div key={item.text} className="flex items-center gap-1">
             <div className={`w-3 h-2.5 rounded-sm ${item.color}`} />
             <span className="text-[9px] text-slate-500">{item.text}</span>

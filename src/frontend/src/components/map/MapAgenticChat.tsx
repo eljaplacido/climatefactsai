@@ -12,6 +12,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import type { ChatActionSpec } from "@/lib/chatActionDispatcher";
+import { ACTION_MODES } from "@/lib/chatActionDispatcher";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
 
@@ -31,6 +33,7 @@ interface ChatMessage {
     source_name?: string;
   }[];
   highlighted_countries?: string[];
+  actions?: ChatActionSpec[];
 }
 
 interface MapAgenticChatProps {
@@ -38,6 +41,7 @@ interface MapAgenticChatProps {
   onCountryClick?: (code: string) => void;
   selectedCountry?: string | null;
   compareCountries?: string[];
+  onActionClick?: (action: ChatActionSpec) => void;
 }
 
 export default function MapAgenticChat({
@@ -45,6 +49,7 @@ export default function MapAgenticChat({
   onCountryClick,
   selectedCountry,
   compareCountries,
+  onActionClick,
 }: MapAgenticChatProps) {
   const [expanded, setExpanded] = useState(false);
   const [input, setInput] = useState("");
@@ -127,6 +132,7 @@ export default function MapAgenticChat({
               `Found ${data.matching_articles || 0} articles across ${highlightedCodes.length} countries.`,
             cited_articles: citedArticles,
             highlighted_countries: highlightedCodes,
+            actions: (data.actions || []).slice(0, 5),
           };
 
           setMessages((prev) => [...prev, assistantMessage]);
@@ -289,6 +295,37 @@ export default function MapAgenticChat({
                           ))}
                         </div>
                       )}
+
+                    {/* Action chips — suggested next steps from the LLM */}
+                    {msg.actions && msg.actions.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-slate-600">
+                        <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-1.5">
+                          Suggested next steps
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {msg.actions.map((a, j) => {
+                            const requiresConfirm = ACTION_MODES[a.type] === "confirm";
+                            return (
+                              <button
+                                key={j}
+                                type="button"
+                                onClick={() => onActionClick?.(a)}
+                                className={`text-[10px] px-2 py-1 rounded border transition-colors ${
+                                  requiresConfirm
+                                    ? "border-amber-600/50 text-amber-300 bg-amber-500/10 hover:bg-amber-500/20"
+                                    : "border-teal-600/50 text-teal-300 bg-teal-500/10 hover:bg-teal-500/20"
+                                }`}
+                              >
+                                {a.label}
+                                {requiresConfirm && (
+                                  <span className="ml-1 opacity-70">&#9888;</span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

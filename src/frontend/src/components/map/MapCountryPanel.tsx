@@ -26,6 +26,19 @@ import {
 } from "recharts";
 import type { Article } from "@/types";
 import CountrySelector from "@/components/CountrySelector";
+import type { ViewMode } from "@/lib/plainLanguage";
+import {
+  formatTemperatureAnomalyPlain,
+  formatTemperatureAnomalyBusiness,
+  formatCredibilityPlain,
+  formatCredibilityBusiness,
+  formatClimateRiskPlain,
+  formatClimateRiskBusiness,
+  formatArticleCountPlain,
+  formatArticleCountBusiness,
+  getComplianceFrameworks,
+  type ComplianceFramework,
+} from "@/lib/plainLanguage";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
 
@@ -96,12 +109,14 @@ interface MapCountryPanelProps {
   countryCode: string;
   onClose: () => void;
   onCompare?: (countryCode: string) => void;
+  viewMode?: ViewMode;
 }
 
 export default function MapCountryPanel({
   countryCode,
   onClose,
   onCompare,
+  viewMode = "public",
 }: MapCountryPanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [detail, setDetail] = useState<CountryDetail | null>(null);
@@ -427,6 +442,20 @@ export default function MapCountryPanel({
                       </div>
                     </div>
 
+                    {/* Plain-language sentence */}
+                    <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+                      {viewMode === "business"
+                        ? formatCredibilityBusiness(avgCredibility, { entity: detail?.country_name || "Sources here" }).sentence
+                        : formatCredibilityPlain(avgCredibility, { entity: detail?.country_name || "Sources here", sampleSize: articleCount }).sentence}
+                    </p>
+                    {viewMode === "business" && (
+                      <div className="flex items-center gap-1 mt-1.5">
+                        {getComplianceFrameworks("credibility").map((fw) => (
+                          <span key={fw} className="text-[9px] bg-slate-600/50 text-slate-300 px-1.5 py-0.5 rounded font-mono">{fw}</span>
+                        ))}
+                      </div>
+                    )}
+
                     {/* Category breakdown */}
                     {Object.keys(categoryBreakdown).length > 0 && (
                       <div className="mt-3 space-y-1.5">
@@ -495,6 +524,18 @@ export default function MapCountryPanel({
                           </p>
                         </div>
                       </div>
+                      <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+                        {viewMode === "business"
+                          ? formatClimateRiskBusiness(climateRiskScore, { entity: detail?.country_name || "This area" }).sentence
+                          : formatClimateRiskPlain(climateRiskScore, { entity: detail?.country_name || "This area" }).sentence}
+                      </p>
+                      {viewMode === "business" && (
+                        <div className="flex items-center gap-1 mt-1.5">
+                          {getComplianceFrameworks("climate_risk").map((fw) => (
+                            <span key={fw} className="text-[9px] bg-slate-600/50 text-slate-300 px-1.5 py-0.5 rounded font-mono">{fw}</span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

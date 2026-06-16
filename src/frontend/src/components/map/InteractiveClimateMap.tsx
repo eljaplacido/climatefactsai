@@ -68,12 +68,8 @@ function resolveCC(id: string): string {
   return NUM_TO_A2[id] || NUM_TO_A2[String(parseInt(id, 10))] || "";
 }
 
-export type ActiveLayer =
-  | "article_density"
-  | "temperature_anomaly"
-  | "climate_risk"
-  | "source_diversity"
-  | "biomes";  // Phase 11 (2026-05-25) — biome + Köppen climate zones
+import type { ActiveLayer } from "./layers/registry";
+export type { ActiveLayer };
 
 export interface CountryStatEntry {
   country_code: string;
