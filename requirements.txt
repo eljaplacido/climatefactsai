@@ -21,7 +21,7 @@ fastavro==1.9.7                    # Avro serialization for Kafka
 # Memory & Databases
 # -----------------------------------------------------------------------------
 redis==5.2.0                       # Redis client for short-term memory
-psycopg2-binary==2.9.9            # PostgreSQL adapter
+psycopg2-binary==2.9.10            # PostgreSQL adapter (cp313 wheel available)
 pgvector==0.3.5                    # PostgreSQL vector extension
 sqlalchemy==2.0.35                 # SQL toolkit & ORM
 

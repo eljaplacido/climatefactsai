@@ -98,6 +98,8 @@ steps:
       - "-c"
       - |
         set -e
+        apt-get update -qq
+        apt-get install -y -qq libpq-dev gcc
         pip install --quiet -r requirements.txt
         pip install --quiet pytest pytest-asyncio pytest-mock httpx
         pytest -p no:warnings -x \
