@@ -83,6 +83,9 @@ export interface CountryStatEntry {
   temperature_anomaly?: number;
   climate_risk_score?: number;
   source_count?: number;
+  company_count?: number;
+  sbti_validated_count?: number;
+  net_zero_target_count?: number;
 }
 
 interface InteractiveClimateMapProps {
@@ -103,6 +106,7 @@ function getLayerColor(
   statsMap: Record<string, CountryStatEntry>,
   maxArticle: number,
   maxSourceCount: number,
+  maxCompanyCount: number,
   biomeData: Record<string, BiomeEntry>
 ): string {
   if (layer === "biomes") {
@@ -154,6 +158,18 @@ function getLayerColor(
       if (ratio >= 0.25) return "#8b5cf6"; // violet-500
       if (ratio > 0) return "#a78bfa";     // violet-400 — minimal but visible
       return "#334155";                    // slate-700 — no sources
+    }
+    case "corporate_density": {
+      const companies = stat.company_count ?? 0;
+      if (companies <= 0) return "#334155";
+
+      const dynamicMax = Math.max(1, maxCompanyCount);
+      const ratio = Math.min(companies / dynamicMax, 1);
+
+      if (ratio >= 0.75) return "#3730a3"; // indigo-800
+      if (ratio >= 0.5) return "#4338ca";  // indigo-700
+      if (ratio >= 0.25) return "#6366f1"; // indigo-500
+      return "#a5b4fc";                    // indigo-300
     }
     default:
       return "#334155";
@@ -290,6 +306,11 @@ export default function InteractiveClimateMap({
     [countryStats]
   );
 
+  const maxCompanyCount = useMemo(
+    () => Math.max(1, ...countryStats.map((s) => s.company_count ?? 0)),
+    [countryStats]
+  );
+
   const highlightedSet = useMemo(
     () => new Set(highlightedCountries),
     [highlightedCountries]
@@ -378,6 +399,7 @@ export default function InteractiveClimateMap({
         statsMap,
         maxArticle,
         maxSourceCount,
+        maxCompanyCount,
         biomeData
       );
 
@@ -404,6 +426,7 @@ export default function InteractiveClimateMap({
       statsMap,
       maxArticle,
       maxSourceCount,
+      maxCompanyCount,
       biomeData,
     ]
   );
@@ -428,9 +451,14 @@ export default function InteractiveClimateMap({
       } else if (stat) {
         tooltipContent = `<div class="text-xs">
             <strong class="text-sm">${name}</strong><br/>
-            ${stat.article_count} articles
+            ${
+              activeLayer === "corporate_density"
+                ? `${stat.company_count ?? 0} companies`
+                : `${stat.article_count} articles`
+            }
             ${stat.avg_credibility_score != null ? ` | Credibility: ${stat.avg_credibility_score}` : ""}
             ${stat.temperature_anomaly != null ? `<br/>Temp anomaly: ${stat.temperature_anomaly > 0 ? "+" : ""}${stat.temperature_anomaly}\u00B0C` : ""}
+            ${activeLayer === "corporate_density" ? `<br/>SBTi validated: ${stat.sbti_validated_count ?? 0}` : ""}
           </div>`;
       } else {
         tooltipContent = `<div class="text-xs">

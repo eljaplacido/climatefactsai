@@ -15,6 +15,8 @@ import {
   GitCompare,
   ChevronRight,
   Shield,
+  Building2,
+  BadgeCheck,
 } from "lucide-react";
 import {
   RadarChart,
@@ -28,16 +30,11 @@ import type { Article } from "@/types";
 import CountrySelector from "@/components/CountrySelector";
 import type { ViewMode } from "@/lib/plainLanguage";
 import {
-  formatTemperatureAnomalyPlain,
-  formatTemperatureAnomalyBusiness,
   formatCredibilityPlain,
   formatCredibilityBusiness,
   formatClimateRiskPlain,
   formatClimateRiskBusiness,
-  formatArticleCountPlain,
-  formatArticleCountBusiness,
   getComplianceFrameworks,
-  type ComplianceFramework,
 } from "@/lib/plainLanguage";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400";
@@ -103,7 +100,19 @@ interface CountryArticle {
   excerpt?: string;
 }
 
-type TabId = "overview" | "articles" | "sources" | "compare";
+type TabId = "overview" | "articles" | "sources" | "companies" | "compare";
+
+interface CountryCompany {
+  company_id: string;
+  name: string;
+  ticker?: string;
+  country_code?: string;
+  sector_nace?: string;
+  disclosure_count: number;
+  latest_disclosure_year?: number;
+  sbti_validated: boolean;
+  net_zero_target_year?: number;
+}
 
 interface MapCountryPanelProps {
   countryCode: string;
@@ -125,6 +134,9 @@ export default function MapCountryPanel({
   const [articlesLoading, setArticlesLoading] = useState(false);
   const [articlesPage, setArticlesPage] = useState(0);
   const [hasMoreArticles, setHasMoreArticles] = useState(true);
+  const [companies, setCompanies] = useState<CountryCompany[]>([]);
+  const [companiesLoading, setCompaniesLoading] = useState(false);
+  const [companiesSbtiOnly, setCompaniesSbtiOnly] = useState(false);
   const [compareCountry, setCompareCountry] = useState("");
   const [compareData, setCompareData] = useState<any>(null);
   const [compareLoading, setCompareLoading] = useState(false);
@@ -200,11 +212,36 @@ export default function MapCountryPanel({
     [countryCode]
   );
 
+  const fetchCompanies = useCallback(
+    async (sbtiOnly: boolean) => {
+      setCompaniesLoading(true);
+      try {
+        const params = new URLSearchParams();
+        params.set("limit", "50");
+        if (sbtiOnly) params.set("sbti_only", "true");
+        const res = await fetch(
+          `${API_BASE}/api/map/country/${countryCode}/companies?${params.toString()}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setCompanies(Array.isArray(data) ? data : []);
+        }
+      } catch (err) {
+        console.error("Failed to fetch companies:", err);
+      } finally {
+        setCompaniesLoading(false);
+      }
+    },
+    [countryCode]
+  );
+
   useEffect(() => {
     fetchDetail();
     setArticles([]);
     setArticlesPage(0);
     setHasMoreArticles(true);
+    setCompanies([]);
+    setCompaniesSbtiOnly(false);
     setActiveTab("overview");
     setCompareCountry("");
     setCompareData(null);
@@ -215,6 +252,12 @@ export default function MapCountryPanel({
       fetchArticles(0);
     }
   }, [activeTab, articles.length, fetchArticles]);
+
+  useEffect(() => {
+    if (activeTab === "companies") {
+      fetchCompanies(companiesSbtiOnly);
+    }
+  }, [activeTab, companiesSbtiOnly, fetchCompanies]);
 
   function loadMoreArticles() {
     const nextPage = articlesPage + 1;
@@ -243,6 +286,7 @@ export default function MapCountryPanel({
     { id: "overview", label: "Overview", icon: <BarChart3 className="h-3.5 w-3.5" /> },
     { id: "articles", label: "Articles", icon: <Newspaper className="h-3.5 w-3.5" /> },
     { id: "sources", label: "Sources", icon: <Globe className="h-3.5 w-3.5" /> },
+    { id: "companies", label: "Companies", icon: <Building2 className="h-3.5 w-3.5" /> },
     { id: "compare", label: "Compare", icon: <GitCompare className="h-3.5 w-3.5" /> },
   ];
 
@@ -702,6 +746,95 @@ export default function MapCountryPanel({
                     <p className="text-sm text-slate-400 text-center py-8">
                       No source data available.
                     </p>
+                  )}
+                </div>
+              )}
+
+              {/* Companies Tab */}
+              {activeTab === "companies" && (
+                <div className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-slate-400">
+                      Corporate climate disclosures in {detail?.country_name || countryCode}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setCompaniesSbtiOnly((v) => !v)}
+                      className={`text-[10px] px-2 py-1 rounded border transition-colors ${
+                        companiesSbtiOnly
+                          ? "bg-emerald-600/20 text-emerald-300 border-emerald-500/40"
+                          : "bg-slate-700 text-slate-300 border-slate-600 hover:bg-slate-600"
+                      }`}
+                    >
+                      SBTi only
+                    </button>
+                  </div>
+
+                  {companiesLoading ? (
+                    <div className="flex items-center justify-center py-10">
+                      <Loader2 className="h-5 w-5 animate-spin text-teal-500" />
+                    </div>
+                  ) : companies.length === 0 ? (
+                    <p className="text-sm text-slate-400 text-center py-8">
+                      No company disclosures found for this country.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {companies.map((company) => (
+                        <div
+                          key={company.company_id}
+                          className="p-3 bg-slate-700/50 rounded-lg border border-slate-600"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              {company.ticker ? (
+                                <Link
+                                  href={`/companies/${company.ticker}`}
+                                  className="text-sm font-medium text-slate-200 hover:text-teal-300 transition-colors"
+                                >
+                                  {company.name}
+                                </Link>
+                              ) : (
+                                <p className="text-sm font-medium text-slate-200">{company.name}</p>
+                              )}
+                              <div className="flex items-center gap-2 mt-1">
+                                {company.ticker && (
+                                  <span className="text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded border border-slate-600 font-mono">
+                                    {company.ticker}
+                                  </span>
+                                )}
+                                {company.sector_nace && (
+                                  <span className="text-[10px] text-slate-400">{company.sector_nace}</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[10px] text-slate-400">
+                                {company.disclosure_count} disclosure{company.disclosure_count === 1 ? "" : "s"}
+                              </p>
+                              {company.latest_disclosure_year && (
+                                <p className="text-[10px] text-slate-500">
+                                  Latest {company.latest_disclosure_year}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-2">
+                            {company.sbti_validated && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded border bg-emerald-500/20 text-emerald-300 border-emerald-500/30 flex items-center gap-1">
+                                <BadgeCheck className="h-2.5 w-2.5" />
+                                SBTi validated
+                              </span>
+                            )}
+                            {company.net_zero_target_year && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded border bg-indigo-500/20 text-indigo-300 border-indigo-500/30">
+                                Net zero {company.net_zero_target_year}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}

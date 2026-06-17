@@ -23,7 +23,6 @@ import { useViewContext } from "@/lib/view-context";
 import { useUrlState, URL_STATE_SERIALIZERS } from "@/lib/useUrlState";
 import type { ViewMode } from "@/lib/plainLanguage";
 import type { ChatActionSpec } from "@/lib/chatActionDispatcher";
-import { ACTION_MODES } from "@/lib/chatActionDispatcher";
 
 // Dynamic import of the Leaflet-based map (no SSR)
 const InteractiveClimateMap = nextDynamic(
@@ -277,6 +276,65 @@ function MapPageInner() {
       }
     }
     fetchTempAnomalies();
+  }, [activeLayer, countryStats]);
+
+  // Fetch layer-specific data when switching to corporate density layer.
+  // We keep /country-stats article-centric and merge company metrics lazily.
+  useEffect(() => {
+    if (activeLayer !== "corporate_density") return;
+    if (countryStats.some((s) => s.company_count != null)) return;
+
+    async function fetchCorporateDensity() {
+      try {
+        const res = await fetch(`${API_BASE}/api/map/layers/corporate-density`);
+        if (!res.ok) return;
+        const data: {
+          country_code: string;
+          company_count: number;
+          sbti_validated_count: number;
+          net_zero_target_count: number;
+        }[] = await res.json();
+        if (!data.length) return;
+
+        const densityMap = Object.fromEntries(
+          data.map((d) => [d.country_code, d])
+        );
+
+        setCountryStats((prev) =>
+          {
+            const merged = prev.map((s) => {
+              const d = densityMap[s.country_code];
+              if (!d) return s;
+              return {
+                ...s,
+                company_count: d.company_count,
+                sbti_validated_count: d.sbti_validated_count,
+                net_zero_target_count: d.net_zero_target_count,
+              };
+            });
+
+            const present = new Set(merged.map((s) => s.country_code));
+            for (const d of data) {
+              if (present.has(d.country_code)) continue;
+              merged.push({
+                country_code: d.country_code,
+                country_name: d.country_code,
+                article_count: 0,
+                top_topics: [],
+                company_count: d.company_count,
+                sbti_validated_count: d.sbti_validated_count,
+                net_zero_target_count: d.net_zero_target_count,
+              });
+            }
+            return merged;
+          }
+        );
+      } catch {
+        // silently fail
+      }
+    }
+
+    fetchCorporateDensity();
   }, [activeLayer, countryStats]);
 
   // Handlers

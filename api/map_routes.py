@@ -60,6 +60,9 @@ class CountryStats(BaseModel):
     temperature_anomaly: Optional[float] = None
     climate_risk_score: Optional[float] = None
     source_count: Optional[int] = None
+    company_count: Optional[int] = None
+    sbti_validated_count: Optional[int] = None
+    net_zero_target_count: Optional[int] = None
 
 
 class TopicDensityItem(BaseModel):
@@ -250,6 +253,27 @@ class ClimateRiskItem(BaseModel):
     claim_count: int = 0
     disputed_ratio: float = 0.0
     top_risks: List[str] = []
+
+
+class CountryCompanyItem(BaseModel):
+    """Company summary scoped to a country."""
+    company_id: str
+    name: str
+    ticker: Optional[str] = None
+    country_code: Optional[str] = None
+    sector_nace: Optional[str] = None
+    disclosure_count: int = 0
+    latest_disclosure_year: Optional[int] = None
+    sbti_validated: bool = False
+    net_zero_target_year: Optional[int] = None
+
+
+class CorporateDensityItem(BaseModel):
+    """Per-country corporate climate-data density for map layer rendering."""
+    country_code: str
+    company_count: int = 0
+    sbti_validated_count: int = 0
+    net_zero_target_count: int = 0
 
 
 # Region → country code mapping for region-based queries (comprehensive — 80%+ of world)
@@ -1967,6 +1991,114 @@ async def get_climate_risk_layer():
 
     _cache_set(cache_key, results)
     return results
+
+
+# ---------------------------------------------------------------------------
+# 8. GET /country/{cc}/companies
+# ---------------------------------------------------------------------------
+
+@router.get("/country/{cc}/companies", response_model=List[CountryCompanyItem])
+async def get_country_companies(
+    cc: str,
+    sbti_only: bool = Query(False, description="Only companies with SBTi-validated disclosures"),
+    limit: int = Query(25, ge=1, le=200),
+):
+    """Return companies associated with a country code.
+
+    This is the map-side reverse lookup for the Corporate Tracker surface,
+    powering the country panel's Companies tab.
+    """
+    db = get_postgres()
+    cc = (cc or "").upper().strip()
+    if len(cc) != 2 or not cc.isalpha():
+        raise HTTPException(status_code=400, detail="Invalid country code")
+
+    try:
+        rows = db.execute_query(
+            """
+            SELECT c.company_id,
+                   c.name,
+                   c.ticker,
+                   c.country_code,
+                   c.sector_nace,
+                   COUNT(cd.disclosure_id) AS disclosure_count,
+                   MAX(cd.reporting_year) AS latest_disclosure_year,
+                   COALESCE(BOOL_OR(cd.sbti_validated), FALSE) AS sbti_validated,
+                   MAX(cd.net_zero_target_year) AS net_zero_target_year
+            FROM companies c
+            LEFT JOIN company_climate_disclosures cd ON cd.company_id = c.company_id
+            WHERE c.country_code = :cc
+            GROUP BY c.company_id, c.name, c.ticker, c.country_code, c.sector_nace
+            HAVING (:sbti_only = FALSE OR COALESCE(BOOL_OR(cd.sbti_validated), FALSE) = TRUE)
+            ORDER BY COALESCE(BOOL_OR(cd.sbti_validated), FALSE) DESC,
+                     COUNT(cd.disclosure_id) DESC,
+                     c.name ASC
+            LIMIT :limit
+            """,
+            {"cc": cc, "sbti_only": sbti_only, "limit": limit},
+        )
+    except Exception as exc:
+        logger.error(f"Country companies query failed for {cc}: {exc}")
+        return []
+
+    return [
+        CountryCompanyItem(
+            company_id=str(r["company_id"]),
+            name=r.get("name") or "",
+            ticker=r.get("ticker"),
+            country_code=r.get("country_code"),
+            sector_nace=r.get("sector_nace"),
+            disclosure_count=int(r.get("disclosure_count") or 0),
+            latest_disclosure_year=int(r["latest_disclosure_year"]) if r.get("latest_disclosure_year") is not None else None,
+            sbti_validated=bool(r.get("sbti_validated") or False),
+            net_zero_target_year=int(r["net_zero_target_year"]) if r.get("net_zero_target_year") is not None else None,
+        )
+        for r in (rows or [])
+    ]
+
+
+# ---------------------------------------------------------------------------
+# 9. GET /layers/corporate-density
+# ---------------------------------------------------------------------------
+
+@router.get("/layers/corporate-density", response_model=List[CorporateDensityItem])
+async def get_corporate_density_layer():
+    """Per-country corporate disclosure density for map choropleth rendering."""
+    cache_key = "layer:corporate_density"
+    cached = _cache_get(cache_key, ttl_seconds=21600)
+    if cached is not None:
+        return cached
+
+    db = get_postgres()
+    try:
+        rows = db.execute_query(
+            """
+            SELECT c.country_code,
+                   COUNT(DISTINCT c.company_id) AS company_count,
+                   COUNT(DISTINCT CASE WHEN cd.sbti_validated THEN c.company_id END) AS sbti_validated_count,
+                   COUNT(DISTINCT CASE WHEN cd.net_zero_target_year IS NOT NULL THEN c.company_id END) AS net_zero_target_count
+            FROM companies c
+            LEFT JOIN company_climate_disclosures cd ON cd.company_id = c.company_id
+            WHERE c.country_code IS NOT NULL AND c.country_code <> ''
+            GROUP BY c.country_code
+            ORDER BY company_count DESC
+            """
+        )
+    except Exception as exc:
+        logger.error(f"Corporate density layer query failed: {exc}")
+        return []
+
+    payload = [
+        CorporateDensityItem(
+            country_code=r["country_code"],
+            company_count=int(r.get("company_count") or 0),
+            sbti_validated_count=int(r.get("sbti_validated_count") or 0),
+            net_zero_target_count=int(r.get("net_zero_target_count") or 0),
+        )
+        for r in (rows or [])
+    ]
+    _cache_set(cache_key, payload)
+    return payload
 
 
 @router.get("/country/{cc}/claim-ledger")

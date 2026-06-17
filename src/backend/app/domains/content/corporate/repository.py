@@ -216,6 +216,7 @@ def list_companies(
     sort: str = "richness",
     has_climate_data: bool = False,
     sbti_only: bool = False,
+    country_code: Optional[str] = None,
 ) -> List[dict]:
     """List companies with climate-disclosure summary.
 
@@ -257,6 +258,11 @@ def list_companies(
     if sbti_only:
         where_clauses.append("BOOL_OR(cd.sbti_validated) = TRUE")
     having_sql = ("HAVING " + " AND ".join(where_clauses)) if where_clauses else ""
+    pre_group_where_sql = ""
+    params: Dict[str, Any] = {"limit": limit, "offset": offset}
+    if country_code:
+        pre_group_where_sql = "WHERE c.country_code = :country_code"
+        params["country_code"] = country_code.upper()
 
     order_sql = {
         "richness": (
@@ -284,13 +290,14 @@ def list_companies(
                    MAX(cd.scope1_tco2e) AS scope1_tco2e,
                    MAX(cd.scope3_tco2e) AS scope3_tco2e,
                    MAX(cd.target_pct_reduction) AS target_pct_reduction
-            FROM companies c
-            LEFT JOIN company_climate_disclosures cd ON cd.company_id = c.company_id
-            GROUP BY c.company_id
-            {having_sql}
-            {order_sql}
-            LIMIT :limit OFFSET :offset""",
-        {"limit": limit, "offset": offset},
+             FROM companies c
+             LEFT JOIN company_climate_disclosures cd ON cd.company_id = c.company_id
+             {pre_group_where_sql}
+             GROUP BY c.company_id
+             {having_sql}
+             {order_sql}
+             LIMIT :limit OFFSET :offset""",
+        params,
     )
     return [
         {

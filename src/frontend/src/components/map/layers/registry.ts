@@ -6,6 +6,7 @@ import {
   ShieldAlert,
   Network,
   Leaf,
+  Building2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -14,6 +15,7 @@ export type ActiveLayer =
   | "temperature_anomaly"
   | "climate_risk"
   | "source_diversity"
+  | "corporate_density"
   | "biomes";
 
 export type Persona = "consumer" | "professional" | "policymaker" | "researcher";
@@ -98,6 +100,21 @@ export const MAP_LAYERS: MapLayer[] = [
       { color: "bg-violet-300", text: "3-5" },
       { color: "bg-violet-400", text: "6-10" },
       { color: "bg-violet-600", text: "10+" },
+    ],
+  },
+  {
+    id: "corporate_density",
+    label: "Corporate Density",
+    description: "Companies with climate disclosures by country",
+    icon: Building2,
+    personas: ["professional", "policymaker", "researcher"],
+    dataEndpoint: "/api/map/layers/corporate-density",
+    statKey: "company_count",
+    legend: [
+      { color: "bg-indigo-200", text: "1-2" },
+      { color: "bg-indigo-300", text: "3-5" },
+      { color: "bg-indigo-500", text: "6-10" },
+      { color: "bg-indigo-700", text: "10+" },
     ],
   },
   {

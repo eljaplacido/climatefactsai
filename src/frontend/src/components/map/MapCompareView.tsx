@@ -41,6 +41,10 @@ const LAYER_METRIC: Record<
     label: "Temperature anomaly",
     note: "Temperature anomaly is shown on the map layer; a side-by-side temperature compare is coming next.",
   },
+  corporate_density: {
+    label: "Corporate density",
+    note: "Corporate disclosure density is shown on the map layer; side-by-side company density compare is coming next.",
+  },
   biomes: {
     label: "Biomes & climate zones",
     note: "Köppen biome zones are shown on the map layer (they aren't a single comparable number).",

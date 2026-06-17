@@ -63,6 +63,59 @@ def _make_country_db(*, countries: Optional[List[Dict[str, Any]]] = None):
             return [{"source_name": "YLE", "cnt": 4, "avg_rel": 80.0}]
         if "select source_name, count(*) as cnt" in q:
             return [{"source_name": "YLE", "cnt": 6}]
+        if (
+            "from companies c" in q
+            and "where c.country_code = :cc" in q
+            and "group by c.company_id" in q
+        ):
+            if cc != "FI":
+                return []
+            rows = [
+                {
+                    "company_id": "11111111-1111-1111-1111-111111111111",
+                    "name": "Wartsila",
+                    "ticker": "WRT1V",
+                    "country_code": "FI",
+                    "sector_nace": "C28",
+                    "disclosure_count": 2,
+                    "latest_disclosure_year": 2024,
+                    "sbti_validated": True,
+                    "net_zero_target_year": 2040,
+                },
+                {
+                    "company_id": "22222222-2222-2222-2222-222222222222",
+                    "name": "Neste",
+                    "ticker": "NESTE",
+                    "country_code": "FI",
+                    "sector_nace": "C19",
+                    "disclosure_count": 1,
+                    "latest_disclosure_year": 2023,
+                    "sbti_validated": False,
+                    "net_zero_target_year": None,
+                },
+            ]
+            if params.get("sbti_only"):
+                rows = [r for r in rows if r.get("sbti_validated")]
+            return rows
+        if (
+            "from companies c" in q
+            and "group by c.country_code" in q
+            and "company_count" in q
+        ):
+            return [
+                {
+                    "country_code": "FI",
+                    "company_count": 2,
+                    "sbti_validated_count": 1,
+                    "net_zero_target_count": 1,
+                },
+                {
+                    "country_code": "SE",
+                    "company_count": 1,
+                    "sbti_validated_count": 1,
+                    "net_zero_target_count": 1,
+                },
+            ]
         if "select count(*) as total" in q and "avg(reliability_score) as avg_cred" in q:
             return [{"total": 8, "avg_cred": 78.5}]
         if "coalesce(content_category" in q:
@@ -276,6 +329,54 @@ class TestCountryDetail:
         assert resp.status_code == 200
         data = resp.json()
         assert data["country_code"] == "XX"
+
+
+# ---------------------------------------------------------------------------
+# GET /api/map/country/{cc}/companies
+# ---------------------------------------------------------------------------
+
+class TestCountryCompanies:
+    def test_country_companies_returns_list(self, client, map_db):
+        resp = client.get("/api/map/country/FI/companies")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        first = data[0]
+        assert first["country_code"] == "FI"
+        assert "disclosure_count" in first
+        assert "sbti_validated" in first
+
+    def test_country_companies_invalid_code_rejected(self, client, map_db):
+        resp = client.get("/api/map/country/FIN/companies")
+        assert resp.status_code == 400
+
+    def test_country_companies_sbti_only_filter(self, client, map_db):
+        resp = client.get("/api/map/country/FI/companies?sbti_only=true")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["sbti_validated"] is True
+
+
+# ---------------------------------------------------------------------------
+# GET /api/map/layers/corporate-density
+# ---------------------------------------------------------------------------
+
+class TestCorporateDensityLayer:
+    def test_corporate_density_layer_returns_country_counts(self, client, map_db):
+        from api import map_routes
+
+        map_routes._cache.clear()
+        resp = client.get("/api/map/layers/corporate-density")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert len(data) >= 1
+        first = data[0]
+        assert first["country_code"] in {"FI", "SE"}
+        assert "company_count" in first
+        assert "sbti_validated_count" in first
+        assert "net_zero_target_count" in first
 
 
 # ---------------------------------------------------------------------------
