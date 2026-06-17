@@ -26,6 +26,7 @@ import Link from "next/link";
 import { Beaker, BarChart3, Scale, Eye, TrendingUp, Info, Loader2, CheckCircle2, AlertCircle, Clock, BookOpen, Leaf, Recycle, Zap, CloudSun, Landmark, ExternalLink, AlertTriangle } from "lucide-react";
 import { formatCredibilityPlain } from "@/lib/plainLanguage";
 import ArticleMapBridge from "@/components/ArticleMapBridge";
+import ClimateMiniMap from "@/components/ClimateMiniMap";
 
 const ArticleDetailTabs = dynamic(() => import("@/components/ArticleDetailTabs"), {
   ssr: false,
@@ -638,6 +639,20 @@ export default async function ArticlePage({ params }: { params: { id: string } }
               Turns the article from dead-end into a launchpad for
               map / passport / deep-search. Renders only when the
               article has a country code OR at least one tag. */}
+
+          {article.country_code && (
+            <div className="mt-8 mb-6">
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">
+                Country Context
+              </h3>
+              <ClimateMiniMap
+                countries={[article.country_code]}
+                title={article.country_code}
+                layer="climate_risk"
+              />
+            </div>
+          )}
+
           <ArticleMapBridge
             articleId={article.article_id}
             articleTitle={article.title}

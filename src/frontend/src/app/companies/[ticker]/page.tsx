@@ -12,6 +12,7 @@ import { useUrlState } from "@/lib/useUrlState";
 import { type ViewMode } from "@/lib/plainLanguage";
 import SaveButton from "@/components/SaveButton";
 import { useToast } from "@/components/Toast";
+import ClimateMiniMap from "@/components/ClimateMiniMap";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -416,6 +417,16 @@ export default function CompanyDetailPage() {
               ECGT Article 4 takes effect 27 Sept 2026 — claims unsupported by
               the disclosure ledger become a board liability after that date.
             </p>
+          )}
+
+          {company.country_code && (
+            <div className="mt-4">
+              <ClimateMiniMap
+                countries={[company.country_code]}
+                title={`${company.name} — Operating Country`}
+                layer="corporate_density"
+              />
+            </div>
           )}
         </header>
 
