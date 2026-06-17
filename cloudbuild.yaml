@@ -71,6 +71,12 @@ steps:
         # where ON CONFLICT DO NOTHING masked an intended upgrade).
         # See scripts/verify_migration_state.py for the invariant list.
         python3 scripts/verify_migration_state.py
+        # AR6 Atlas bulk ingestion (2026-06-17) — idempotent UPSERT, safe to
+        # re-run on every deploy. Expands country_projections from the
+        # migration-035 seed 20 to ~175 countries using IPCC WGI Reference
+        # Region mapping + CMIP6 multi-model median warming values.
+        # Requires the same cloud-sql-proxy + DATABASE_URL env.
+        python3 scripts/ingest_ar6_projections.py
         kill $$PROXY_PID || true
 
   # -------------------------------------------------------------------------
