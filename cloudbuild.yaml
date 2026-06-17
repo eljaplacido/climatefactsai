@@ -75,7 +75,7 @@ steps:
         # re-run on every deploy. Expands country_projections from the
         # migration-035 seed 20 to ~175 countries using IPCC WGI Reference
         # Region mapping + CMIP6 multi-model median warming values.
-        # Requires the same cloud-sql-proxy + DATABASE_URL env.
+        export PYTHONPATH="/workspace/src/backend"
         python3 scripts/ingest_ar6_projections.py
         kill $$PROXY_PID || true
 
