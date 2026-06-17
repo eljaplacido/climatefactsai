@@ -20,6 +20,7 @@ export type ActiveLayer =
   | "corporate_density"
   | "news_events"
   | "ndc_status"
+  | "warming_outlook"
   | "biomes";
 
 export type Persona = "consumer" | "professional" | "policymaker" | "researcher";
@@ -195,6 +196,27 @@ export const MAP_LAYERS: MapLayer[] = [
       { color: "bg-amber-400", text: "Moderate" },
       { color: "bg-red-400", text: "Weak" },
       { color: "bg-slate-600", text: "No data" },
+    ],
+  },
+  {
+    id: "warming_outlook",
+    label: "Warming Outlook",
+    description: "Projected temperature rise by 2050 under SSP2-4.5 (middle path)",
+    icon: Thermometer,
+    personas: ["consumer", "professional", "policymaker", "researcher"],
+    dataEndpoint: "/api/map/layers/warming-outlook?horizon_year=2050",
+    statKey: "best_estimate_c",
+    provenance: {
+      sourceName: "IPCC AR6 WG1 Interactive Atlas",
+      sourceUrl: "https://interactive-atlas.ipcc.ch/regional-information",
+      methodologyVersion: "ipcc_ar6_atlas_v2",
+      note: "CMIP6 multi-model median under SSP2-4.5 (middle path). Coverage gate applies — only countries in the AR6 Atlas ingestion are coloured.",
+    },
+    legend: [
+      { color: "bg-blue-200", text: "< +1.5°C" },
+      { color: "bg-yellow-300", text: "+1.5 to +2.5°C" },
+      { color: "bg-orange-500", text: "+2.5 to +3.5°C" },
+      { color: "bg-red-600", text: "> +3.5°C" },
     ],
   },
   {

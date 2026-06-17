@@ -294,6 +294,16 @@ class NdcStatusItem(BaseModel):
     status_category: str = "no_data"  # net_zero | strong | moderate | weak | no_data
 
 
+class WarmingOutlookItem(BaseModel):
+    """Per-country projected warming at a given horizon."""
+    country_code: str
+    ssp126_anomaly_c: Optional[float] = None
+    ssp245_anomaly_c: Optional[float] = None
+    ssp370_anomaly_c: Optional[float] = None
+    best_estimate_c: Optional[float] = None  # SSP2-4.5 (middle path)
+    covered: bool = False
+
+
 # Region → country code mapping for region-based queries (comprehensive — 80%+ of world)
 REGION_COUNTRIES = {
     "europe": [
@@ -2181,6 +2191,56 @@ async def get_news_events_layer(
                 latest_event_at=str(r["latest_event_at"]) if r.get("latest_event_at") else None,
             )
         )
+
+    _cache_set(cache_key, payload)
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# 12. GET /layers/warming-outlook
+# ---------------------------------------------------------------------------
+
+@router.get("/layers/warming-outlook", response_model=List[WarmingOutlookItem])
+async def get_warming_outlook_layer(
+    horizon_year: int = Query(2050, ge=2030, le=2100, description="Target horizon year"),
+):
+    """Per-country projected warming from the IPCC AR6 country_projections table."""
+    cache_key = f"layer:warming_outlook:{horizon_year}"
+    cached = _cache_get(cache_key, ttl_seconds=21600)
+    if cached is not None:
+        return cached
+
+    db = get_postgres()
+    try:
+        rows = db.execute_query(
+            """
+            SELECT cc.country_code,
+                   MAX(CASE WHEN cp.scenario = 'SSP1-2.6' THEN cp.temp_anomaly_c END) AS ssp126,
+                   MAX(CASE WHEN cp.scenario = 'SSP2-4.5' THEN cp.temp_anomaly_c END) AS ssp245,
+                   MAX(CASE WHEN cp.scenario = 'SSP3-7.0' THEN cp.temp_anomaly_c END) AS ssp370
+            FROM countries cc
+            LEFT JOIN country_projections cp
+              ON cp.country_code = cc.country_code AND cp.horizon_year = :horizon
+            WHERE cc.enabled = TRUE
+            GROUP BY cc.country_code
+            """
+            , {"horizon": horizon_year},
+        )
+    except Exception as exc:
+        logger.error(f"Warming outlook layer query failed: {exc}")
+        return []
+
+    payload: List[WarmingOutlookItem] = []
+    for r in (rows or []):
+        best = r.get("ssp245")
+        payload.append(WarmingOutlookItem(
+            country_code=r["country_code"],
+            ssp126_anomaly_c=float(r["ssp126"]) if r.get("ssp126") is not None else None,
+            ssp245_anomaly_c=float(r["ssp245"]) if r.get("ssp245") is not None else None,
+            ssp370_anomaly_c=float(r["ssp370"]) if r.get("ssp370") is not None else None,
+            best_estimate_c=float(best) if best is not None else None,
+            covered=best is not None,
+        ))
 
     _cache_set(cache_key, payload)
     return payload

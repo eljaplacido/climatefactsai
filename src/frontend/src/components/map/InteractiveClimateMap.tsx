@@ -93,6 +93,8 @@ export interface CountryStatEntry {
   ndc_status_category?: string;
   cat_overall_rating?: number;
   ndc_target_reduction_pct?: number;
+  best_estimate_c?: number;
+  warming_covered?: boolean;
 }
 
 interface InteractiveClimateMapProps {
@@ -193,6 +195,15 @@ function getLayerColor(
       if (status === "moderate") return "#f59e0b";  // amber-400
       if (status === "weak") return "#f87171";      // red-400
       return "#334155";                              // no data
+    }
+    case "warming_outlook": {
+      const anomaly = stat.best_estimate_c ?? 0;
+      if (!stat.warming_covered) return "#334155";
+      if (anomaly > 3.5) return "#dc2626";   // red-600
+      if (anomaly > 2.5) return "#f97316";   // orange-500
+      if (anomaly > 1.5) return "#fde047";   // yellow-300
+      if (anomaly > 0) return "#bfdbfe";     // blue-200
+      return "#334155";
     }
     default:
       return "#334155";
