@@ -424,6 +424,7 @@ def ingest(conn) -> dict[str, int]:
 
     # Build all rows first, then batch-insert in a single transaction
     rows_to_insert: list[dict[str, object]] = []
+    unmatched: list[str] = []
     for cc in country_codes:
         region = COUNTRY_TO_WGI_REGION.get(cc)
         if region is None:
