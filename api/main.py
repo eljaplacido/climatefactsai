@@ -393,7 +393,7 @@ from api.og_image_routes import router as og_image_router
 app.include_router(og_image_router)
 
 # Include map routes (geographic article distribution)
-from api.map_routes import router as map_router
+from api.map import router as map_router
 app.include_router(map_router)
 
 # Public platform-status endpoints (2026-05-27) — answers "what is
