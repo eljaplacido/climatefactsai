@@ -4,19 +4,31 @@ AR6 Atlas bulk ingestion — expands country_projections from 20 seed countries
 to ~175 countries using IPCC WGI Reference Region warming values.
 
 Run:
-    py scripts/ingest_ar6_projections.py
+    DATABASE_URL="postgresql://user:pass@host:5432/db" py scripts/ingest_ar6_projections.py
 
-Idempotent — uses ON CONFLICT DO NOTHING so rerunning is safe.
-Requires DATABASE_URL or a local Postgres connection.
+Idempotent — uses ON CONFLICT DO NOTHING/UPDATE so rerunning is safe.
+Self-contained — only needs psycopg2-binary or psycopg2.
 """
 
 import os
 import sys
-from datetime import datetime
-from uuid import uuid4
+import urllib.parse as up
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from shared.database import get_postgres
+import psycopg2
+import psycopg2.extras
+
+
+def _connect(dsn: str):
+    """Connect with a short timeout — the Cloud Build proxy is local."""
+    return psycopg2.connect(dsn, connect_timeout=10)
+
+
+def _execute(conn, query: str, params: dict | None = None):
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(query, params or {})
+        if cur.description:
+            return [dict(r) for r in cur.fetchall()]
+        return []
 
 # ---------------------------------------------------------------------------
 # IPCC WGI Reference Region → AR6 country mapping
@@ -386,7 +398,7 @@ for region_label, ssp_data in _WARMING_DATA.items():
             REGION_WARMING[(region_label, ssp, horizon)] = anomaly
 
 
-def ingest(db) -> dict[str, int]:
+def ingest(conn) -> dict[str, int]:
     """Run the full AR6 Atlas ingestion. Returns stats dict."""
     scenarios = ["SSP1-2.6", "SSP2-4.5", "SSP3-7.0"]
     horizons = [2030, 2050, 2100]
@@ -397,8 +409,9 @@ def ingest(db) -> dict[str, int]:
 
     # Get all country codes from the countries table
     try:
-        country_rows = db.execute_query(
-            "SELECT country_code FROM countries WHERE enabled = TRUE ORDER BY country_code"
+        country_rows = _execute(
+            conn,
+            "SELECT country_code FROM countries WHERE enabled = TRUE ORDER BY country_code",
         )
     except Exception as exc:
         print(f"FATAL: could not read countries table: {exc}")
@@ -425,20 +438,22 @@ def ingest(db) -> dict[str, int]:
                     continue
 
                 try:
-                    db.execute_update(
-                        """INSERT INTO country_projections
-                           (country_code, scenario, horizon_year, temp_anomaly_c,
-                            methodology_version, citation_url)
-                           VALUES (:cc, :ssp, :horizon, :anomaly,
-                                   'ipcc_ar6_atlas_v2', 'https://interactive-atlas.ipcc.ch/regional-information')
-                           ON CONFLICT (country_code, scenario, horizon_year)
-                           DO UPDATE SET
-                               temp_anomaly_c = EXCLUDED.temp_anomaly_c,
-                               methodology_version = EXCLUDED.methodology_version,
-                               citation_url = EXCLUDED.citation_url,
-                               created_at = NOW()""",
-                        {"cc": cc, "ssp": ssp, "horizon": h, "anomaly": anomaly},
-                    )
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """INSERT INTO country_projections
+                               (country_code, scenario, horizon_year, temp_anomaly_c,
+                                methodology_version, citation_url)
+                               VALUES (%(cc)s, %(ssp)s, %(horizon)s, %(anomaly)s,
+                                       'ipcc_ar6_atlas_v2', 'https://interactive-atlas.ipcc.ch/regional-information')
+                               ON CONFLICT (country_code, scenario, horizon_year)
+                               DO UPDATE SET
+                                   temp_anomaly_c = EXCLUDED.temp_anomaly_c,
+                                   methodology_version = EXCLUDED.methodology_version,
+                                   citation_url = EXCLUDED.citation_url,
+                                   created_at = NOW()""",
+                            {"cc": cc, "ssp": ssp, "horizon": h, "anomaly": anomaly},
+                        )
+                    conn.commit()
                     inserted += 1
                 except Exception as exc:
                     print(f"ERROR inserting {cc}/{ssp}/{h}: {exc}")
@@ -453,7 +468,16 @@ def ingest(db) -> dict[str, int]:
 
 
 if __name__ == "__main__":
-    db = get_postgres()
-    result = ingest(db)
-    if result.get("errors"):
+    dsn = os.environ.get("DATABASE_URL", "")
+    if not dsn:
+        print("FATAL: DATABASE_URL environment variable not set")
         sys.exit(1)
+    # Replace the sqlalchemy-style prefix if present
+    dsn = dsn.replace("postgresql+psycopg2://", "postgresql://", 1)
+    conn = _connect(dsn)
+    try:
+        result = ingest(conn)
+        if result.get("errors"):
+            sys.exit(1)
+    finally:
+        conn.close()
