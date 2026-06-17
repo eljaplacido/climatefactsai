@@ -90,6 +90,9 @@ export interface CountryStatEntry {
   disputed_count?: number;
   controversy_score?: number;
   latest_event_at?: string;
+  ndc_status_category?: string;
+  cat_overall_rating?: number;
+  ndc_target_reduction_pct?: number;
 }
 
 interface InteractiveClimateMapProps {
@@ -182,6 +185,14 @@ function getLayerColor(
       if (score >= 3) return "#f59e0b";   // amber-500
       if (score > 0) return "#fde68a";    // amber-200
       return "#334155";
+    }
+    case "ndc_status": {
+      const status = stat.ndc_status_category;
+      if (status === "net_zero") return "#059669";  // emerald-600
+      if (status === "strong") return "#34d399";    // emerald-400
+      if (status === "moderate") return "#f59e0b";  // amber-400
+      if (status === "weak") return "#f87171";      // red-400
+      return "#334155";                              // no data
     }
     default:
       return "#334155";
@@ -474,6 +485,7 @@ export default function InteractiveClimateMap({
             ${stat.temperature_anomaly != null ? `<br/>Temp anomaly: ${stat.temperature_anomaly > 0 ? "+" : ""}${stat.temperature_anomaly}\u00B0C` : ""}
             ${activeLayer === "corporate_density" ? `<br/>SBTi validated: ${stat.sbti_validated_count ?? 0}` : ""}
             ${activeLayer === "news_events" ? `<br/>Controversy score: ${stat.controversy_score ?? 0}/10` : ""}
+            ${activeLayer === "ndc_status" ? `<br/>CAT rating: ${stat.cat_overall_rating ?? "—"}/100` : ""}
           </div>`;
       } else {
         tooltipContent = `<div class="text-xs">

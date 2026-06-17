@@ -285,6 +285,15 @@ class NewsEventItem(BaseModel):
     latest_event_at: Optional[str] = None
 
 
+class NdcStatusItem(BaseModel):
+    """Per-country NDC target status for map layer."""
+    country_code: str
+    ndc_target_year: Optional[int] = None
+    ndc_target_reduction_pct: Optional[float] = None
+    cat_overall_rating: Optional[float] = None
+    status_category: str = "no_data"  # net_zero | strong | moderate | weak | no_data
+
+
 # Region → country code mapping for region-based queries (comprehensive — 80%+ of world)
 REGION_COUNTRIES = {
     "europe": [
@@ -2316,3 +2325,71 @@ async def get_country_projections(cc: str):
         "citation_url": citation_url,
         "baseline_note": "Warming relative to 1850-1900 pre-industrial baseline.",
     }
+
+
+# ---------------------------------------------------------------------------
+# 11. GET /layers/ndc-status
+# ---------------------------------------------------------------------------
+
+@router.get("/layers/ndc-status", response_model=List[NdcStatusItem])
+async def get_ndc_status_layer():
+    """Per-country NDC target status and CAT rating for map choropleth rendering.
+
+    Reads from country_indicators (populated by UNFCCC NDC and CAT adapters).
+    Coverage depends on prior syncs — countries with no NDC/CAT data show as 'no_data'.
+    """
+    cache_key = "layer:ndc_status"
+    cached = _cache_get(cache_key, ttl_seconds=21600)
+    if cached is not None:
+        return cached
+
+    db = get_postgres()
+    try:
+        rows = db.execute_query(
+            """
+            SELECT cc.country_code,
+                   MAX(CASE WHEN ci.indicator_id = 'ndc_target_year' THEN ci.value END) AS ndc_target_year,
+                   MAX(CASE WHEN ci.indicator_id = 'ndc_target_reduction_percent' THEN ci.value END) AS ndc_target_reduction_pct,
+                   MAX(CASE WHEN ci.indicator_id = 'cat_overall_rating' THEN ci.value END) AS cat_overall_rating
+            FROM countries cc
+            LEFT JOIN country_indicators ci ON ci.country_code = cc.country_code
+               AND ci.indicator_id IN ('ndc_target_year', 'ndc_target_reduction_percent', 'cat_overall_rating')
+            WHERE cc.enabled = TRUE
+            GROUP BY cc.country_code
+            ORDER BY cc.country_code
+            """
+        )
+    except Exception as exc:
+        logger.error(f"NDC status layer query failed: {exc}")
+        return []
+
+    payload: List[NdcStatusItem] = []
+    for r in (rows or []):
+        year = int(r["ndc_target_year"]) if r.get("ndc_target_year") is not None else None
+        pct = float(r["ndc_target_reduction_pct"]) if r.get("ndc_target_reduction_pct") is not None else None
+        cat = float(r["cat_overall_rating"]) if r.get("cat_overall_rating") is not None else None
+
+        # Classification logic: CAT rating > NDC ambition > no data
+        if pct is not None and pct >= 90:
+            status = "net_zero"
+        elif cat is not None and cat >= 60:
+            status = "strong"
+        elif cat is not None and cat >= 30:
+            status = "moderate"
+        elif cat is not None:
+            status = "weak"
+        elif year is not None or pct is not None:
+            status = "moderate"
+        else:
+            status = "no_data"
+
+        payload.append(NdcStatusItem(
+            country_code=r["country_code"],
+            ndc_target_year=year,
+            ndc_target_reduction_pct=pct,
+            cat_overall_rating=cat,
+            status_category=status,
+        ))
+
+    _cache_set(cache_key, payload)
+    return payload

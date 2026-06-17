@@ -8,6 +8,7 @@ import {
   Leaf,
   Building2,
   Radio,
+  Target,
   type LucideIcon,
 } from "lucide-react";
 
@@ -18,6 +19,7 @@ export type ActiveLayer =
   | "source_diversity"
   | "corporate_density"
   | "news_events"
+  | "ndc_status"
   | "biomes";
 
 export type Persona = "consumer" | "professional" | "policymaker" | "researcher";
@@ -171,6 +173,28 @@ export const MAP_LAYERS: MapLayer[] = [
       { color: "bg-amber-400", text: "Medium" },
       { color: "bg-orange-500", text: "High" },
       { color: "bg-red-600", text: "Very High" },
+    ],
+  },
+  {
+    id: "ndc_status",
+    label: "NDC Targets",
+    description: "Country climate pledges — net-zero, NDC ambition, and CAT rating",
+    icon: Target,
+    personas: ["policymaker", "professional", "researcher"],
+    dataEndpoint: "/api/map/layers/ndc-status",
+    statKey: "cat_overall_rating",
+    provenance: {
+      sourceName: "UNFCCC NDC Registry / Climate Action Tracker",
+      sourceUrl: "https://climateactiontracker.org/",
+      methodologyVersion: "v1.0",
+      note: "Based on synced CAT ratings and submitted NDC targets. Coverage is limited to ~36 CAT-rated and ~190 NDC-submitting countries.",
+    },
+    legend: [
+      { color: "bg-emerald-600", text: "Net-zero" },
+      { color: "bg-emerald-400", text: "Strong" },
+      { color: "bg-amber-400", text: "Moderate" },
+      { color: "bg-red-400", text: "Weak" },
+      { color: "bg-slate-600", text: "No data" },
     ],
   },
   {

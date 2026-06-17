@@ -49,6 +49,10 @@ const LAYER_METRIC: Record<
     label: "News events",
     note: "Recent event intensity and controversy hotspots are shown on the map layer; side-by-side events compare is coming next.",
   },
+  ndc_status: {
+    label: "NDC targets",
+    note: "Country climate pledges and CAT ratings are shown on the map layer; side-by-side policy ambition compare is coming next.",
+  },
   biomes: {
     label: "Biomes & climate zones",
     note: "Köppen biome zones are shown on the map layer (they aren't a single comparable number).",

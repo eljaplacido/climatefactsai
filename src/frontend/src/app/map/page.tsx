@@ -397,6 +397,56 @@ function MapPageInner() {
     fetchNewsEvents();
   }, [activeLayer, countryStats]);
 
+  // Fetch NDC status layer data when switching.
+  useEffect(() => {
+    if (activeLayer !== "ndc_status") return;
+    if (countryStats.some((s) => s.ndc_status_category != null)) return;
+
+    async function fetchNdcStatus() {
+      try {
+        const res = await fetch(`${API_BASE}/api/map/layers/ndc-status`);
+        if (!res.ok) return;
+        const data: {
+          country_code: string;
+          ndc_target_year?: number;
+          ndc_target_reduction_pct?: number;
+          cat_overall_rating?: number;
+          status_category: string;
+        }[] = await res.json();
+        if (!data.length) return;
+
+        const statusMap = Object.fromEntries(data.map((d) => [d.country_code, d]));
+
+        setCountryStats((prev) => {
+          const merged = prev.map((s) => {
+            const st = statusMap[s.country_code];
+            if (!st) return s;
+            return {
+              ...s,
+              ndc_status_category: st.status_category,
+              cat_overall_rating: st.cat_overall_rating,
+              ndc_target_reduction_pct: st.ndc_target_reduction_pct,
+            };
+          });
+          const present = new Set(merged.map((s) => s.country_code));
+          for (const st of data) {
+            if (present.has(st.country_code)) continue;
+            merged.push({
+              country_code: st.country_code,
+              country_name: st.country_code,
+              article_count: 0,
+              top_topics: [],
+              ndc_status_category: st.status_category,
+              cat_overall_rating: st.cat_overall_rating,
+            });
+          }
+          return merged;
+        });
+      } catch { /* silent */ }
+    }
+    fetchNdcStatus();
+  }, [activeLayer, countryStats]);
+
   // Handlers
   function handleCountryClick(cc: string) {
     setSelectedCountry(cc === selectedCountry ? null : cc);
