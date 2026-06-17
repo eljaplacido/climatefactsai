@@ -422,7 +422,8 @@ def ingest(conn) -> dict[str, int]:
         print("No countries found in countries table. Aborting.")
         return {"inserted": 0, "skipped": 0, "errors": 1}
 
-    unmatched = []
+    # Build all rows first, then batch-insert in a single transaction
+    rows_to_insert: list[dict[str, object]] = []
     for cc in country_codes:
         region = COUNTRY_TO_WGI_REGION.get(cc)
         if region is None:
@@ -436,28 +437,39 @@ def ingest(conn) -> dict[str, int]:
                     print(f"WARN: no warming value for region={region} ssp={ssp} horizon={h}")
                     errors += 1
                     continue
+                rows_to_insert.append({
+                    "cc": cc, "ssp": ssp, "horizon": h, "anomaly": anomaly,
+                })
 
-                try:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            """INSERT INTO country_projections
-                               (country_code, scenario, horizon_year, temp_anomaly_c,
-                                methodology_version, citation_url)
-                               VALUES (%(cc)s, %(ssp)s, %(horizon)s, %(anomaly)s,
-                                       'ipcc_ar6_atlas_v2', 'https://interactive-atlas.ipcc.ch/regional-information')
-                               ON CONFLICT (country_code, scenario, horizon_year)
-                               DO UPDATE SET
-                                   temp_anomaly_c = EXCLUDED.temp_anomaly_c,
-                                   methodology_version = EXCLUDED.methodology_version,
-                                   citation_url = EXCLUDED.citation_url,
-                                   created_at = NOW()""",
-                            {"cc": cc, "ssp": ssp, "horizon": h, "anomaly": anomaly},
-                        )
-                    conn.commit()
-                    inserted += 1
-                except Exception as exc:
-                    print(f"ERROR inserting {cc}/{ssp}/{h}: {exc}")
-                    errors += 1
+    # Batch insert all rows in a single transaction
+    if rows_to_insert:
+        try:
+            with conn.cursor() as cur:
+                from psycopg2.extras import execute_values
+                execute_values(
+                    cur,
+                    """INSERT INTO country_projections
+                       (country_code, scenario, horizon_year, temp_anomaly_c,
+                        methodology_version, citation_url)
+                       VALUES %s
+                       ON CONFLICT (country_code, scenario, horizon_year)
+                       DO UPDATE SET
+                           temp_anomaly_c = EXCLUDED.temp_anomaly_c,
+                           methodology_version = EXCLUDED.methodology_version,
+                           citation_url = EXCLUDED.citation_url,
+                           created_at = NOW()""",
+                    [(r["cc"], r["ssp"], r["horizon"], r["anomaly"],
+                      "ipcc_ar6_atlas_v2", "https://interactive-atlas.ipcc.ch/regional-information")
+                     for r in rows_to_insert],
+                    template="(%s, %s, %s::int, %s, %s, %s)",
+                    page_size=500,
+                )
+            conn.commit()
+            inserted = len(rows_to_insert)
+        except Exception as exc:
+            print(f"FATAL: batch insert failed: {exc}")
+            errors += 1
+            return {"inserted": 0, "skipped": 0, "errors": errors, "unmapped": len(unmatched)}
 
     if unmatched:
         print(f"INFO: {len(unmatched)} countries not mapped to any WGI region: {','.join(sorted(unmatched))}")
