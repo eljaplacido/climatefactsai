@@ -23,6 +23,7 @@ import { useViewContext } from "@/lib/view-context";
 import { useUrlState, URL_STATE_SERIALIZERS } from "@/lib/useUrlState";
 import type { ViewMode } from "@/lib/plainLanguage";
 import type { ChatActionSpec } from "@/lib/chatActionDispatcher";
+import ProvenanceCard from "@/components/ProvenanceCard";
 
 // Dynamic import of the Leaflet-based map (no SSR)
 const InteractiveClimateMap = nextDynamic(
@@ -684,6 +685,11 @@ function LayerLegend({ activeLayer }: { activeLayer: ActiveLayer }) {
           <span className="text-[9px] text-slate-500">No data</span>
         </div>
       </div>
+      {layer?.provenance && (
+        <div className="mt-1.5">
+          <ProvenanceCard provenance={layer.provenance} compact />
+        </div>
+      )}
     </div>
   );
 }

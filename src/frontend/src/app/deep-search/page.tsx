@@ -39,6 +39,8 @@ import { useQuota } from "@/lib/useQuota";
 import { useViewContext } from "@/lib/view-context";
 import { useUrlState, URL_STATE_SERIALIZERS } from "@/lib/useUrlState";
 import { formatEvidenceStrengthPlain } from "@/lib/plainLanguage";
+import ClimateMiniMap from "@/components/ClimateMiniMap";
+import { MapPin } from "lucide-react";
 
 type Mode = "search" | "compare";
 
@@ -728,7 +730,32 @@ function DeepSearchPageInner() {
                   >
                     <HelpCircle className="w-3.5 h-3.5" /> Improve query with chat
                   </button>
+                  <a
+                    href={`/map?q=${encodeURIComponent(searchResult.query)}${searchResult.filters?.country ? `&country=${encodeURIComponent(searchResult.filters.country)}` : ""}`}
+                    className="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 justify-center"
+                  >
+                    <MapPin className="w-3.5 h-3.5 text-teal-500" /> Visualize on map
+                  </a>
                 </div>
+
+                {searchResult.filters?.country && (
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs text-slate-400">Country context</span>
+                      <a
+                        href={`/map?country=${searchResult.filters.country}`}
+                        className="text-[10px] text-teal-400 hover:text-teal-300 flex items-center gap-1"
+                      >
+                        <MapPin className="h-2.5 w-2.5" /> Open on map
+                      </a>
+                    </div>
+                    <ClimateMiniMap
+                      countries={[searchResult.filters.country]}
+                      layer="climate_risk"
+                    />
+                  </div>
+                )}
+
                 {(guidance || likelyWeakEvidence) && (
                   <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
                     <p className="text-xs font-medium text-amber-800 flex items-center gap-1.5">

@@ -42,6 +42,15 @@ export interface MapLayer {
   legend: { color: string; text: string }[];
   /** Honesty gate — only set when layer has incomplete country coverage. */
   coverage?: LayerCoverage;
+  /** Methodology provenance shown in the layer legend. */
+  provenance?: {
+    sourceName: string;
+    sourceUrl?: string;
+    methodologyVersion?: string;
+    datasetYear?: string;
+    uncertainty?: string;
+    note?: string;
+  };
 }
 
 export const MAP_LAYERS: MapLayer[] = [
@@ -52,6 +61,12 @@ export const MAP_LAYERS: MapLayer[] = [
     icon: BarChart3,
     personas: ["consumer", "professional", "policymaker", "researcher"],
     statKey: "article_count",
+    provenance: {
+      sourceName: "Climatefacts.ai article corpus",
+      sourceUrl: "https://climatenews-frontend-srzwxdzmaq-ez.a.run.app/methodology",
+      methodologyVersion: "live-index",
+      uncertainty: "Article count reflects indexed content; coverage varies by country and language.",
+    },
     legend: [
       { color: "bg-teal-200", text: "Low" },
       { color: "bg-teal-300", text: "Medium" },
@@ -67,6 +82,12 @@ export const MAP_LAYERS: MapLayer[] = [
     personas: ["consumer", "professional", "policymaker", "researcher"],
     dataEndpoint: "/api/map/layers/temperature-anomaly",
     statKey: "temperature_anomaly",
+    provenance: {
+      sourceName: "Open-Meteo",
+      sourceUrl: "https://open-meteo.com/",
+      methodologyVersion: "v1.0",
+      note: "Current temperature compared to same month last year — not a 30-year baseline. Multi-decade ERA5 reanalysis is planned (Phase 3).",
+    },
     legend: [
       { color: "bg-blue-500", text: "< -1°C" },
       { color: "bg-blue-200", text: "-1 to 0°C" },
@@ -83,6 +104,12 @@ export const MAP_LAYERS: MapLayer[] = [
     icon: ShieldAlert,
     personas: ["consumer", "professional", "policymaker", "researcher"],
     statKey: "climate_risk_score",
+    provenance: {
+      sourceName: "Climatefacts.ai verification pipeline",
+      sourceUrl: "https://climatenews-frontend-srzwxdzmaq-ez.a.run.app/methodology",
+      methodologyVersion: "v3.0",
+      note: "Score derived from article volume, claim dispute ratio, and source reliability — not an independent hazard model.",
+    },
     legend: [
       { color: "bg-green-300", text: "Low" },
       { color: "bg-yellow-400", text: "Moderate" },
@@ -112,6 +139,12 @@ export const MAP_LAYERS: MapLayer[] = [
     personas: ["professional", "policymaker", "researcher"],
     dataEndpoint: "/api/map/layers/corporate-density",
     statKey: "company_count",
+    provenance: {
+      sourceName: "CDP / SBTi / Net Zero Tracker",
+      sourceUrl: "https://sciencebasedtargets.org/companies-taking-action",
+      methodologyVersion: "v1.0",
+      note: "Based on registered headquarters; supply chain and operational footprint geolocation is pending (Phase 2).",
+    },
     legend: [
       { color: "bg-indigo-200", text: "1-2" },
       { color: "bg-indigo-300", text: "3-5" },
@@ -127,6 +160,12 @@ export const MAP_LAYERS: MapLayer[] = [
     personas: ["consumer", "professional", "policymaker", "researcher"],
     dataEndpoint: "/api/map/layers/news-events",
     statKey: "controversy_score",
+    provenance: {
+      sourceName: "Climatefacts.ai article corpus",
+      sourceUrl: "https://climatenews-frontend-srzwxdzmaq-ez.a.run.app/methodology",
+      methodologyVersion: "v1.0",
+      note: "Based on 21-day rolling article volume and disputed claim ratio; time-decayed. Not a real-time breaking-news feed.",
+    },
     legend: [
       { color: "bg-amber-200", text: "Low" },
       { color: "bg-amber-400", text: "Medium" },
