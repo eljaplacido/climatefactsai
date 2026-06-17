@@ -6,8 +6,7 @@ Provides both on-demand translation and pre-translated content retrieval.
 API-first design for agentic integration.
 """
 
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, Field

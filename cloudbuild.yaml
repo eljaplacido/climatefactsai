@@ -102,66 +102,17 @@ steps:
       - |
         set -e
         pip install --quiet -r requirements.txt
-        pip install --quiet pytest pytest-asyncio pytest-mock httpx
+        pip install --quiet pytest pytest-asyncio pytest-mock httpx ruff mypy
+        echo "=== CI gate: ruff lint (advisory — reports only) ==="
+        ruff check api/ src/backend/ --exit-zero
+        echo "=== CI gate: mypy type-check (advisory) ==="
+        mypy api/ src/backend/ || echo "mypy: advisory only, see above"
+        echo "=== CI gate: backend tests ==="
         pytest -p no:warnings -x \
-          tests/api/test_oauth_routes.py \
-          tests/api/test_url_analysis_routes.py \
-          tests/api/test_green_transition_routes.py \
-          tests/api/test_cynefin_router.py \
-          tests/api/test_session_lifecycle.py \
-          tests/api/test_chat_view_context.py \
-          tests/api/test_deep_search_routes.py \
-          tests/api/test_map_routes.py \
-          tests/api/test_country_coverage.py \
-          tests/api/test_chat_routes.py \
-          tests/api/test_indicators_climate_trace.py \
-          tests/api/test_indicators_owid.py \
-          tests/api/test_indicators_climate_action_tracker.py \
-          tests/api/test_sustainability_score.py \
-          tests/api/test_prompts_registry.py \
-          tests/api/test_methodology_routes.py \
-          tests/api/test_provenance.py \
-          tests/api/test_drift_detection.py \
-          tests/api/test_multi_llm_verifier.py \
-          tests/api/test_anthropic_claim_extractor.py \
-          tests/unit/test_claim_json_parsing.py \
-          tests/api/test_calibration.py \
-          tests/api/test_calibration_store.py \
-          tests/unit/api/test_rate_limiter.py \
-          tests/api/test_quota_service.py \
-          tests/api/test_quota_endpoint_integration.py \
-          tests/api/test_url_analysis_failures.py \
-          tests/api/test_agentic_skill_pin.py \
-          tests/api/test_chat_actions_parse.py \
-          tests/api/test_subscription_schema_alignment.py \
-          tests/api/test_source_health.py \
-          tests/api/test_aoi_service.py \
-          tests/api/test_aoi_poll_service.py \
-          tests/api/test_scheduler_aoi_poll.py \
-          tests/api/test_skills_registry.py \
-          tests/api/test_company_routes.py \
-          tests/unit/domains/test_source_profiles_credibility_tiers.py \
-          tests/unit/domains/test_source_tier_service.py \
-          tests/unit/domains/test_embedding_bge_m3.py \
-          tests/unit/domains/test_numeric_grounding.py \
-          tests/backend/test_reliability_scorer_density.py \
-          tests/backend/test_reliability_3axis.py \
-          tests/api/test_url_credibility_scoring.py \
-          tests/unit/test_credibility_thresholds.py \
-          tests/unit/test_country_code_normalization.py \
-          tests/unit/test_feed_registry_sync.py \
-          tests/unit/domains/test_fact_check_pipeline.py \
-          tests/unit/domains/test_chat_actions.py \
-          tests/unit/domains/test_llm_routing.py \
-          tests/unit/core/test_redis_client.py \
-          tests/unit/core/test_compliance.py \
-          tests/backend/unit/test_text_utils.py \
-          tests/unit/domains/test_content_repository.py \
-          tests/api/test_premium_feature_matrix.py \
-          tests/api/test_golden_examples_gate.py \
-          tests/unit/test_migration_hygiene.py \
+          tests/api/ \
+          tests/backend/ \
+          tests/unit/ \
           tests/adversarial/
-        pytest tests/adversarial/ -p no:warnings
 
   # -------------------------------------------------------------------------
   # Step 1: Build API image
@@ -306,6 +257,29 @@ steps:
       - "deploy-api"
 
   # -------------------------------------------------------------------------
+  # Step 2b: Frontend lint + typecheck gate (2026-06-17 audit)
+  #
+  # Catches type errors and ESLint violations before the Docker image is
+  # built. Uses the same Node.js image that CI would use, not the Docker
+  # builder (which only has Go + Linux tools).
+  # -------------------------------------------------------------------------
+  - name: "node:20-slim"
+    id: "frontend-quality-gate"
+    entrypoint: "bash"
+    waitFor: ["get-api-url"]
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+        cd src/frontend
+        npm ci --quiet
+        echo "=== CI gate: TypeScript type-check ==="
+        npx tsc --noEmit
+        echo "=== CI gate: ESLint ==="
+        npm run lint
+        echo "=== CI gate: frontend quality PASSED ==="
+
+  # -------------------------------------------------------------------------
   # Step 3: Build Frontend (with real API URL baked at build time)
   # -------------------------------------------------------------------------
   - name: "gcr.io/cloud-builders/docker"
@@ -322,7 +296,7 @@ steps:
           -t ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:${_TAG} \
           src/frontend
     waitFor:
-      - "get-api-url"
+      - "frontend-quality-gate"
 
   - name: "gcr.io/cloud-builders/docker"
     id: "push-frontend"

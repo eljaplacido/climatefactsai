@@ -18,7 +18,7 @@ exhaustively unit-testable. The Celery integration is a thin wrapper.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4

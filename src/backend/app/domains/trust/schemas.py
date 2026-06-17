@@ -7,7 +7,7 @@ Provides validation and serialization for publishers, articles, and moderation.
 
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from pydantic import BaseModel, Field
 from enum import Enum
 
 

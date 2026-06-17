@@ -12,16 +12,15 @@ import os
 import re
 from typing import List, Optional
 from datetime import datetime, timezone
-from uuid import uuid4, UUID
+from uuid import uuid4
 from urllib.parse import urlparse
-import asyncio
 
 import httpx
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Query
 from pydantic import BaseModel, HttpUrl, Field, validator
 
 from api.auth_routes import get_current_user, get_optional_user
-from api.rate_limiter import UsageTracker, check_premium_feature
+from api.rate_limiter import UsageTracker
 
 # Import from src/backend/shared (correct path)
 import sys
@@ -1500,7 +1499,7 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
         # Step 2: Fetch content from URL
         try:
             content = await fetch_url_content(url)
-        except (URLFetchException, HTTPException) as fetch_err:
+        except (URLFetchException, HTTPException):
             # Repository landing pages (Theseus/URN/DSpace) often hold only
             # metadata and link out to the actual PDF. Auto-resolve and retry.
             parsed = urlparse(url)

@@ -7,9 +7,8 @@ heatmap data, and natural-language query endpoint for chat-driven map updates.
 
 import json
 import math
-import os
 import time
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -1841,7 +1840,7 @@ async def get_timeline(
     trunc = granularity if granularity in ("day", "week", "month") else "month"
 
     try:
-        rows = db.execute_query(f"""
+        rows = db.execute_query("""
             SELECT DATE_TRUNC(:trunc, created_at) as bucket,
                    country_code,
                    COUNT(*) as cnt

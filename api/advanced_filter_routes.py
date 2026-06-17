@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from shared.database import get_postgres
 from shared.logger import setup_logging
-from api.auth_routes import get_current_user, get_optional_user
+from api.auth_routes import get_current_user
 
 logger = setup_logging("filters")
 router = APIRouter(prefix="/api/explore", tags=["Explore & Filter"])

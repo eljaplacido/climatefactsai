@@ -10,7 +10,7 @@ Käyttää Scrapy + Playwright -yhdistelmää:
 import time
 import feedparser
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 import re
@@ -198,7 +198,7 @@ class NewsScraperPool:
             
             if self.logger:
                 self.logger.info(
-                    f"RSS feed scraped",
+                    "RSS feed scraped",
                     feed_url=feed_url,
                     total_entries=len(feed.entries),
                     matched_articles=len(articles)

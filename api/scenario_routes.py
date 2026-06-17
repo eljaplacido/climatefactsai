@@ -15,7 +15,7 @@ simulation — the user gets transparency rather than a fake oracle.
 from __future__ import annotations
 
 import logging
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel

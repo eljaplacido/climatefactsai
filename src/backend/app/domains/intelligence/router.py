@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, status
 
 from app.core.database import Database, get_db
 from .services import VerificationService
-from .schemas import VerificationResult, VerificationRequest, ClaimExtractionRequest
+from .schemas import VerificationResult, ClaimExtractionRequest
 from .analysis_engine import AnalysisEngine
 
 # Auth dependency for gating the monetizable insights endpoint. Imported from

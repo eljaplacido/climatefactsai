@@ -81,8 +81,8 @@ class ReliabilityScorer:
 
     # Threshold values — sourced from the single credibility-threshold module
     # (seq-5) so every credibility ladder in the codebase stays in lockstep.
-    from shared.credibility_thresholds import HIGH as THRESHOLD_HIGH  # noqa: E402
-    from shared.credibility_thresholds import MEDIUM as THRESHOLD_MEDIUM  # noqa: E402
+    from shared.credibility_thresholds import HIGH as THRESHOLD_HIGH
+    from shared.credibility_thresholds import MEDIUM as THRESHOLD_MEDIUM
 
     # Slice 4 (2026-05-25, Honest-Gap-Audit v2 item 4) — claim-density
     # honesty. An article with 1/1 verified claim used to score the same
@@ -289,9 +289,7 @@ class ReliabilityScorer:
 
         # If article has misleading claims, cap at MEDIUM
         if has_misleading_claims:
-            if reliability_score >= cls.THRESHOLD_HIGH:
-                return CredibilityLevel.MEDIUM
-            elif reliability_score >= cls.THRESHOLD_MEDIUM:
+            if reliability_score >= cls.THRESHOLD_HIGH or reliability_score >= cls.THRESHOLD_MEDIUM:
                 return CredibilityLevel.MEDIUM
             else:
                 return CredibilityLevel.LOW

@@ -15,7 +15,6 @@ runs the tagger over the artifact's title + excerpt + brief.
 
 from __future__ import annotations
 
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -65,7 +64,7 @@ async def get_artifacts_for_goal(
     # 'amazonas' or '70-year-old amazon motorist'. The audit caught
     # a Slovenian motorcycle-accident article slipping through under
     # SDG 13 because of plain LIKE matching.
-    from app.domains.content.sdg import SDG_KEYWORDS, tag_to_goal_ids
+    from app.domains.content.sdg import SDG_KEYWORDS
     keywords = SDG_KEYWORDS[goal_id]
     where_terms = " OR ".join(
         f"(lower(coalesce(a.title,'') || ' ' || coalesce(a.excerpt,'') || ' ' || coalesce(a.executive_brief,'')) LIKE :kw{i})"

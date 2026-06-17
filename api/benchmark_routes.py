@@ -18,12 +18,11 @@ Reference Standards:
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, Depends
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
-from api.auth_routes import get_optional_user
 from shared.database import get_postgres
 from shared.logger import setup_logging
 

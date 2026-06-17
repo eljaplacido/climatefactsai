@@ -17,7 +17,7 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 # Re-export every public name from that module
-from api.models.quota import *  # noqa: F401,F403
+from api.models.quota import *  # noqa: F403
 
 for _name in dir(_mod):
     if not _name.startswith("_"):

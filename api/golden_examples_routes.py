@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
-from api.auth_routes import get_current_user, get_optional_user
+from api.auth_routes import get_current_user
 from api.admin_pipeline_routes import require_admin
 from shared.database import get_postgres
 from shared.logger import setup_logging

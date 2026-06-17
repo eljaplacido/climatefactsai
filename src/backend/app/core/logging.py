@@ -8,7 +8,6 @@ from shared.logger import (
     setup_logging as _setup_logging,
     LoggerMixin,
 )
-import logging
 from structlog.stdlib import BoundLogger
 
 __all__ = [

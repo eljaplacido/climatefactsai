@@ -12,8 +12,8 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 
-from api.auth_routes import get_current_user, get_optional_user
-from api.rate_limiter import UsageTracker, TIER_LIMITS
+from api.auth_routes import get_optional_user
+from api.rate_limiter import UsageTracker
 from shared.database import get_postgres
 from shared.logger import setup_logging
 

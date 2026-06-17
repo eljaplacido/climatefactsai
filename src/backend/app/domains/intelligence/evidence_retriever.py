@@ -8,8 +8,6 @@ Sources are queried in a fallback chain: Open-Meteo -> Perplexity -> Google Fact
 import os
 import asyncio
 from abc import ABC, abstractmethod
-from datetime import datetime
-from typing import Optional
 
 import httpx
 

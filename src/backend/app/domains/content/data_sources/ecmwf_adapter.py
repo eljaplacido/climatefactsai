@@ -8,7 +8,7 @@ Marine API, NOAA Climate Data Online, and NASA POWER.
 import asyncio
 import os
 from datetime import date, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import httpx
 

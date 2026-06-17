@@ -7,7 +7,7 @@ article_entities tables for knowledge graph traversal and hybrid RAG.
 """
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from uuid import uuid4
 
 from app.core.logging import get_logger

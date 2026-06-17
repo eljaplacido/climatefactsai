@@ -6,8 +6,6 @@ Provides user-specific functionality for managing profile and viewing usage.
 
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
-from uuid import uuid4
-import json
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field

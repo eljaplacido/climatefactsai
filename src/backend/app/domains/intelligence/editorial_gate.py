@@ -124,7 +124,7 @@ class EditorialGate:
 
         if source_tier not in ("research", "scientific"):
             if score < 50:
-                risk_factors.append(f"Public-tier source with low reliability")
+                risk_factors.append("Public-tier source with low reliability")
 
         if confidence is not None and confidence < 0.4:
             risk_factors.append("Low verification confidence")

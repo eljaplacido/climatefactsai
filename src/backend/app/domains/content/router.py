@@ -8,7 +8,6 @@ from typing import Optional, Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Depends, Query, status
-from fastapi.responses import JSONResponse
 
 from app.core.database import Database, get_db
 from .services import ArticleService, ArticleNotFoundError

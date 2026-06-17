@@ -9,14 +9,13 @@ This module provides endpoints to:
 - Ingest research reports and PDF documents
 - Upload PDF/DOCX/TXT files for analysis
 """
-import asyncio
 import io
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Security, File, UploadFile, Form
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, File, UploadFile, Form
+from fastapi.security import HTTPBearer
 from pydantic import BaseModel, HttpUrl, Field
 import uuid
 

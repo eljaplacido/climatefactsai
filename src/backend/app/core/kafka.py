@@ -8,7 +8,6 @@ from shared.kafka_client import (
     KafkaClient as _KafkaClient,
     KafkaProducerClient,
 )
-from .config import get_config
 
 __all__ = [
     "get_kafka_client",

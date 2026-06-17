@@ -23,7 +23,6 @@ from api.models import (
     PasswordChange,
     UserProfile,
     UserProfileUpdate,
-    UserPreferences,
 )
 
 from api.auth_utils import (

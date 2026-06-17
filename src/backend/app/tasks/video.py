@@ -50,7 +50,7 @@ def render_video_preview(self, workflow_state: Dict[str, Any]) -> Dict[str, Any]
                 "video_url": None,
                 "status": "DISABLED",
             })
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.error("Video job registration failed", article_id=article_id, error=str(exc))
 
     workflow_state["video_jobs"] = job_refs

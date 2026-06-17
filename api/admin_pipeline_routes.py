@@ -7,10 +7,8 @@ Endpoints to manually trigger:
 - Full pipeline processing
 """
 
-import asyncio
 import os
 from typing import List, Optional
-from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel
@@ -25,7 +23,7 @@ if str(SRC_BACKEND) not in sys.path:
 
 from shared.database import get_postgres
 from shared.logger import setup_logging
-from app.domains.intelligence.services import ClaimExtractor, VerificationService, VerdictAdjudicator, EvidenceRetriever
+from app.domains.intelligence.services import ClaimExtractor, VerdictAdjudicator, EvidenceRetriever
 from api.auth_routes import get_current_user
 
 logger = setup_logging("admin-pipeline")

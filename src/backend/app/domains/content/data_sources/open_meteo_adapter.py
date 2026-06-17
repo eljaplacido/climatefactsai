@@ -7,8 +7,8 @@ No authentication required. Primary verification source for weather/climate clai
 API docs: https://open-meteo.com/en/docs
 """
 
-from datetime import date, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import date
+from typing import Any, Dict, Optional
 
 import httpx
 

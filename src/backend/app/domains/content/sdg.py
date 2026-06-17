@@ -24,7 +24,6 @@ Kenya touches 7, 9, 11, 13.
 from __future__ import annotations
 
 import re
-from typing import Iterable
 
 
 SDG_GOALS: list[dict] = [

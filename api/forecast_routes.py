@@ -2,10 +2,10 @@
 Forecast comparison routes — multi-source climate forecast comparison per country.
 """
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, List, Optional, Union
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, field_serializer
 
 from api.auth_routes import get_optional_user

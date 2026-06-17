@@ -8,7 +8,6 @@ analytical treatment. For climate news, claim types map to verification approach
 
 import re
 from dataclasses import dataclass, field
-from typing import Optional
 
 from .schemas import ClaimCategory
 

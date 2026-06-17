@@ -3,7 +3,7 @@ Rate Limiting Middleware
 Enforces usage limits based on subscription tiers
 """
 
-from datetime import datetime, date
+from datetime import date
 from typing import Optional
 
 from fastapi import Request, HTTPException, status

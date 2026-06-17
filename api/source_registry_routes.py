@@ -10,7 +10,7 @@ users are unlimited.
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Query, status
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field
 
 from api.auth_routes import get_current_user
 from shared.database import get_postgres
@@ -116,7 +116,6 @@ def _check_feed_url(url: str) -> FeedValidationResponse:
     Returns a FeedValidationResponse describing the result.
     """
     try:
-        from app.domains.content.data_sources.rss_adapter import _parse_feed
         import feedparser  # feedparser is already a project dependency
 
         feed = feedparser.parse(url)

@@ -9,13 +9,13 @@ Users can ask broad questions and get insight-driven answers with citations.
 import json
 from datetime import datetime
 from typing import Any, List, Optional
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 
 from api.auth_routes import get_current_user, get_optional_user
-from api.rate_limiter import UsageTracker, TIER_LIMITS
+from api.rate_limiter import UsageTracker
 from shared.database import get_postgres
 from shared.logger import setup_logging
 
@@ -775,7 +775,7 @@ def _hydrate_view_context(db, view_context: Optional[dict]) -> dict:
                     "insight": row.get("insight_summary") or "",
                     "body_preview": row.get("body_preview") or "",
                 }
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug(f"view_context article lookup failed: {exc}")
 
     # Country focus (selected on map / passed via filter)
@@ -806,7 +806,7 @@ def _hydrate_view_context(db, view_context: Optional[dict]) -> dict:
                         str(stats["latest_published"]) if stats.get("latest_published") else None
                     ),
                 }
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug(f"view_context country lookup failed: {exc}")
 
     # Compare countries (map compare overlay or deep-search compare)
@@ -836,7 +836,7 @@ def _hydrate_view_context(db, view_context: Optional[dict]) -> dict:
                 if isinstance(claims_payload, str):
                     try:
                         claims_payload = json.loads(claims_payload)
-                    except Exception:  # noqa: BLE001
+                    except Exception:
                         claims_payload = []
                 hydrated["url_analysis"] = {
                     "analysis_id": str(row["analysis_id"]),
@@ -849,7 +849,7 @@ def _hydrate_view_context(db, view_context: Optional[dict]) -> dict:
                     "credibility": row.get("overall_credibility"),
                     "claims": (claims_payload or [])[:5] if isinstance(claims_payload, list) else [],
                 }
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug(f"view_context url_analysis lookup failed: {exc}")
 
     # Deep search query / compare topics — these are short strings only; we
@@ -873,7 +873,7 @@ def _hydrate_view_context(db, view_context: Optional[dict]) -> dict:
                     "high_credibility_hits": int(ds.get("high_cred") or 0),
                     "distinct_sources": int(ds.get("source_count") or 0),
                 }
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug(f"view_context deep_search_query stats lookup failed: {exc}")
     if isinstance(view_context.get("deep_search_compare"), dict):
         cmp = view_context["deep_search_compare"]
@@ -906,7 +906,7 @@ def _hydrate_view_context(db, view_context: Optional[dict]) -> dict:
                         if row.get("avg_reliability") is not None else None
                     ),
                 }
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug(f"view_context source lookup failed: {exc}")
 
     return hydrated

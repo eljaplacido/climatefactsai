@@ -5,8 +5,6 @@ Uses Claude with article text + verified claims + evidence as grounded context.
 Only answers based on article content — no hallucination beyond provided facts.
 """
 
-import json
-import os
 from typing import Optional
 from uuid import UUID
 

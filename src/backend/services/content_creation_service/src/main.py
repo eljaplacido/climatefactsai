@@ -10,11 +10,10 @@ Responsible for:
 import os
 import json
 import sys
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from datetime import datetime, timezone
 from pathlib import Path
 
-import structlog
 from kafka import KafkaConsumer
 
 # Add src/backend to path for shared module imports

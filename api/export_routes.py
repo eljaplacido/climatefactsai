@@ -12,7 +12,6 @@ import io
 import json
 
 from fastapi import APIRouter, HTTPException, Depends, Response, Query
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 try:

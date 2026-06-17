@@ -8,7 +8,6 @@ Converts markdown to HTML using the `markdown` library.
 """
 
 import json
-import os
 from typing import Optional
 
 import markdown as md

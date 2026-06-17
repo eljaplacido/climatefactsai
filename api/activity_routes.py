@@ -8,7 +8,7 @@ and manage bookmarks for later reference.
 import json
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 
 from shared.database import get_postgres

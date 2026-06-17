@@ -11,11 +11,10 @@ Orchestrator-agentti toimii työnkulun pääkoordinaattorina. Se:
 7. Julkaisee lopullisen sisällön
 """
 
-import asyncio
 import signal
 import sys
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from pathlib import Path
 
 # Add src/backend to path for shared module imports

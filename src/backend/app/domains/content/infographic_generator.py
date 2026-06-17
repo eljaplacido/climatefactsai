@@ -5,7 +5,7 @@ Generates visual summary cards, claim breakdowns, and confidence radars
 using svgwrite-compatible string templates with CliLens brand colors.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from xml.sax.saxutils import escape
 
 from app.core.logging import get_logger
@@ -270,7 +270,7 @@ def _generate_confidence(data: Dict) -> str:
 
 def _generate_fallback(data: Dict) -> str:
     """Fallback SVG when generation fails."""
-    return f'''<?xml version="1.0" encoding="UTF-8"?>
+    return '''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="800" height="400" viewBox="0 0 800 400">
   <rect width="800" height="400" rx="16" fill="#f8fafc"/>
   <text x="400" y="200" font-family="Arial, sans-serif" font-size="18" fill="#6b7280" text-anchor="middle">Infographic unavailable</text>

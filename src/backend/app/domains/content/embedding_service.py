@@ -17,7 +17,6 @@ fully from Cloud Run and powers the "Similar Articles" surface.
 
 import os
 from typing import List, Optional
-from uuid import UUID
 
 from app.core.database import Database
 from app.core.logging import get_logger

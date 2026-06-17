@@ -553,6 +553,6 @@ if __name__ == "__main__":
     
     try:
         raise ValueError("Test error")
-    except Exception as e:
+    except Exception:
         test_logger.error("Caught exception", exc_info=True)
 

@@ -14,12 +14,12 @@ Handles:
 import json
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from app.core.database import Database, get_db
 from app.core.logging import get_logger
 from app.domains.content.data_sources.document_adapter import (
-    process_document_url, detect_content_type, extract_doi,
+    detect_content_type, extract_doi,
 )
 from app.domains.intelligence.bayesian_credibility import WeightedCredibilityService
 from app.domains.intelligence.llm_client import llm_chat

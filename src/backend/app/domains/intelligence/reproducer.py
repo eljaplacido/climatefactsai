@@ -12,9 +12,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
-from .provenance import get_provenance_for_url_analysis
 
 _logger = logging.getLogger("reproducer")
 

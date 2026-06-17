@@ -18,7 +18,6 @@ from fastapi import APIRouter, Depends
 from api.auth_routes import get_optional_user
 from api.quota_service import (
     QuotaService,
-    QUOTA_LIMITS_BY_TIER,
     FREEMIUM_FREE_TIER_LIMITS,
 )
 

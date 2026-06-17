@@ -77,16 +77,13 @@ Note:
 """
 
 import json
-from typing import Any, Dict, List, Optional, Union
-from contextlib import asynccontextmanager, contextmanager
-from datetime import timedelta
+from typing import Any, Dict, List, Optional
+from contextlib import contextmanager
 
 import redis
 from redis import Redis, ConnectionPool
 from sqlalchemy import create_engine, text
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, Session, declarative_base
-from sqlalchemy.pool import NullPool
 
 from .config import get_redis_settings, get_postgres_settings
 from .logger import LoggerMixin

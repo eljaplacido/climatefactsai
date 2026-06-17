@@ -11,9 +11,7 @@ Orchestrates the complete URL analysis workflow:
 
 import hashlib
 import json
-import re
 from typing import Dict, Any, Optional, List
-from datetime import datetime
 from urllib.parse import urlparse
 from uuid import uuid4
 

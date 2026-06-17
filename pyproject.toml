@@ -1,0 +1,65 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+# Phase 1 (2026-06-17 audit): minimal ruleset to catch real bugs without
+# overwhelming an existing large codebase. Expand rules progressively.
+lint.select = [
+  "E",    # pycodestyle errors
+  "F",    # pyflakes (unused imports, undefined names)
+  "B",    # flake8-bugbear (common bugs)
+  "SIM",  # flake8-simplify (overly complex code patterns)
+  "TCH",  # flake8-type-checking (import typing-only modules correctly)
+  "RUF100", # unused noqa directives
+]
+lint.ignore = [
+  "E501",  # line too long (handled by formatter)
+  "B008",  # do not perform function calls in argument defaults
+  "SIM108", # use ternary operator (readability judgment)
+  "SIM115", # use context handler for opening files
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "F841"]  # assert usage, unused vars ok in tests
+"scripts/**/*.py" = ["SIM115"]       # non-context file opens ok in scripts
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = [
+  "archive/",
+  ".opencode/",
+  "venv/",
+  "venv311/",
+  "tests/",
+]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-p no:warnings -x --tb=short"
+testpaths = ["tests"]
+timeout = 10
+markers = [
+  "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+  "integration: marks tests as integration tests",
+  "e2e: marks tests as end-to-end tests",
+]
+
+[tool.coverage.run]
+source = ["api", "src/backend"]
+omit = ["tests/*", "archive/*"]
+
+[tool.coverage.report]
+exclude_also = [
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "def __repr__",
+]

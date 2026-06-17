@@ -8,15 +8,13 @@ Inspired by CARF's Cynefin-based routing and Guardian policy enforcement.
 """
 
 import json
-import os
 from typing import Optional
 from uuid import UUID
 
 from app.core.logging import get_logger
 from app.core.database import Database
 from .schemas import (
-    ClaimCategory, DecomposedConfidence, VerificationResult,
-    ReliabilityBreakdown,
+    ClaimCategory, VerificationResult,
 )
 from .claim_classifier import ClaimClassifier
 from .services import VerificationService

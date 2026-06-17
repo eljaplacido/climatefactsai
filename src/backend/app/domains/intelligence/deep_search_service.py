@@ -20,7 +20,6 @@ from app.core.database import Database
 from app.core.logging import get_logger
 from app.domains.content.embedding_service import EmbeddingService
 from app.domains.intelligence.evidence_retriever import (
-    PerplexityEvidenceRetriever,
     OpenMeteoEvidenceRetriever,
 )
 
@@ -132,7 +131,7 @@ class DeepSearchService:
                         _bonus, tier_label = get_source_tier_prior(self.db, ext_domain, ext_domain)
                         tier = tier_label
                         cred_score = get_source_credibility_score(self.db, ext_domain, ext_domain)
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         logger.debug(f"external citation tier lookup failed for {ext_domain}: {exc}")
 
                 citations.append({

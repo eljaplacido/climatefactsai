@@ -13,8 +13,6 @@ Categories:
     policy            — regulation, legislation, international agreements
 """
 
-import os
-import re
 from typing import Optional
 
 from app.core.logging import get_logger

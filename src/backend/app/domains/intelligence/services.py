@@ -979,7 +979,7 @@ Respond ONLY with valid JSON:
                 )
                 if response_text is None:
                     raise RuntimeError("All providers exhausted for verdict adjudication")
-                used_model = f"router:verdict_adjudication"
+                used_model = "router:verdict_adjudication"
             except Exception as route_err:
                 logger.warning(f"Router failed for verdict adjudication: {route_err}, falling back to direct DeepSeek")
                 response_text = _deepseek_chat(

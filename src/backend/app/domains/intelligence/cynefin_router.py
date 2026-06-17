@@ -6,7 +6,6 @@ Complex, Chaotic) and recommends an appropriate analysis strategy. Uses
 keyword scoring with optional LLM fallback for ambiguous cases.
 """
 
-import re
 from typing import Any, Dict, Optional
 
 from app.core.logging import get_logger

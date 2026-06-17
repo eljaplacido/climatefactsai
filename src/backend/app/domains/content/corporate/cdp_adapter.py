@@ -13,7 +13,6 @@ from __future__ import annotations
 import csv
 import io
 import logging
-from typing import AsyncIterator
 
 import httpx
 

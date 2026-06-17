@@ -28,7 +28,6 @@ LLM-synthesises explanations.
 
 from __future__ import annotations
 
-import os
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -389,7 +388,6 @@ async def explain_connection(
     )
 
     try:
-        import asyncio
         result = await service._call_llm(system_prompt, user_prompt, max_tokens=400)
     except Exception as exc:
         logger.warning(f"semantic/explain LLM call failed: {exc}")

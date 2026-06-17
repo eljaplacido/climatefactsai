@@ -5,12 +5,10 @@ Generates SVG-based OG images with article title, credibility score, and brandin
 Cached in Redis with 24h TTL.
 """
 
-import json
-from typing import Any, Optional
+from typing import Optional
 from xml.sax.saxutils import escape
 
 from fastapi import APIRouter, HTTPException, Response
-from fastapi.responses import Response as FastAPIResponse
 
 from shared.database import get_postgres
 from shared.logger import setup_logging

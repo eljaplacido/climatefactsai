@@ -190,7 +190,7 @@ async def backfill_extracted_text_html(
     db = get_postgres()
 
     try:
-        from shared.html_cleaner import clean_article_text, looks_like_html
+        from shared.html_cleaner import clean_article_text
     except Exception as exc:
         raise HTTPException(
             status_code=500,

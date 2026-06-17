@@ -57,7 +57,7 @@ from __future__ import annotations
 import os
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from threading import Lock
 from typing import Optional
 
@@ -460,5 +460,5 @@ def routing_table() -> dict:
             "primary": workload_provider(wl).primary,
             "fallback_chain": list(workload_provider(wl).fallback_chain),
         }
-        for wl in WORKLOAD_DEFAULTS.keys()
+        for wl in WORKLOAD_DEFAULTS
     }

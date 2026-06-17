@@ -6,9 +6,8 @@ then queries Open-Meteo archive API to compare claimed vs actual values.
 """
 
 import re
-import os
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import httpx
 

@@ -10,12 +10,11 @@ Vastaa:
 
 import os
 import json
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 from datetime import datetime, timezone
 from pathlib import Path
 
 import sys
-import structlog
 from kafka import KafkaConsumer
 
 # Add src/backend to path for shared module imports

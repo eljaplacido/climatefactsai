@@ -5,7 +5,7 @@ Analysoi väitteet useista data-lähteistä ja tekee todennuspäätöksen.
 """
 
 import json
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 try:
     # Try new OpenAI SDK (1.0+)

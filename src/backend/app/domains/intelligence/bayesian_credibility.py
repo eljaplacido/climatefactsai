@@ -11,7 +11,7 @@ legacy 8-publisher whitelist when the tier table hasn't been seeded yet.
 """
 
 import math
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from app.core.database import Database, get_db
 from app.core.logging import get_logger

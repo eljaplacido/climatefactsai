@@ -177,7 +177,7 @@ async def discover_news(request_body: DiscoverNewsRequest, request: Request) -> 
     task_id = f"discover-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:8]}"
 
     # Enforce discovery query limits if user is authenticated
-    from api.rate_limiter import UsageTracker, TIER_LIMITS
+    from api.rate_limiter import UsageTracker
 
     # Get user from request context (if available via auth header)
     user_tier = "freemium"  # Default for unauthenticated
@@ -229,7 +229,7 @@ async def discover_news(request_body: DiscoverNewsRequest, request: Request) -> 
     except requests.RequestException as exc:
         logger.error("Perplexity discovery failed", task_id=task_id, error=str(exc))
         raise HTTPException(status_code=502, detail="Perplexity request failed") from exc
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.error("Perplexity discovery parse failed", task_id=task_id, error=str(exc))
         raise HTTPException(status_code=500, detail="Unable to parse discovery response") from exc
 
@@ -284,7 +284,7 @@ async def discover_news(request_body: DiscoverNewsRequest, request: Request) -> 
                     credibility_score = get_source_credibility_score(
                         db, source_name, article.get("url"),
                     )
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logger.debug(
                         "tier_credibility_lookup_failed",
                         source=source_name, error=str(exc),
@@ -297,7 +297,7 @@ async def discover_news(request_body: DiscoverNewsRequest, request: Request) -> 
                     extracted = clean_article_text(extracted)
                     if excerpt:
                         excerpt = clean_article_text(excerpt)[:500]
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logger.debug("html_cleaner failed", url=article.get("url"), error=str(exc))
 
             result = db.execute_query(
@@ -319,7 +319,7 @@ async def discover_news(request_body: DiscoverNewsRequest, request: Request) -> 
             )
             if result and result[0].get("article_id"):
                 inserted_ids.append(str(result[0]["article_id"]))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Insert failed", task_id=task_id, url=article.get("url"), error=str(exc))
 
     if request_body.verify and inserted_ids:
@@ -330,7 +330,7 @@ async def discover_news(request_body: DiscoverNewsRequest, request: Request) -> 
             headers: Dict[str, str] = {}
             propagate.inject(headers)
             verify_claims.apply_async(args=[{"task_id": task_id, "article_ids": inserted_ids}], headers=headers)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Unable to queue verification", task_id=task_id, error=str(exc))
 
     return DiscoverNewsResponse(task_id=task_id, inserted=len(inserted_ids), article_ids=inserted_ids)

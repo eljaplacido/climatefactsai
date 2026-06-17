@@ -12,7 +12,7 @@ import secrets
 import hashlib
 import json
 
-from fastapi import APIRouter, HTTPException, Depends, Security, Header, Body
+from fastapi import APIRouter, HTTPException, Depends, Security, Body
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 

@@ -132,7 +132,7 @@ async def basic_search(
     try:
         results = db.execute_query(query, params)
         logger.info(
-            f"Basic search executed",
+            "Basic search executed",
             user_id=current_user.get("user_id") if current_user and isinstance(current_user, dict) else None,
             query=q,
             result_count=len(results),
@@ -140,7 +140,7 @@ async def basic_search(
         )
     except Exception as e:
         logger.error(
-            f"Basic search query failed",
+            "Basic search query failed",
             error=str(e),
             query=q
         )
@@ -157,7 +157,7 @@ async def basic_search(
         return articles
     except Exception as e:
         logger.error(
-            f"Failed to convert search results",
+            "Failed to convert search results",
             error=str(e),
             result_count=len(results)
         )
@@ -321,7 +321,7 @@ async def semantic_search(
     try:
         results = db.execute_query(query_sql, params)
         logger.info(
-            f"Semantic search executed",
+            "Semantic search executed",
             user_id=current_user.get("user_id") if isinstance(current_user, dict) else getattr(current_user, "user_id", None),
             query=request.query,
             result_count=len(results),
@@ -329,7 +329,7 @@ async def semantic_search(
         )
     except Exception as e:
         logger.error(
-            f"Semantic search query failed",
+            "Semantic search query failed",
             error=str(e),
             query=request.query,
             user_id=current_user.get("user_id") if isinstance(current_user, dict) else getattr(current_user, "user_id", None)
@@ -345,13 +345,13 @@ async def semantic_search(
     try:
         articles = [_row_to_article(row) for row in results]
         logger.info(
-            f"Semantic search completed successfully",
+            "Semantic search completed successfully",
             articles_returned=len(articles),
             query=request.query
         )
     except Exception as e:
         logger.error(
-            f"Failed to convert search results to Article models",
+            "Failed to convert search results to Article models",
             error=str(e),
             result_count=len(results)
         )

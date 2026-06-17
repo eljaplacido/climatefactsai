@@ -619,7 +619,7 @@ async def readiness():
         db = get_postgres()
         db.execute_query("SELECT 1")
         results["checks"]["postgres"] = {"status": "ok"}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         results["status"] = "degraded"
         results["checks"]["postgres"] = {"status": "error", "error": str(exc)}
 
@@ -630,7 +630,7 @@ async def readiness():
         redis_client = get_redis()
         redis_client.client.ping()
         results["checks"]["redis"] = {"status": "ok"}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         results["status"] = "degraded"
         results["checks"]["redis"] = {"status": "error", "error": str(exc)}
 

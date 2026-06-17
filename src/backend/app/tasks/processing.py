@@ -49,7 +49,7 @@ def verify_claims(self, workflow_state: Dict[str, Any]) -> Dict[str, Any]:
                     sp_svc.update_claim_stats(source_domain, verified=verified, disputed=disputed)
             except Exception as sp_exc:
                 logger.warning("Source claim stats update failed", error=str(sp_exc))
-        except Exception as exc:  # noqa: BLE001 - log and continue
+        except Exception as exc:
             logger.error(
                 "Verification failed",
                 article_id=str(article_id),

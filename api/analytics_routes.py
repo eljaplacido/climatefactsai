@@ -6,11 +6,11 @@ verification pipeline status, and time-series data.
 """
 
 import os
-from datetime import date, datetime
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from shared.database import get_postgres
 from api.auth_routes import get_optional_user

@@ -21,10 +21,8 @@ the user can drill into any country to see all artifacts.
 
 from __future__ import annotations
 
-from typing import Optional
 
 from fastapi import APIRouter, Query, HTTPException
-from pydantic import BaseModel
 
 from shared.database import get_postgres
 from shared.logger import setup_logging

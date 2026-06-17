@@ -57,7 +57,7 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
                 except (HTTPException, StarletteHTTPException):
                     # Let FastAPI/Starlette convert known HTTP errors.
                     raise
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     span.record_exception(exc)
                     span.set_status(Status(StatusCode.ERROR))
                     trace_id, _span_id = telemetry.get_trace_ids()

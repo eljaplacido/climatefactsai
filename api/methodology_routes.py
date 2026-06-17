@@ -29,7 +29,7 @@ import json
 import os
 import subprocess
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional  # noqa: F401
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel, Field

@@ -8,7 +8,6 @@ Vastaa:
 4. Datan lähetys Fact-Checking -agentille
 """
 
-import asyncio
 import signal
 import sys
 from typing import Dict, Any, List
@@ -19,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from shared.config import get_settings
-from shared.logger import setup_logging, LoggerMixin
+from shared.logger import LoggerMixin
 from shared.kafka_client import KafkaClient
 from shared.database import get_redis, get_postgres
 
@@ -271,7 +270,7 @@ class ContentDiscoveryAgent(LoggerMixin):
             )
             
             self.logger.debug(
-                f"Claims extracted",
+                "Claims extracted",
                 task_id=task_id,
                 article_url=article_url,
                 claim_count=len(claims)

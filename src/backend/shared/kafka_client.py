@@ -130,7 +130,6 @@ from pathlib import Path
 
 from kafka import KafkaProducer, KafkaConsumer
 from kafka.errors import KafkaError
-import jsonschema
 from jsonschema import validate, ValidationError
 
 from .config import get_kafka_settings

@@ -6,7 +6,6 @@ Reciprocal Rank Fusion to find previously verified articles with similar claims,
 providing internal cross-reference evidence.
 """
 
-import os
 from typing import Optional
 
 from app.core.logging import get_logger

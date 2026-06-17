@@ -9,7 +9,6 @@ POST /api/companies/admin/sync/{source} — Phase 8: trigger SBTi/CDP/NZT adapte
 
 from __future__ import annotations
 
-import json
 import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -20,7 +19,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from api.auth_routes import get_current_user
-from api.rate_limiter import TIER_LIMITS, UsageTracker, check_premium_feature
+from api.rate_limiter import check_premium_feature
 from shared.database import get_postgres
 from shared.logger import setup_logging
 
@@ -604,7 +603,6 @@ def _run_adapter_sync_blocking(source: str) -> None:
     async (httpx fetch) while the DB calls are sync (psycopg2).
     """
     import asyncio
-    from datetime import datetime
 
     db = get_postgres()
     started = datetime.utcnow().isoformat() + "Z"

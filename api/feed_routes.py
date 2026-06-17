@@ -8,10 +8,10 @@ Tier-gated: country limits and update frequency depend on subscription.
 
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
-from api.auth_routes import get_current_user, get_optional_user
+from api.auth_routes import get_current_user
 from api.rate_limiter import UsageTracker, TIER_LIMITS
 from shared.database import get_postgres
 from shared.logger import setup_logging

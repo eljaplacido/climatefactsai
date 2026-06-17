@@ -35,7 +35,7 @@ import asyncio
 import logging
 import re
 from datetime import datetime
-from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, Optional, Tuple
 
 import httpx
 

@@ -12,7 +12,6 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 
 from api.auth_routes import get_current_user
-from api.rate_limiter import TIER_LIMITS
 from shared.database import get_postgres
 from shared.logger import setup_logging
 

@@ -9,7 +9,6 @@ Implements trust-first data model with:
 """
 
 from datetime import datetime
-from typing import Optional
 from sqlalchemy import (
     Column,
     String,
@@ -18,7 +17,6 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Text,
-    Numeric,
     Enum as SQLEnum,
     Index,
 )

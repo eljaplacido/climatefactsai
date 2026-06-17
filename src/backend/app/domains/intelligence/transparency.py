@@ -8,7 +8,7 @@ intervals, and source reliability context for Professional-tier users.
 import json
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core.database import get_db

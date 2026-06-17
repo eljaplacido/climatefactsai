@@ -5,12 +5,10 @@ Supports OAuth2 authorization code flow for social login.
 Users can link Google/Microsoft accounts for one-click sign-in.
 """
 
-from datetime import datetime, timedelta
 from typing import Optional
-import hashlib
 import secrets
 
-from fastapi import APIRouter, HTTPException, status, Depends, Query, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from shared.database import get_postgres

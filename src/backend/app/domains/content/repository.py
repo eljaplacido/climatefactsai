@@ -8,11 +8,10 @@ Encapsulates all database queries for the content domain.
 import json
 from typing import Optional, Dict, Any
 from uuid import UUID
-from datetime import datetime
 
 from app.core.database import Database
 from app.core.logging import get_logger
-from .models import Article, ArticleDetail, Claim, ClaimWithFactCheck, FactCheck, Evidence, TagStat
+from .models import Article, ArticleDetail, ClaimWithFactCheck, FactCheck, Evidence, TagStat
 
 logger = get_logger(__name__)
 

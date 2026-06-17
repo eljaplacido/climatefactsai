@@ -6,7 +6,7 @@ Finds articles connected to query entities via the knowledge graph
 traversal up to N hops. Returns articles with path explanations and scores.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from app.core.logging import get_logger
 from app.core.database import Database

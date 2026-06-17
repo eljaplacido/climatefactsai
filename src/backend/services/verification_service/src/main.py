@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from shared.config import get_settings
-from shared.logger import setup_logging, LoggerMixin
+from shared.logger import LoggerMixin
 from shared.kafka_client import KafkaClient
 from shared.database import get_redis, get_postgres
 from shared.reliability_scorer import ReliabilityScorer
