@@ -161,6 +161,10 @@ function MapPageInner() {
   // Warming outlook controls
   const [warmingHorizon, setWarmingHorizon] = useState(2050);
 
+  // Two-future wipe comparison
+  const [wipeMode, setWipeMode] = useState(false);
+  const [wipePosition, setWipePosition] = useState(0.5);
+
   // Mirror the URL keyword into the filters Set on mount + when URL changes.
   useEffect(() => {
     if (urlKeyword !== filters.keyword) {
@@ -471,7 +475,13 @@ function MapPageInner() {
           const merged = prev.map((s) => {
             const o = outlookMap[s.country_code];
             if (!o) return s;
-            return { ...s, best_estimate_c: o.best_estimate_c, warming_covered: o.covered };
+            return {
+              ...s,
+              best_estimate_c: o.best_estimate_c,
+              warming_covered: o.covered,
+              ssp126_anomaly_c: (o as any).ssp126_anomaly_c,
+              ssp370_anomaly_c: (o as any).ssp370_anomaly_c,
+            };
           });
           const present = new Set(merged.map((s) => s.country_code));
           for (const o of data) {
@@ -483,6 +493,8 @@ function MapPageInner() {
               top_topics: [],
               best_estimate_c: o.best_estimate_c,
               warming_covered: o.covered,
+              ssp126_anomaly_c: (o as any).ssp126_anomaly_c,
+              ssp370_anomaly_c: (o as any).ssp370_anomaly_c,
             });
           }
           return merged;
@@ -687,23 +699,48 @@ function MapPageInner() {
             </div>
 
             {activeLayer === "warming_outlook" && (
-              <div className="flex items-center gap-1 p-0.5 bg-slate-700 rounded-md">
-                {[2030, 2050, 2100].map((h) => (
-                  <button
-                    key={h}
-                    type="button"
-                    onClick={() => setWarmingHorizon(h)}
-                    className={`px-2 py-1 text-[10px] rounded transition-colors ${
-                      warmingHorizon === h
-                        ? "bg-amber-600 text-white shadow-sm"
-                        : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    {h}
-                  </button>
-                ))}
-                <Thermometer className="h-3 w-3 text-amber-400 ml-0.5" />
-              </div>
+              <>
+                <div className="flex items-center gap-1 p-0.5 bg-slate-700 rounded-md">
+                  {[2030, 2050, 2100].map((h) => (
+                    <button
+                      key={h}
+                      type="button"
+                      onClick={() => setWarmingHorizon(h)}
+                      className={`px-2 py-1 text-[10px] rounded transition-colors ${
+                        warmingHorizon === h
+                          ? "bg-amber-600 text-white shadow-sm"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      {h}
+                    </button>
+                  ))}
+                  <Thermometer className="h-3 w-3 text-amber-400 ml-0.5" />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setWipeMode(!wipeMode)}
+                  className={`px-2.5 py-1 text-[10px] rounded transition-colors ${
+                    wipeMode
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "text-slate-400 hover:text-slate-200 bg-slate-700"
+                  }`}
+                >
+                  Wipe: SSP1 ↔ SSP3
+                </button>
+                {wipeMode && (
+                  <input
+                    type="range"
+                    min={0.1}
+                    max={0.9}
+                    step={0.01}
+                    value={wipePosition}
+                    onChange={(e) => setWipePosition(parseFloat(e.target.value))}
+                    className="w-20 h-1 accent-indigo-500"
+                    title="Drag to adjust split position"
+                  />
+                )}
+              </>
             )}
 
             {/* Compare button */}
@@ -729,6 +766,8 @@ function MapPageInner() {
           highlightedCountries={highlightedCountries}
           timelineDate={timelineDate}
           zoomRegion={zoomRegion}
+          wipeMode={wipeMode}
+          wipePosition={wipePosition}
         />
 
         {/* Layer control - top left */}

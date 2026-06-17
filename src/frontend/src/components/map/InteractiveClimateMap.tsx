@@ -97,6 +97,8 @@ export interface CountryStatEntry {
   warming_covered?: boolean;
   adaptation_gap_score?: number;
   nd_gain_index?: number;
+  ssp126_anomaly_c?: number;
+  ssp370_anomaly_c?: number;
 }
 
 interface InteractiveClimateMapProps {
@@ -108,6 +110,9 @@ interface InteractiveClimateMapProps {
   timelineDate?: string;
   /** Region key (africa/asia/europe/americas/middle_east/oceania) to fly to. */
   zoomRegion?: string | null;
+  /** Two-future wipe: when true, split coloring left/right by centroid longitude. */
+  wipeMode?: boolean;
+  wipePosition?: number;
 }
 
 // Color scales for each layer
@@ -118,8 +123,38 @@ function getLayerColor(
   maxArticle: number,
   maxSourceCount: number,
   maxCompanyCount: number,
-  biomeData: Record<string, BiomeEntry>
+  biomeData: Record<string, BiomeEntry>,
+  wipeMode?: boolean,
+  wipePosition?: number,
+  centroidsMap?: Record<string, LatLngTuple>,
 ): string {
+  // Two-future wipe: split coloring by longitude when active + warming_outlook
+  if (wipeMode && layer === "warming_outlook" && wipePosition !== undefined && centroidsMap) {
+    const centroid = centroidsMap[cc];
+    if (!centroid) return "#334155";
+    const [, lon] = centroid;
+    const lonNorm = (lon + 180) / 360; // 0 = -180°, 1 = +180°
+    const stat = statsMap[cc];
+    if (!stat) return "#334155";
+    if (lonNorm < wipePosition) {
+      // Left side: color by SSP1-2.6 (sustainable path)
+      const a = stat.ssp126_anomaly_c ?? -999;
+      if (a > 3.5) return "#dc2626";
+      if (a > 2.5) return "#f97316";
+      if (a > 1.5) return "#fde047";
+      if (a > -999) return "#bfdbfe";
+      return "#334155";
+    } else {
+      // Right side: color by SSP3-7.0 (high emissions)
+      const a = stat.ssp370_anomaly_c ?? -999;
+      if (a > 3.5) return "#dc2626";
+      if (a > 2.5) return "#f97316";
+      if (a > 1.5) return "#fde047";
+      if (a > -999) return "#bfdbfe";
+      return "#334155";
+    }
+  }
+
   if (layer === "biomes") {
     return biomeData[cc]?.koppen_color || "#9CA3AF"; // slate-400 — unclassified
   }
@@ -303,6 +338,8 @@ export default function InteractiveClimateMap({
   activeLayer,
   highlightedCountries,
   zoomRegion,
+  wipeMode = false,
+  wipePosition = 0.5,
 }: InteractiveClimateMapProps) {
   const [geoData, setGeoData] = useState<GeoJSON.FeatureCollection | null>(null);
   const [loading, setLoading] = useState(true);
@@ -444,7 +481,10 @@ export default function InteractiveClimateMap({
         maxArticle,
         maxSourceCount,
         maxCompanyCount,
-        biomeData
+        biomeData,
+        wipeMode,
+        wipePosition,
+        countryCentroids,
       );
 
       // Biome layer uses softer fill so the emoji marker reads cleanly.
@@ -472,6 +512,9 @@ export default function InteractiveClimateMap({
       maxSourceCount,
       maxCompanyCount,
       biomeData,
+      wipeMode,
+      wipePosition,
+      countryCentroids,
     ]
   );
 
@@ -637,6 +680,25 @@ export default function InteractiveClimateMap({
             {highlightedCountries.length} countries highlighted
           </span>
         </div>
+      )}
+
+      {/* Two-future wipe divider — only visible in wipe mode */}
+      {wipeMode && (
+        <>
+          <div className="absolute top-0 bottom-0 z-[900] pointer-events-none"
+               style={{ left: `${(wipePosition ?? 0.5) * 100}%` }}>
+            <div className="w-0.5 h-full bg-white/60 shadow-lg" />
+            <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-white/90 shadow-lg flex items-center justify-center">
+              <span className="text-[10px] text-slate-600 font-bold">|</span>
+            </div>
+          </div>
+          <div className="absolute top-3 left-3 z-[500] bg-slate-900/85 backdrop-blur-sm rounded px-2 py-0.5 border border-slate-700">
+            <p className="text-[10px] text-blue-300">SSP1-2.6 sustainable</p>
+          </div>
+          <div className="absolute top-3 right-3 z-[500] bg-slate-900/85 backdrop-blur-sm rounded px-2 py-0.5 border border-slate-700 text-right">
+            <p className="text-[10px] text-red-400">SSP3-7.0 high emissions</p>
+          </div>
+        </>
       )}
 
       <style jsx global>{`
