@@ -7,6 +7,7 @@ import {
   Network,
   Leaf,
   Building2,
+  Radio,
   type LucideIcon,
 } from "lucide-react";
 
@@ -16,6 +17,7 @@ export type ActiveLayer =
   | "climate_risk"
   | "source_diversity"
   | "corporate_density"
+  | "news_events"
   | "biomes";
 
 export type Persona = "consumer" | "professional" | "policymaker" | "researcher";
@@ -115,6 +117,21 @@ export const MAP_LAYERS: MapLayer[] = [
       { color: "bg-indigo-300", text: "3-5" },
       { color: "bg-indigo-500", text: "6-10" },
       { color: "bg-indigo-700", text: "10+" },
+    ],
+  },
+  {
+    id: "news_events",
+    label: "News Events",
+    description: "Recent climate news intensity and controversy hotspots",
+    icon: Radio,
+    personas: ["consumer", "professional", "policymaker", "researcher"],
+    dataEndpoint: "/api/map/layers/news-events",
+    statKey: "controversy_score",
+    legend: [
+      { color: "bg-amber-200", text: "Low" },
+      { color: "bg-amber-400", text: "Medium" },
+      { color: "bg-orange-500", text: "High" },
+      { color: "bg-red-600", text: "Very High" },
     ],
   },
   {

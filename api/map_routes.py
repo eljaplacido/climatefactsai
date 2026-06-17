@@ -276,6 +276,15 @@ class CorporateDensityItem(BaseModel):
     net_zero_target_count: int = 0
 
 
+class NewsEventItem(BaseModel):
+    """Per-country recent news/event intensity for map overlay."""
+    country_code: str
+    event_count: int = 0
+    disputed_count: int = 0
+    controversy_score: float = 0.0
+    latest_event_at: Optional[str] = None
+
+
 # Region → country code mapping for region-based queries (comprehensive — 80%+ of world)
 REGION_COUNTRIES = {
     "europe": [
@@ -2097,6 +2106,73 @@ async def get_corporate_density_layer():
         )
         for r in (rows or [])
     ]
+    _cache_set(cache_key, payload)
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# 10. GET /layers/news-events
+# ---------------------------------------------------------------------------
+
+@router.get("/layers/news-events", response_model=List[NewsEventItem])
+async def get_news_events_layer(
+    window_days: int = Query(21, ge=1, le=90, description="Lookback window in days"),
+):
+    """Recent country-level news/event intensity with a controversy signal.
+
+    Uses article volume in a rolling window plus disputed/unverified claim ratio
+    to expose where climate news is currently most contentious.
+    """
+    cache_key = f"layer:news_events:{window_days}"
+    cached = _cache_get(cache_key, ttl_seconds=3600)
+    if cached is not None:
+        return cached
+
+    db = get_postgres()
+    interval = f"{int(window_days)} days"
+    try:
+        rows = db.execute_query(
+            """
+            SELECT a.country_code,
+                   COUNT(DISTINCT a.article_id) AS event_count,
+                   COUNT(CASE WHEN fc.verification_status
+                         IN ('FALSE','MISLEADING','LACKS_CONTEXT','DISPUTED','UNVERIFIED')
+                         THEN 1 END) AS disputed_count,
+                   MAX(a.created_at) AS latest_event_at
+            FROM articles a
+            LEFT JOIN claims c ON c.article_id = a.article_id
+            LEFT JOIN fact_checks fc ON fc.claim_id = c.claim_id
+            WHERE a.country_code IS NOT NULL
+              AND a.country_code <> ''
+              AND a.is_synthetic = FALSE
+              AND a.is_off_topic = FALSE
+              AND a.created_at >= NOW() - :interval::interval
+            GROUP BY a.country_code
+            ORDER BY event_count DESC
+            """,
+            {"interval": interval},
+        )
+    except Exception as exc:
+        logger.error(f"News-events layer query failed: {exc}")
+        return []
+
+    payload: List[NewsEventItem] = []
+    for r in (rows or []):
+        event_count = int(r.get("event_count") or 0)
+        disputed_count = int(r.get("disputed_count") or 0)
+        disputed_ratio = (disputed_count / event_count) if event_count > 0 else 0.0
+        # Dense but bounded 0-10 score; volume + controversy contribution.
+        controversy_score = round(min(10.0, math.log1p(event_count) * 1.8 + disputed_ratio * 4.0), 1)
+        payload.append(
+            NewsEventItem(
+                country_code=r["country_code"],
+                event_count=event_count,
+                disputed_count=disputed_count,
+                controversy_score=controversy_score,
+                latest_event_at=str(r["latest_event_at"]) if r.get("latest_event_at") else None,
+            )
+        )
+
     _cache_set(cache_key, payload)
     return payload
 

@@ -45,6 +45,10 @@ const LAYER_METRIC: Record<
     label: "Corporate density",
     note: "Corporate disclosure density is shown on the map layer; side-by-side company density compare is coming next.",
   },
+  news_events: {
+    label: "News events",
+    note: "Recent event intensity and controversy hotspots are shown on the map layer; side-by-side events compare is coming next.",
+  },
   biomes: {
     label: "Biomes & climate zones",
     note: "Köppen biome zones are shown on the map layer (they aren't a single comparable number).",

@@ -116,6 +116,25 @@ def _make_country_db(*, countries: Optional[List[Dict[str, Any]]] = None):
                     "net_zero_target_count": 1,
                 },
             ]
+        if (
+            "count(distinct a.article_id) as event_count" in q
+            and "a.created_at >= now() - :interval::interval" in q
+            and "group by a.country_code" in q
+        ):
+            return [
+                {
+                    "country_code": "FI",
+                    "event_count": 9,
+                    "disputed_count": 2,
+                    "latest_event_at": now,
+                },
+                {
+                    "country_code": "SE",
+                    "event_count": 3,
+                    "disputed_count": 0,
+                    "latest_event_at": now,
+                },
+            ]
         if "select count(*) as total" in q and "avg(reliability_score) as avg_cred" in q:
             return [{"total": 8, "avg_cred": 78.5}]
         if "coalesce(content_category" in q:
@@ -377,6 +396,22 @@ class TestCorporateDensityLayer:
         assert "company_count" in first
         assert "sbti_validated_count" in first
         assert "net_zero_target_count" in first
+
+
+class TestNewsEventsLayer:
+    def test_news_events_layer_returns_intensity_scores(self, client, map_db):
+        from api import map_routes
+
+        map_routes._cache.clear()
+        resp = client.get("/api/map/layers/news-events?window_days=21")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert len(data) >= 1
+        first = data[0]
+        assert first["country_code"] in {"FI", "SE"}
+        assert "event_count" in first
+        assert "disputed_count" in first
+        assert "controversy_score" in first
 
 
 # ---------------------------------------------------------------------------

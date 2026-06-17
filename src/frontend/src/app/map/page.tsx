@@ -337,6 +337,65 @@ function MapPageInner() {
     fetchCorporateDensity();
   }, [activeLayer, countryStats]);
 
+  // Fetch layer-specific data when switching to news-events layer.
+  useEffect(() => {
+    if (activeLayer !== "news_events") return;
+    if (countryStats.some((s) => s.controversy_score != null)) return;
+
+    async function fetchNewsEvents() {
+      try {
+        const res = await fetch(`${API_BASE}/api/map/layers/news-events?window_days=21`);
+        if (!res.ok) return;
+        const data: {
+          country_code: string;
+          event_count: number;
+          disputed_count: number;
+          controversy_score: number;
+          latest_event_at?: string;
+        }[] = await res.json();
+        if (!data.length) return;
+
+        const eventMap = Object.fromEntries(
+          data.map((d) => [d.country_code, d])
+        );
+
+        setCountryStats((prev) => {
+          const merged = prev.map((s) => {
+            const e = eventMap[s.country_code];
+            if (!e) return s;
+            return {
+              ...s,
+              event_count: e.event_count,
+              disputed_count: e.disputed_count,
+              controversy_score: e.controversy_score,
+              latest_event_at: e.latest_event_at,
+            };
+          });
+
+          const present = new Set(merged.map((s) => s.country_code));
+          for (const e of data) {
+            if (present.has(e.country_code)) continue;
+            merged.push({
+              country_code: e.country_code,
+              country_name: e.country_code,
+              article_count: 0,
+              top_topics: [],
+              event_count: e.event_count,
+              disputed_count: e.disputed_count,
+              controversy_score: e.controversy_score,
+              latest_event_at: e.latest_event_at,
+            });
+          }
+          return merged;
+        });
+      } catch {
+        // silently fail
+      }
+    }
+
+    fetchNewsEvents();
+  }, [activeLayer, countryStats]);
+
   // Handlers
   function handleCountryClick(cc: string) {
     setSelectedCountry(cc === selectedCountry ? null : cc);
