@@ -9,7 +9,7 @@
 
 Before writing any code, read these documents in order:
 
-### 1. **[docs/CURRENT_STATE.md](docs/CURRENT_STATE.md)** (10 min) ⭐
+### 1. **[CURRENT_STATE.md](CURRENT_STATE.md)** (10 min) ⭐
 **What it covers:**
 - What's actually implemented vs what's documented
 - Known bugs and issues
@@ -23,7 +23,7 @@ Before writing any code, read these documents in order:
 - Avoids adding mock data fallbacks (known anti-pattern)
 - Clarifies what "done" means for this project
 
-### 2. **[.claude/skills/clilens-development/SKILL.md](.claude/skills/clilens-development/SKILL.md)** (5 min) ⭐
+### 2. **[../.claude/skills/clilens-development/SKILL.md](../.claude/skills/clilens-development/SKILL.md)** (5 min) ⭐
 **What it covers:**
 - Domain-specific development patterns
 - Code quality rules (no mock fallbacks!)
@@ -36,7 +36,7 @@ Before writing any code, read these documents in order:
 - Prevents repeating past mistakes
 - Defines "definition of done" for features
 
-### 3. **[docs/AGENT_USAGE_GUIDE.md](docs/AGENT_USAGE_GUIDE.md)** (10 min) ⭐
+### 3. **[AGENT_USAGE_GUIDE.md](AGENT_USAGE_GUIDE.md)** (10 min) ⭐
 **What it covers:**
 - When to use Cursor vs Claude Code
 - How to prompt each tool effectively
@@ -48,7 +48,7 @@ Before writing any code, read these documents in order:
 - Prevents using Cursor for complex multi-agent tasks
 - Avoids using Claude Code for simple edits
 
-### 4. **[New_plan.md](New_plan.md)** (20 min)
+### 4. **[archive/New_plan.md](archive/New_plan.md)** (20 min)
 **What it covers:**
 - Future vision and architecture goals
 - Planned features not yet implemented
@@ -106,7 +106,7 @@ What are you doing?
 ### **For Cursor Users**
 
 ```markdown
-1. Read docs/CURRENT_STATE.md (skim the "What Works" section)
+1. Read CURRENT_STATE.md (skim the "What Works" section)
 2. Verify setup:
    - docker ps  # Should show 4 containers
    - curl http://localhost:5400/healthz  # Should return {"status":"ok"}
@@ -126,7 +126,7 @@ npm install -g claude-flow@alpha
 npx claude-flow features-detect
 
 # 3. Read context
-cat docs/CURRENT_STATE.md  # Skim key sections
+cat CURRENT_STATE.md  # Skim key sections
 
 # 4. Start feature development
 npx claude-flow sparc tdd "Implement URL analysis feature"
@@ -162,7 +162,7 @@ docker ps | grep clilens  # Should show 4 containers
 docker exec climatenews-postgres pg_isready  # Should say "accepting connections"
 
 # 4. Current state understood
-cat docs/CURRENT_STATE.md  # Read "Known Issues" section
+cat CURRENT_STATE.md  # Read "Known Issues" section
 ```
 
 ### **Step 3: Implement**
@@ -198,7 +198,7 @@ cat docs/CURRENT_STATE.md  # Read "Known Issues" section
 - [ ] API keys tested and work
 - [ ] Manual test in browser/curl works
 - [ ] Error cases handled explicitly (no silent failures)
-- [ ] `docs/CURRENT_STATE.md` updated if needed
+- [ ] `CURRENT_STATE.md` updated if needed
 - [ ] No new TODOs or FIXMEs added
 
 ### **Step 5: Document**
@@ -206,7 +206,7 @@ cat docs/CURRENT_STATE.md  # Read "Known Issues" section
 ```bash
 # Update current state if needed
 # Example: Feature moved from "Planned" to "Working"
-nano docs/CURRENT_STATE.md
+nano CURRENT_STATE.md
 
 # Commit with descriptive message
 git add .
@@ -274,7 +274,7 @@ Prompt: "Implement video production with Remotion"
 
 ✅ **Correct:**
 ```
-1. Read docs/CURRENT_STATE.md section "Video Production (5% Complete)"
+1. Read CURRENT_STATE.md section "Video Production (5% Complete)"
 2. See missing: TTS, B-roll, rendering, storage, API endpoints
 3. Prompt: "What should I implement first for video production?"
 4. Get realistic scope: Start with placeholder video API endpoint
@@ -363,8 +363,8 @@ npx claude-flow agents list  # See 54 agents
 
 ### **Before Starting Development**
 
-- [ ] Read `docs/CURRENT_STATE.md`
-- [ ] Read `.claude/skills/clilens-development/SKILL.md`
+- [ ] Read `CURRENT_STATE.md`
+- [ ] Read `../.claude/skills/clilens-development/SKILL.md`
 - [ ] Containers running: `docker ps`
 - [ ] API works: `curl http://localhost:5400/healthz`
 - [ ] Database accessible: `docker exec climatenews-postgres pg_isready`
@@ -394,7 +394,7 @@ npx claude-flow agents list  # See 54 agents
 ## 🆘 **TROUBLESHOOTING**
 
 ### **"I don't know where to start"**
-→ Read `docs/CURRENT_STATE.md` section "NEXT DEVELOPMENT PRIORITIES"
+→ Read `CURRENT_STATE.md` section "NEXT DEVELOPMENT PRIORITIES"
 
 ### **"Containers won't start"**
 → See `docs/GETTING_STARTED.md` troubleshooting section
@@ -415,7 +415,7 @@ cat .env | grep ANTHROPIC_API_KEY
 ```
 
 ### **"Cursor can't do X"**
-→ Check `docs/TOOL_AVAILABILITY.md` - might need Claude Code instead
+→ Check `TOOL_AVAILABILITY.md` - might need Claude Code instead
 
 ### **"Claude Code not working"**
 ```bash
@@ -473,12 +473,12 @@ docker exec climatenews-postgres psql -U postgres -d climatenews
 
 ## 📚 **ESSENTIAL LINKS**
 
-- **[docs/CURRENT_STATE.md](docs/CURRENT_STATE.md)** - Reality check
-- **[docs/AGENT_USAGE_GUIDE.md](docs/AGENT_USAGE_GUIDE.md)** - Tool selection
-- **[docs/TOOL_AVAILABILITY.md](docs/TOOL_AVAILABILITY.md)** - Feature parity
-- **[.claude/skills/clilens-development/SKILL.md](.claude/skills/clilens-development/SKILL.md)** - Domain rules
-- **[New_plan.md](New_plan.md)** - Future vision
-- **[CLAUDE.md](CLAUDE.md)** - Full reference
+- **[CURRENT_STATE.md](CURRENT_STATE.md)** - Reality check
+- **[AGENT_USAGE_GUIDE.md](AGENT_USAGE_GUIDE.md)** - Tool selection
+- **[TOOL_AVAILABILITY.md](TOOL_AVAILABILITY.md)** - Feature parity
+- **[../.claude/skills/clilens-development/SKILL.md](../.claude/skills/clilens-development/SKILL.md)** - Domain rules
+- **[archive/New_plan.md](archive/New_plan.md)** - Future vision
+- **[../CLAUDE.md](../CLAUDE.md)** - Full reference
 
 ---
 

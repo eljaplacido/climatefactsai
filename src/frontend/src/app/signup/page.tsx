@@ -224,7 +224,7 @@ export default function SignupPage() {
                 <div>
                   <label
                     htmlFor="fullName"
-                    className="block text-sm font-medium text-gray-700 mb-1"
+                    className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1"
                   >
                     Full name
                   </label>
@@ -237,7 +237,7 @@ export default function SignupPage() {
                       onChange={(e) => setFullName(e.target.value)}
                       placeholder="Your full name"
                       required
-                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600 dark:placeholder:text-slate-500"
                     />
                   </div>
                 </div>
@@ -245,7 +245,7 @@ export default function SignupPage() {
                 <div>
                   <label
                     htmlFor="signupEmail"
-                    className="block text-sm font-medium text-gray-700 mb-1"
+                    className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1"
                   >
                     Email address
                   </label>
@@ -258,7 +258,7 @@ export default function SignupPage() {
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="you@example.com"
                       required
-                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600 dark:placeholder:text-slate-500"
                     />
                   </div>
                 </div>
@@ -266,7 +266,7 @@ export default function SignupPage() {
                 <div>
                   <label
                     htmlFor="signupPassword"
-                    className="block text-sm font-medium text-gray-700 mb-1"
+                    className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1"
                   >
                     Password
                   </label>
@@ -280,7 +280,7 @@ export default function SignupPage() {
                       placeholder="Minimum 8 characters"
                       required
                       minLength={8}
-                      className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                      className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600 dark:placeholder:text-slate-500"
                     />
                     <button
                       type="button"
@@ -299,7 +299,7 @@ export default function SignupPage() {
                 <div>
                   <label
                     htmlFor="confirmPassword"
-                    className="block text-sm font-medium text-gray-700 mb-1"
+                    className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1"
                   >
                     Confirm password
                   </label>
@@ -312,7 +312,7 @@ export default function SignupPage() {
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="Re-enter your password"
                       required
-                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600 dark:placeholder:text-slate-500"
                     />
                   </div>
                   {confirmPassword && password !== confirmPassword && (
@@ -337,29 +337,29 @@ export default function SignupPage() {
                         key={tier.id}
                         type="button"
                         onClick={() => setSelectedTier(tier.id)}
-                        className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
+                        className={`w-full text-left p-3 rounded-lg border-2 transition-all dark:bg-slate-700 dark:text-slate-200 ${
                           selected
-                            ? "border-teal-500 bg-teal-50"
-                            : "border-gray-200 hover:border-gray-300"
-                        } ${tier.highlighted && !selected ? "ring-1 ring-teal-200" : ""}`}
+                            ? "border-teal-500 bg-teal-50 dark:bg-teal-900/40 dark:border-teal-400"
+                            : "border-gray-200 hover:border-gray-300 dark:border-slate-600 dark:hover:border-slate-500"
+                        } ${tier.highlighted && !selected ? "ring-1 ring-teal-200 dark:ring-teal-700" : ""}`}
                       >
                         <div className="flex items-center justify-between mb-1">
                           <div className="flex items-center gap-2">
                             <Icon
-                              className={`h-4 w-4 ${selected ? "text-teal-600" : "text-gray-400"}`}
+                              className={`h-4 w-4 ${selected ? "text-teal-600 dark:text-teal-400" : "text-gray-400 dark:text-slate-500"}`}
                             />
-                            <span className="font-semibold text-sm text-gray-900">
+                            <span className="font-semibold text-sm text-gray-900 dark:text-slate-200">
                               {tier.name}
                             </span>
                             {tier.highlighted && (
-                              <span className="text-[10px] font-bold uppercase bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded">
+                              <span className="text-[10px] font-bold uppercase bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded dark:bg-teal-900/50 dark:text-teal-300">
                                 Popular
                               </span>
                             )}
                           </div>
-                          <span className="text-sm font-bold text-gray-900">
+                          <span className="text-sm font-bold text-gray-900 dark:text-slate-200">
                             {tier.price}
-                            <span className="text-xs font-normal text-gray-500">
+                            <span className="text-xs font-normal text-gray-500 dark:text-slate-400">
                               {tier.period}
                             </span>
                           </span>
@@ -368,7 +368,7 @@ export default function SignupPage() {
                           {tier.features.map((f) => (
                             <span
                               key={f}
-                              className="text-xs text-gray-500 flex items-center gap-1"
+                              className="text-xs text-gray-500 flex items-center gap-1 dark:text-slate-400"
                             >
                               <Check className="h-3 w-3 text-teal-500" />
                               {f}
@@ -391,7 +391,7 @@ export default function SignupPage() {
                   onChange={(e) => setAgreedToTerms(e.target.checked)}
                   className="mt-0.5 h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
                 />
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-gray-600 dark:text-slate-400">
                   I agree to the{" "}
                   <Link
                     href="/terms"
@@ -418,11 +418,11 @@ export default function SignupPage() {
                 Create Account
               </button>
 
-              <p className="mt-4 text-center text-sm text-gray-500">
+              <p className="mt-4 text-center text-sm text-gray-500 dark:text-slate-400">
                 Already have an account?{" "}
                 <Link
                   href="/login"
-                  className="text-teal-600 font-semibold hover:text-teal-700"
+                  className="text-teal-600 font-semibold hover:text-teal-700 dark:text-teal-400"
                 >
                   Sign in
                 </Link>

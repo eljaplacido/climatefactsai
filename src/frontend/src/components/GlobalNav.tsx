@@ -8,7 +8,7 @@ import {
   MapPin, FileText, Menu, X, BarChart3,
   Shield, Info, LogOut, LayoutDashboard, Rss, Settings,
   LogIn, UserPlus, Lightbulb, Loader2,
-  Building2, Bookmark, Sun, Moon,
+  Building2, Bookmark, Sun, Moon, Code,
 } from "lucide-react";
 import {
   SUPPORTED_LANGUAGES,
@@ -33,6 +33,7 @@ const NAV_ITEMS = [
   { href: "/sources", labelKey: "nav.sources", fallback: "Sources", icon: Shield },
   { href: "/saves", labelKey: "nav.saves", fallback: "My Saves", icon: Bookmark },
   { href: "/suggest-source", labelKey: "nav.suggest", fallback: "Suggest", icon: Lightbulb },
+  { href: "/api-access", labelKey: "nav.api_access", fallback: "API", icon: Code },
 ];
 
 const TIER_COLORS: Record<string, string> = {

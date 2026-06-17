@@ -112,7 +112,11 @@ steps:
           tests/api/ \
           tests/backend/ \
           tests/unit/ \
-          tests/adversarial/
+          tests/adversarial/ \
+          tests/e2e/ \
+          tests/evaluation/ \
+          tests/integration/ \
+          tests/scripts/
 
   # -------------------------------------------------------------------------
   # Step 1: Build API image
@@ -182,6 +186,12 @@ steps:
       # env vars read by subscription_routes.py.
       - "--update-secrets=STRIPE_PRICE_ID_BASIC=stripe-price-basic:latest"
       - "--update-secrets=STRIPE_PRICE_ID_PRO=stripe-price-pro:latest"
+      - "--update-secrets=OAUTH_STATE_SECRET=oauth-state-secret:latest"
+      - "--update-secrets=CLILENS_CALIBRATION_ADMIN_SECRET=clilens-calibration-admin-secret:latest"
+      - "--update-secrets=MICROSOFT_CLIENT_ID=microsoft-client-id:latest"
+      - "--update-secrets=MICROSOFT_CLIENT_SECRET=microsoft-client-secret:latest"
+      - "--update-secrets=STRIPE_PRICE_ID_ENTERPRISE=stripe-price-enterprise:latest"
+      - "--update-env-vars=FRONTEND_URL=REPLACE_WITH_PROD_FRONTEND_URL"
       - "--update-env-vars=ENVIRONMENT=production"
       - "--update-env-vars=LOG_LEVEL=INFO"
       - "--update-env-vars=API_HOST=0.0.0.0"
@@ -375,6 +385,9 @@ steps:
           "cn-credibility-backfill:/api/admin/backfill/source-credibility-score"
           "cn-html-backfill:/api/admin/backfill/extracted-text-html"
           "cn-ner-extract:/api/admin/scheduler/extract-entities"
+          "cn-indicators-sync:/api/scheduler/indicators/sync"
+          "cn-source-health:/api/admin/scheduler/source-health"
+          "cn-feed-registry-sync:/api/admin/scheduler/sync-feed-registry"
         )
         for entry in "${JOBS[@]}"; do
           name="${entry%%:*}"

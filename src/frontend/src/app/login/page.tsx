@@ -214,7 +214,7 @@ function LoginForm() {
             <button
               onClick={() => handleOAuth("google")}
               disabled={!oauthConfig.google.enabled || !oauthConfig.google.clientId}
-              className="w-full flex items-center justify-center gap-3 px-4 py-2.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-3 px-4 py-2.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-600"
             >
               <Chrome className="h-5 w-5 text-blue-500" />
               Sign in with Google
@@ -222,7 +222,7 @@ function LoginForm() {
             <button
               onClick={() => handleOAuth("microsoft")}
               disabled={!oauthConfig.microsoft.enabled || !oauthConfig.microsoft.clientId}
-              className="w-full flex items-center justify-center gap-3 px-4 py-2.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-3 px-4 py-2.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-600"
             >
               <Monitor className="h-5 w-5 text-blue-600" />
               Sign in with Microsoft
@@ -232,7 +232,7 @@ function LoginForm() {
           {/* Divider */}
           <div className="flex items-center gap-3 mb-6">
             <div className="flex-1 h-px bg-gray-200" />
-            <span className="text-xs text-gray-400 uppercase tracking-wide">
+              <span className="text-xs text-gray-400 uppercase tracking-wide dark:text-slate-500">
               or continue with email
             </span>
             <div className="flex-1 h-px bg-gray-200" />
@@ -251,7 +251,7 @@ function LoginForm() {
             <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-medium text-gray-700 mb-1"
+                className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1"
               >
                 Email address
               </label>
@@ -264,7 +264,7 @@ function LoginForm() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
                   required
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600 dark:placeholder:text-slate-500"
                 />
               </div>
             </div>
@@ -273,13 +273,13 @@ function LoginForm() {
               <div className="flex items-center justify-between mb-1">
                 <label
                   htmlFor="password"
-                  className="block text-sm font-medium text-gray-700"
+                  className="block text-sm font-medium text-gray-700 dark:text-slate-300"
                 >
                   Password
                 </label>
                 <Link
                   href="/forgot-password"
-                  className="text-xs text-teal-600 hover:text-teal-700 font-medium"
+                  className="text-xs text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300 font-medium"
                 >
                   Forgot password?
                 </Link>
@@ -293,7 +293,7 @@ function LoginForm() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
                   required
-                  className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                  className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600 dark:placeholder:text-slate-500"
                 />
                 <button
                   type="button"
@@ -320,7 +320,7 @@ function LoginForm() {
           </form>
 
           {/* Footer */}
-          <p className="mt-6 text-center text-sm text-gray-500">
+          <p className="mt-6 text-center text-sm text-gray-500 dark:text-slate-400">
             Don&apos;t have an account?{" "}
             <Link
               href="/signup"

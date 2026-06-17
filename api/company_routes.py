@@ -18,7 +18,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from api.auth_routes import get_current_user
+from api.auth_routes import get_current_user, get_optional_user
+from api.quota_service import QuotaService
 from api.rate_limiter import check_premium_feature
 from shared.database import get_postgres
 from shared.logger import setup_logging
@@ -88,6 +89,7 @@ async def list_companies(
     sort: str = Query("richness", regex="^(richness|name|recent)$"),
     has_climate_data: bool = Query(False, description="Only companies with scope/SBTi/net-zero data"),
     sbti_only: bool = Query(False, description="Only companies with sbti_validated=TRUE disclosure"),
+    user: dict = Depends(get_optional_user),
 ):
     """List companies in the Corporate Climate Tracker.
 
@@ -166,6 +168,7 @@ async def list_standards_index():
 async def compare_companies(
     a: str = Query(..., description="Company A — ticker or company_id"),
     b: str = Query(..., description="Company B — ticker or company_id"),
+    user: dict = Depends(get_optional_user),
 ):
     """Head-to-head climate comparison of two companies (seq-13) — serves the
     "compare two companies' sustainability" scenario.
@@ -175,7 +178,21 @@ async def compare_companies(
     Raw scope emissions are returned without a leader because absolute tonnage
     scales with company size, so "lower" doesn't mean "greener". Declared before
     the /{ticker} route so "compare" isn't read as a ticker.
+
+    Requires Basic+ tier — gated by QuotaService (1 compare/month on Free tier).
     """
+    user_tier = "freemium"
+    user_id = None
+    if user and isinstance(user, dict):
+        user_tier = user.get("subscription_tier", "freemium") or "freemium"
+        user_id = user.get("user_id")
+
+    QuotaService.check_and_raise(
+        user_id=str(user_id) if user_id else None,
+        tier=user_tier,
+        quota_key="compare",
+    )
+
     db = get_postgres()
     from app.domains.content.corporate.repository import (
         get_company,
@@ -267,7 +284,7 @@ async def compare_companies(
 
 
 @router.get("/{ticker}")
-async def get_company(ticker: str):
+async def get_company(ticker: str, user: dict = Depends(get_optional_user)):
     from app.domains.content.corporate.repository import (
         get_company,
         get_company_claims,
@@ -307,7 +324,7 @@ async def get_company(ticker: str):
 
 
 @router.get("/{ticker}/claims")
-async def get_claims(ticker: str):
+async def get_claims(ticker: str, user: dict = Depends(get_optional_user)):
     from app.domains.content.corporate.repository import get_company, get_company_claims
 
     db = get_postgres()
@@ -319,7 +336,11 @@ async def get_claims(ticker: str):
 
 
 @router.post("/{ticker}/analyze", response_model=AnalyzeClaimResponse)
-async def analyze_company_claim(ticker: str, request: AnalyzeClaimRequest):
+async def analyze_company_claim(
+    ticker: str,
+    request: AnalyzeClaimRequest,
+    user: dict = Depends(get_optional_user),
+):
     from app.domains.content.corporate.repository import (
         get_company,
         get_company_disclosures,
@@ -413,6 +434,16 @@ async def analyze_company_report(
                 ),
             },
         )
+
+    # Phase 1A quota gate — analyze-report counts against the monthly
+    # compare allowance (same gated surface family).
+    user_tier = current_user.get("subscription_tier", "freemium") or "freemium"
+    user_id = current_user.get("user_id")
+    QuotaService.check_and_raise(
+        user_id=str(user_id) if user_id else None,
+        tier=user_tier,
+        quota_key="compare",
+    )
 
     if (request.report_url is None) == (request.report_text is None):
         raise HTTPException(
@@ -824,25 +855,3 @@ async def suggest_company(
     }
 
 
-@router.get("/standards")
-async def list_standards():
-    """Public listing of the 5 reporting standards the platform checks
-    company claims against. Used by the /companies page to render the
-    'Standards we check' explainer panel.
-    """
-    from app.domains.content.corporate.standards import STANDARDS
-    return {
-        "standards": [
-            {
-                "id": s["id"],
-                "name": s["name"],
-                "jurisdiction": s["jurisdiction"],
-                "effective_from": s["effective_from"],
-                "scope": s["scope"],
-                "mandatory_disclosure": s["mandatory_disclosure"],
-                "evidence_url": s["evidence_url"],
-            }
-            for s in STANDARDS
-        ],
-        "total": len(STANDARDS),
-    }

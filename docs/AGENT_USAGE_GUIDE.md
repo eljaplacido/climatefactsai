@@ -1,7 +1,7 @@
 # Agent Usage Guide: Cursor vs Claude Code vs Codex
 
 **Purpose:** Clear guidance on when to use Cursor agents, Claude Code, or Codex for Climatefacts.ai development  
-**Last Updated:** 2025-12-18
+**Last Updated:** 2026-06-17
 
 ---
 
@@ -194,7 +194,7 @@ HITL review"
 
 1. **Specification Agent**: Analyzes requirements
    - Reads `docs/CURRENT_STATE.md` for context
-   - Reads `New_plan.md` for vision
+   - Reads `archive/New_plan.md` for vision
    - Reads `.claude/skills/clilens-development/SKILL.md` for constraints
    - Creates specification document
 
@@ -257,12 +257,12 @@ npx claude-flow@alpha agent-booster enable --task "refactor-claims-extraction"
 ### 📋 **Claude Code Workflow Example**
 
 ```markdown
-You: "Implement the user URL analysis feature from New_plan.md section 5.2"
+You: "Implement the user URL analysis feature from archive/New_plan.md section 5.2"
 
 Claude Code:
 1. Creates checkpoint "before-url-analysis"
 2. Spawns Researcher agent:
-   - Reads New_plan.md section 5.2
+   - Reads archive/New_plan.md section 5.2
    - Reads docs/CURRENT_STATE.md for constraints
    - Reads .claude/skills/clilens-development/SKILL.md
    - Creates requirements doc
@@ -477,7 +477,7 @@ npx claude-flow agents list  # See 54 available agents
 
 ✅ **Good Claude Code Prompts:**
 ```
-- "Use SPARC TDD to implement user URL analysis feature per New_plan.md section 5.2"
+- "Use SPARC TDD to implement user URL analysis feature per archive/New_plan.md section 5.2"
 - "Spawn parallel agents to: 1) Audit security 2) Implement backend 3) Create frontend 4) Write tests"
 - "Refactor claim extraction to remove all mock data fallbacks, fail explicitly instead"
 - "Implement EU expansion: add 20 countries, configure RSS feeds, create translation service"
@@ -583,7 +583,7 @@ Task to do?
 
 **When planning major features:**
 
-4. **`New_plan.md`** (20 min) - Future vision and architecture
+4. **`archive/New_plan.md`** (20 min) - Future vision and architecture
 
 **When stuck:**
 
@@ -647,6 +647,6 @@ Task("Security Auditor", "Review auth code", "security-manager")
 
 **This guide was created to solve the "Tool capability mismatch" problem identified in December 2025.**
 
-**Last Updated:** 2025-12-18  
+**Last Updated:** 2026-06-17  
 **Next Review:** After completing 10 features (to gather real-world feedback)
 

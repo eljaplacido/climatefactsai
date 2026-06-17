@@ -1,7 +1,7 @@
 # 🚀 START HERE: How to Guide AI Agents
 
 **Quick Reference for Directing Cursor, Claude Code, and Codex**  
-**Created:** December 18, 2025 after documentation restructuring
+**Created:** December 18, 2025 after documentation restructuring  | **Updated:** 2026-06-17
 
 ---
 
@@ -244,7 +244,7 @@ Do these now and report results."
 2. **`.claude/skills/clilens-development/SKILL.md`** (5 min) - Constraints
 
 ### **When Planning Features:**
-3. **`New_plan.md`** (20 min) - Future vision
+3. **`archive/New_plan.md`** (20 min) - Future vision
 4. **`docs/PROJECT_EVALUATION_REPORT.md`** - Status details
 
 ### **When Choosing Tools:**
@@ -317,7 +317,7 @@ You: "Good. Now fix the frontend to show 'Analysis pending' when claims_count = 
 
 ```bash
 You run:
-npx claude-flow sparc tdd "Implement user URL analysis feature per New_plan.md 
+npx claude-flow sparc tdd "Implement user URL analysis feature per archive/New_plan.md 
 section 5.2. Requirements:
 - POST /api/analyze-url endpoint
 - NO Kafka (use direct API/DB)
@@ -327,7 +327,7 @@ section 5.2. Requirements:
 - Update CURRENT_STATE.md when complete"
 
 Claude Code spawns agents:
-1. Specification Agent: Reads New_plan.md, creates requirements
+1. Specification Agent: Reads archive/New_plan.md, creates requirements
 2. Architecture Agent: Designs API + frontend + database changes
 3. Backend Dev Agent: Implements endpoint with validation
 4. Frontend Dev Agent: Creates component with error handling
@@ -440,7 +440,7 @@ If agent says any of these, **STOP AND CORRECT:**
 
 ---
 
-**Created:** December 18, 2025  
+**Created:** December 18, 2025 | **Updated:** 2026-06-17  
 **Purpose:** Guide developers in directing AI agents effectively  
 **Status:** Ready to use immediately
 

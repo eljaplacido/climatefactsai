@@ -29,9 +29,9 @@ import json
 import os
 import subprocess
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 import sys
@@ -1001,72 +1001,186 @@ async def get_self_audit_score() -> Dict[str, Any]:
 # API endpoint catalog — developer portal (2026-06-14)
 # =============================================================================
 # Every public API endpoint the platform exposes, annotated with tier access,
-# rate limits, and description. Static catalogue — powers the developer portal
-# page and the /api/methodology/endpoints public endpoint.
+# rate limits, and description. Dynamically discovered from the registered
+# FastAPI routes — no static list to maintain.
+
+
+def _classify_path(path: str):
+    """Map an API path to (domain, tier, quota)."""
+    if path.startswith("/api/articles"):
+        if "/infographic" in path:
+            return ("Articles", "basic", "infographics")
+        return ("Articles", "freemium", "articles_per_day")
+    if path.startswith("/api/search"):
+        return ("Search", "freemium", "searches_per_day")
+    if path.startswith("/api/analyze-url") or path.startswith("/api/url-analysis"):
+        return ("URL Analysis", "freemium", "url_analyses_per_month")
+    if path.startswith("/api/deep-search/compare"):
+        return ("Deep Search", "pro", "comparative_analysis")
+    if path.startswith("/api/deep-search"):
+        return ("Deep Search", "basic", "deep_search")
+    if path.startswith("/api/map"):
+        return ("Map", "freemium", None)
+    if path.startswith("/api/companies/compare"):
+        return ("Companies", "basic", "comparative_analysis")
+    if path.startswith("/api/companies"):
+        return ("Companies", "freemium", None)
+    if path.startswith("/api/chat"):
+        return ("Chat", "freemium", "qa_per_article_per_day")
+    if path.startswith("/api/skills"):
+        return ("Skills", "freemium", None)
+    if path.startswith("/api/research/upload"):
+        return ("Research", "pro", "document_ingestion")
+    if path.startswith("/api/research"):
+        return ("Research", "basic", "url_analyses_per_month")
+    if path.startswith("/api/v2/intelligence"):
+        return ("Intelligence", "basic", "insights_extraction")
+    if path.startswith("/api/country"):
+        return ("Country", "freemium", None)
+    if path.startswith("/api/export"):
+        return ("Export", "pro", "export_formats")
+    if path.startswith("/api/user/saved"):
+        return ("User", "freemium", "saved_articles")
+    if path.startswith("/api/user"):
+        return ("User", "freemium", None)
+    if path.startswith("/api/subscription"):
+        return ("User", "freemium", None)
+    if path.startswith("/api/methodology"):
+        return ("Methodology", "freemium", None)
+    if path.startswith("/api/auth"):
+        return ("Authentication", "freemium", None)
+    if path.startswith("/api/sdg"):
+        return ("UN SDG", "freemium", None)
+    if path.startswith("/api/semantic"):
+        return ("Semantic Layer", "freemium", None)
+    if path.startswith("/api/golden-examples"):
+        return ("Golden Examples", "freemium", None)
+    if path.startswith("/api/og-image"):
+        return ("OG Images", "freemium", None)
+    if path.startswith("/api/drift"):
+        return ("Drift Detection", "freemium", None)
+    if path.startswith("/api/benchmarks"):
+        return ("Benchmarks", "freemium", None)
+    if path.startswith("/api/forecasts"):
+        return ("Forecasts", "freemium", None)
+    if path.startswith("/api/translations"):
+        return ("Translations", "freemium", None)
+    if path.startswith("/api/sources"):
+        return ("Sources", "freemium", None)
+    if path.startswith("/api/source-suggestions"):
+        return ("Source Suggestions", "freemium", None)
+    if path.startswith("/api/aoi-subscriptions"):
+        return ("AOI Alerts", "freemium", None)
+    if path.startswith("/api/api-keys"):
+        return ("API Keys", "freemium", None)
+    if path.startswith("/api/quota"):
+        return ("Quota", "freemium", None)
+    if path.startswith("/api/status"):
+        return ("Platform Status", "freemium", None)
+    if path.startswith("/api/scheduler"):
+        return ("Scheduler", "freemium", None)
+    if path.startswith("/api/green-transition"):
+        return ("Green Transition", "freemium", None)
+    if path.startswith("/api/carf"):
+        return ("CARF", "freemium", None)
+    if path.startswith("/api/feed"):
+        return ("Feed", "freemium", None)
+    if path.startswith("/api/explore"):
+        return ("Explore", "freemium", None)
+    if path.startswith("/api/scenario"):
+        return ("Scenario", "freemium", None)
+    if path.startswith("/api/admin"):
+        return ("Admin", "pro", None)
+    if path.startswith("/api/feedback"):
+        return ("Feedback", "freemium", None)
+    if path.startswith("/api/analytics"):
+        return ("Analytics", "freemium", None)
+    return ("Other", "freemium", None)
+
+
+def _infer_auth(path: str) -> str:
+    """Best-effort authentication requirement based on path prefix."""
+    if path.startswith("/api/methodology"):
+        return "none"
+    if path.startswith("/api/skills"):
+        return "none"
+    if path.startswith("/api/auth/register") or path.startswith("/api/auth/login") or path.startswith("/api/auth/forgot"):
+        return "none"
+    if path.startswith("/api/admin"):
+        return "required"
+    if path.startswith("/api/user"):
+        return "required"
+    if path.startswith("/api/export"):
+        return "required"
+    if path.startswith("/api/chat"):
+        return "required"
+    if path.startswith("/api/deep-search"):
+        return "required"
+    if path.startswith("/api/research"):
+        return "required"
+    if path.startswith("/api/v2"):
+        return "required"
+    if path.startswith("/api/api-keys"):
+        return "required"
+    if path.startswith("/api/quota"):
+        return "required"
+    if path.startswith("/api/subscription"):
+        return "required"
+    if path.startswith("/api/scheduler"):
+        return "required"
+    return "optional"
+
+
+def _discover_endpoints(app) -> List[Dict[str, Any]]:
+    """Walk every registered route and produce the endpoint catalogue."""
+    from starlette.routing import Route as StarletteRoute
+
+    endpoints: List[Dict[str, Any]] = []
+    seen: set = set()
+
+    for route in app.router.routes:
+        if not isinstance(route, StarletteRoute):
+            continue
+        path: str = getattr(route, "path", "")
+        methods = getattr(route, "methods", set())
+        if not path or not methods or not path.startswith("/api"):
+            continue
+
+        description = ""
+        endpoint_fn = getattr(route, "endpoint", None)
+        if endpoint_fn and getattr(endpoint_fn, "__doc__", None):
+            doc = endpoint_fn.__doc__.strip()
+            description = doc.split("\n")[0]
+
+        domain, tier, quota = _classify_path(path)
+
+        for method in sorted(methods):
+            key = (method, path)
+            if key in seen:
+                continue
+            seen.add(key)
+            endpoints.append({
+                "domain": domain,
+                "method": method,
+                "path": path,
+                "auth": _infer_auth(path),
+                "tier": tier,
+                "quota": quota,
+                "description": description,
+            })
+
+    endpoints.sort(key=lambda e: (e["domain"], e["path"], e["method"]))
+    return endpoints
+
 
 @router.get("/endpoints")
-async def list_api_endpoints() -> Dict[str, Any]:
+async def list_api_endpoints(request: Request) -> Dict[str, Any]:
     """Full catalogue of public API endpoints with tier access and rate limits.
 
-    Grouped by domain. Each entry lists the HTTP method, path, authentication
-    requirement, minimum tier, and quota key. Static — no DB, always available.
+    Dynamically discovered from registered FastAPI routes — always reflects
+    the current application surface.
     """
-    endpoints = [
-        # -- Articles --
-        {"domain": "Articles", "method": "GET", "path": "/api/articles", "auth": "optional", "tier": "freemium", "quota": "articles_per_day", "description": "List climate articles with filters"},
-        {"domain": "Articles", "method": "GET", "path": "/api/articles/{id}", "auth": "optional", "tier": "freemium", "quota": "articles_per_day", "description": "Get one article with full detail"},
-        {"domain": "Articles", "method": "GET", "path": "/api/articles/{id}/infographic", "auth": "required", "tier": "basic", "quota": "infographics", "description": "Generate infographic for article"},
-
-        # -- Search --
-        {"domain": "Search", "method": "GET", "path": "/api/search", "auth": "optional", "tier": "freemium", "quota": "searches_per_day", "description": "Full-text and faceted article search"},
-
-        # -- URL Analysis --
-        {"domain": "URL Analysis", "method": "POST", "path": "/api/url-analysis", "auth": "optional", "tier": "freemium", "quota": "url_analyses_per_month", "description": "Analyze a URL for climate claims"},
-        {"domain": "URL Analysis", "method": "GET", "path": "/api/url-analysis/{id}", "auth": "optional", "tier": "freemium", "quota": None, "description": "Get analysis result"},
-
-        # -- Deep Search --
-        {"domain": "Deep Search", "method": "POST", "path": "/api/deep-search", "auth": "required", "tier": "basic", "quota": "deep_search", "description": "Synthesize research from internal corpus + external sources"},
-        {"domain": "Deep Search", "method": "GET", "path": "/api/deep-search/compare", "auth": "required", "tier": "pro", "quota": "comparative_analysis", "description": "Compare two climate research topics"},
-
-        # -- Map --
-        {"domain": "Map", "method": "GET", "path": "/api/map", "auth": "optional", "tier": "freemium", "quota": None, "description": "Interactive map data — article density, climate layers"},
-        {"domain": "Map", "method": "GET", "path": "/api/map/country/{cc}", "auth": "optional", "tier": "freemium", "quota": None, "description": "Country-specific climate intelligence"},
-
-        # -- Companies --
-        {"domain": "Companies", "method": "GET", "path": "/api/companies", "auth": "optional", "tier": "freemium", "quota": None, "description": "List tracked companies with climate disclosures"},
-        {"domain": "Companies", "method": "GET", "path": "/api/companies/{ticker}", "auth": "optional", "tier": "freemium", "quota": None, "description": "Single company climate profile"},
-        {"domain": "Companies", "method": "GET", "path": "/api/companies/compare", "auth": "optional", "tier": "basic", "quota": "comparative_analysis", "description": "Head-to-head climate comparison"},
-
-        # -- Chat / Agentic --
-        {"domain": "Chat", "method": "POST", "path": "/api/chat", "auth": "required", "tier": "freemium", "quota": "qa_per_article_per_day", "description": "Agentic chat — 22 skills, actions, and synthesis"},
-        {"domain": "Chat", "method": "GET", "path": "/api/skills", "auth": "none", "tier": "freemium", "quota": None, "description": "List all agentic skills registry"},
-
-        # -- Research --
-        {"domain": "Research", "method": "POST", "path": "/api/research/analyze", "auth": "required", "tier": "basic", "quota": "url_analyses_per_month", "description": "Analyze a research paper by URL/DOI"},
-        {"domain": "Research", "method": "POST", "path": "/api/research/upload", "auth": "required", "tier": "pro", "quota": "document_ingestion", "description": "Upload and analyze a PDF document"},
-
-        # -- Intelligence --
-        {"domain": "Intelligence", "method": "POST", "path": "/api/v2/intelligence/analyze-text", "auth": "required", "tier": "basic", "quota": "insights_extraction", "description": "Extract climate claims from raw text"},
-
-        # -- Country Passport --
-        {"domain": "Country", "method": "GET", "path": "/api/country/{cc}", "auth": "optional", "tier": "freemium", "quota": None, "description": "Country climate passport — indicators, projections, biomes"},
-
-        # -- Subscribe / User --
-        {"domain": "User", "method": "GET", "path": "/api/user/saved", "auth": "required", "tier": "freemium", "quota": "saved_articles", "description": "List saved items (articles, analyses, searches)"},
-        {"domain": "User", "method": "POST", "path": "/api/user/saved", "auth": "required", "tier": "freemium", "quota": "saved_articles", "description": "Save an item for later"},
-        {"domain": "User", "method": "GET", "path": "/api/subscription/current", "auth": "required", "tier": "freemium", "quota": None, "description": "Current subscription tier and status"},
-
-        # -- Export --
-        {"domain": "Export", "method": "POST", "path": "/api/export/article/{id}/pdf", "auth": "required", "tier": "pro", "quota": "export_formats", "description": "Export article as PDF"},
-        {"domain": "Export", "method": "POST", "path": "/api/export/search/csv", "auth": "required", "tier": "basic", "quota": "export_formats", "description": "Export search results as CSV"},
-
-        # -- Methodology (public) --
-        {"domain": "Methodology", "method": "GET", "path": "/api/methodology", "auth": "none", "tier": "freemium", "quota": None, "description": "Full methodology snapshot — prompts, formula, indicators"},
-        {"domain": "Methodology", "method": "GET", "path": "/api/methodology/endpoints", "auth": "none", "tier": "freemium", "quota": None, "description": "This catalogue — all API endpoints"},
-        {"domain": "Methodology", "method": "GET", "path": "/api/methodology/calibration", "auth": "none", "tier": "freemium", "quota": None, "description": "Live calibration metrics (Brier, ECE, Platt)"},
-        {"domain": "Methodology", "method": "GET", "path": "/api/methodology/self-audit", "auth": "none", "tier": "freemium", "quota": None, "description": "Live 5-axis composite self-audit score"},
-    ]
-
+    endpoints = _discover_endpoints(request.app)
     return {
         "endpoints": endpoints,
         "total": len(endpoints),
