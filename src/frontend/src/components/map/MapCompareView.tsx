@@ -57,6 +57,10 @@ const LAYER_METRIC: Record<
     label: "Warming outlook",
     note: "Projected temperature rise is shown on the map layer; side-by-side warming compare is coming next.",
   },
+  adaptation_gap: {
+    label: "Adaptation gap",
+    note: "Adaptation finance gap estimates are shown on the map layer; side-by-side gap compare is coming next.",
+  },
   biomes: {
     label: "Biomes & climate zones",
     note: "Köppen biome zones are shown on the map layer (they aren't a single comparable number).",

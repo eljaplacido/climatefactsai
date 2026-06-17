@@ -95,6 +95,8 @@ export interface CountryStatEntry {
   ndc_target_reduction_pct?: number;
   best_estimate_c?: number;
   warming_covered?: boolean;
+  adaptation_gap_score?: number;
+  nd_gain_index?: number;
 }
 
 interface InteractiveClimateMapProps {
@@ -199,11 +201,19 @@ function getLayerColor(
     case "warming_outlook": {
       const anomaly = stat.best_estimate_c ?? 0;
       if (!stat.warming_covered) return "#334155";
-      if (anomaly > 3.5) return "#dc2626";   // red-600
-      if (anomaly > 2.5) return "#f97316";   // orange-500
-      if (anomaly > 1.5) return "#fde047";   // yellow-300
-      if (anomaly > 0) return "#bfdbfe";     // blue-200
+      if (anomaly > 3.5) return "#dc2626";
+      if (anomaly > 2.5) return "#f97316";
+      if (anomaly > 1.5) return "#fde047";
+      if (anomaly > 0) return "#bfdbfe";
       return "#334155";
+    }
+    case "adaptation_gap": {
+      const gap = stat.adaptation_gap_score ?? 0;
+      if (gap >= 7) return "#b91c1c";  // red-700 — severe
+      if (gap >= 5) return "#f97316";  // orange-500 — high
+      if (gap >= 3) return "#f59e0b";  // amber-400 — moderate
+      if (gap > 0) return "#4ade80";   // green-400 — low
+      return "#334155";                // slate-700 — no data
     }
     default:
       return "#334155";

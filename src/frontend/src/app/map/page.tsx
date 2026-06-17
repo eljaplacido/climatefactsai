@@ -492,6 +492,48 @@ function MapPageInner() {
     fetchWarmingOutlook();
   }, [activeLayer, warmingHorizon, countryStats]);
 
+  // Fetch adaptation gap layer data when switching.
+  useEffect(() => {
+    if (activeLayer !== "adaptation_gap") return;
+    if (countryStats.some((s) => s.adaptation_gap_score != null)) return;
+
+    async function fetchAdaptationGap() {
+      try {
+        const res = await fetch(`${API_BASE}/api/map/layers/adaptation-finance-gap`);
+        if (!res.ok) return;
+        const data: {
+          country_code: string;
+          adaptation_gap_score?: number;
+          nd_gain_index?: number;
+        }[] = await res.json();
+        if (!data.length) return;
+
+        const gapMap = Object.fromEntries(data.map((d) => [d.country_code, d]));
+        setCountryStats((prev) => {
+          const merged = prev.map((s) => {
+            const g = gapMap[s.country_code];
+            if (!g) return s;
+            return { ...s, adaptation_gap_score: g.adaptation_gap_score, nd_gain_index: g.nd_gain_index };
+          });
+          const present = new Set(merged.map((s) => s.country_code));
+          for (const g of data) {
+            if (present.has(g.country_code)) continue;
+            merged.push({
+              country_code: g.country_code,
+              country_name: g.country_code,
+              article_count: 0,
+              top_topics: [],
+              adaptation_gap_score: g.adaptation_gap_score,
+              nd_gain_index: g.nd_gain_index,
+            });
+          }
+          return merged;
+        });
+      } catch { /* silent */ }
+    }
+    fetchAdaptationGap();
+  }, [activeLayer, countryStats]);
+
   // Handlers
   function handleCountryClick(cc: string) {
     setSelectedCountry(cc === selectedCountry ? null : cc);

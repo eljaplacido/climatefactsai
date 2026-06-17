@@ -9,6 +9,7 @@ import {
   Building2,
   Radio,
   Target,
+  ShieldOff,
   type LucideIcon,
 } from "lucide-react";
 
@@ -21,6 +22,7 @@ export type ActiveLayer =
   | "news_events"
   | "ndc_status"
   | "warming_outlook"
+  | "adaptation_gap"
   | "biomes";
 
 export type Persona = "consumer" | "professional" | "policymaker" | "researcher";
@@ -217,6 +219,28 @@ export const MAP_LAYERS: MapLayer[] = [
       { color: "bg-yellow-300", text: "+1.5 to +2.5°C" },
       { color: "bg-orange-500", text: "+2.5 to +3.5°C" },
       { color: "bg-red-600", text: "> +3.5°C" },
+    ],
+  },
+  {
+    id: "adaptation_gap",
+    label: "Adaptation Gap",
+    description: "Adaptation finance gap estimated from ND-GAIN country index",
+    icon: ShieldOff,
+    personas: ["policymaker", "researcher"],
+    dataEndpoint: "/api/map/layers/adaptation-finance-gap",
+    statKey: "adaptation_gap_score",
+    provenance: {
+      sourceName: "Notre Dame Global Adaptation Initiative (ND-GAIN)",
+      sourceUrl: "https://gain.nd.edu/our-work/country-index/",
+      methodologyVersion: "v1.0",
+      note: "Adaptation gap derived from inverted ND-GAIN index (0-100 → gap 0-10). This is a proxy, not actual finance-flow data. UNEP Adaptation Gap Report data (12-14× finance gap) is planned for Phase 3.",
+    },
+    legend: [
+      { color: "bg-red-700", text: "Severe" },
+      { color: "bg-orange-500", text: "High" },
+      { color: "bg-amber-400", text: "Moderate" },
+      { color: "bg-green-400", text: "Low" },
+      { color: "bg-slate-600", text: "No data" },
     ],
   },
   {

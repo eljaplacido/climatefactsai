@@ -300,7 +300,17 @@ class WarmingOutlookItem(BaseModel):
     ssp126_anomaly_c: Optional[float] = None
     ssp245_anomaly_c: Optional[float] = None
     ssp370_anomaly_c: Optional[float] = None
-    best_estimate_c: Optional[float] = None  # SSP2-4.5 (middle path)
+    best_estimate_c: Optional[float] = None
+    covered: bool = False
+
+
+class AdaptationGapItem(BaseModel):
+    """Per-country adaptation finance gap indicator for map layer."""
+    country_code: str
+    nd_gain_index: Optional[float] = None
+    vulnerability_score: Optional[float] = None
+    readiness_score: Optional[float] = None
+    adaptation_gap_score: Optional[float] = None
     covered: bool = False
 
 
@@ -2241,6 +2251,71 @@ async def get_warming_outlook_layer(
             best_estimate_c=float(best) if best is not None else None,
             covered=best is not None,
         ))
+
+    _cache_set(cache_key, payload)
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# 13. GET /layers/adaptation-finance-gap
+# ---------------------------------------------------------------------------
+
+@router.get("/layers/adaptation-finance-gap", response_model=List[AdaptationGapItem])
+async def get_adaptation_finance_gap_layer():
+    """Per-country adaptation finance gap estimate using ND-GAIN indicators.
+
+    Reads ND-GAIN index, vulnerability, and readiness from country_indicators.
+    The gap score combines low readiness + high vulnerability relative to the index.
+    """
+    cache_key = "layer:adaptation_gap"
+    cached = _cache_get(cache_key, ttl_seconds=21600)
+    if cached is not None:
+        return cached
+
+    db = get_postgres()
+    try:
+        rows = db.execute_query(
+            """
+            SELECT ci.country_code,
+                   MAX(CASE WHEN ci.indicator_id = 'nd_gain_index' THEN ci.value END) AS nd_gain,
+                   MAX(CASE WHEN ci.indicator_id = 'nd_gain_vulnerability' THEN ci.value END) AS vulnerability,
+                   MAX(CASE WHEN ci.indicator_id = 'nd_gain_readiness' THEN ci.value END) AS readiness
+            FROM country_indicators ci
+            WHERE ci.indicator_id IN ('nd_gain_index', 'nd_gain_vulnerability', 'nd_gain_readiness')
+            GROUP BY ci.country_code
+            """
+        )
+    except Exception as exc:
+        logger.error(f"Adaptation gap layer query failed: {exc}")
+        return []
+
+    # Count total countries for coverage note
+    try:
+        total = db.execute_query("SELECT count(*) as cnt FROM countries WHERE enabled = TRUE")[0]["cnt"]
+    except Exception:
+        total = 0
+
+    payload: List[AdaptationGapItem] = []
+    for r in (rows or []):
+        nd_gain = float(r["nd_gain"]) if r.get("nd_gain") is not None else None
+        vuln = float(r["vulnerability"]) if r.get("vulnerability") is not None else None
+        readiness = float(r["readiness"]) if r.get("readiness") is not None else None
+
+        gap_score = None
+        if nd_gain is not None:
+            gap_score = round(max(0.0, min(10.0, (100.0 - nd_gain) / 10.0)), 1)
+
+        payload.append(AdaptationGapItem(
+            country_code=r["country_code"],
+            nd_gain_index=nd_gain,
+            vulnerability_score=vuln,
+            readiness_score=readiness,
+            adaptation_gap_score=gap_score,
+            covered=nd_gain is not None,
+        ))
+
+    if total and int(total) > len(payload):
+        logger.info(f"adaptation-finance-gap covers {len(payload)} of {total} countries")
 
     _cache_set(cache_key, payload)
     return payload
