@@ -13,6 +13,7 @@ import {
   Menu,
   X,
   Crown,
+  Key,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth, ProtectedRoute } from "@/lib/auth";
@@ -25,6 +26,12 @@ const SIDEBAR_ITEMS = [
     href: "/dashboard/subscription",
     label: "Subscription",
     icon: CreditCard,
+    exact: false,
+  },
+  {
+    href: "/dashboard/settings",
+    label: "API Keys",
+    icon: Key,
     exact: false,
   },
   { href: "/dashboard/settings", label: "Settings", icon: Settings, exact: false },

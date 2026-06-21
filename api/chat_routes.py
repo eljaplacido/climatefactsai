@@ -1298,44 +1298,12 @@ except Exception:  # pragma: no cover - registry should always import
 def _parse_actions(answer: str) -> list[dict]:
     """Extract action suggestions from the LLM answer.
 
-    Looks for a JSON actions block after the last '---' separator.
-    Validates each action's type against the whitelist and caps at 3.
-    Returns empty list on parse failure.
+    Delegates to the centralized ``chat_actions.parse_actions()`` which
+    handles JSON parsing, validation against SKILLS_REGISTRY, capping at 5,
+    and error handling.
     """
-    if "---" not in answer:
-        return []
-    parts = answer.split("---")
-    if len(parts) < 2:
-        return []
-    json_candidate = parts[-1].strip()
-    try:
-        parsed = json.loads(json_candidate)
-    except json.JSONDecodeError:
-        return []
-    actions = parsed.get("actions", []) if isinstance(parsed, dict) else []
-    if not isinstance(actions, list):
-        return []
-    # 2026-05-28 (chat-as-heart step 1): bumped from :3 to :5 so the
-    # LLM can surface a broader set of next-step skills after we wired
-    # 7 new skills into chatActionDispatcher (KG explore, SDG drill-
-    # down, off-topic flag, golden promotion, etc.). FE renders the
-    # same cap.
-    validated = []
-    for a in actions[:5]:
-        if not isinstance(a, dict):
-            continue
-        atype = str(a.get("type", ""))
-        if atype not in VALID_ACTION_TYPES:
-            continue
-        params = a.get("params", {})
-        if not isinstance(params, dict):
-            params = {}
-        validated.append({
-            "type": atype,
-            "params": params,
-            "label": str(a.get("label", atype))[:128],
-        })
-    return validated
+    from app.domains.intelligence.chat_actions import parse_actions
+    return parse_actions(answer)
 
 
 @router.post("/actions/click")

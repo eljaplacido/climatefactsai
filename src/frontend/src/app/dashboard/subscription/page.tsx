@@ -136,7 +136,7 @@ export default function SubscriptionPage() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ tier: planId }),
+        body: JSON.stringify({ new_tier: planId }),
       });
       if (resp.ok) {
         const data = await resp.json();

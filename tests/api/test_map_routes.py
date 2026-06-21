@@ -174,6 +174,60 @@ def _make_country_db(*, countries: Optional[List[Dict[str, Any]]] = None):
             }]
         if "join claims c on c.article_id = a.article_id" in q and "claim_cnt" in q:
             return [{"country_code": "FI", "claim_cnt": 4, "risky_cnt": 1}]
+        if "select distinct country_code from articles" in q:
+            return [{"country_code": "FI"}, {"country_code": "SE"}]
+        if (
+            "ssp126" in q and "ssp245" in q and "ssp370" in q
+            and "from countries cc" in q and "left join country_projections cp" in q
+        ):
+            return [{"country_code": "FI", "ssp126": 1.5, "ssp245": 2.8, "ssp370": 4.2}]
+        if (
+            "ndc_target_year" in q and "ndc_target_reduction" in q
+            and "from countries cc" in q and "left join country_indicators ci" in q
+        ):
+            return [{
+                "country_code": "FI",
+                "ndc_target_year": 2035,
+                "ndc_target_reduction_pct": 60.0,
+                "cat_overall_rating": 55.0,
+            }]
+        if (
+            "nd_gain_index" in q and "nd_gain_vulnerability" in q and "nd_gain_readiness" in q
+            and "from country_indicators ci" in q
+        ):
+            return [{
+                "country_code": "FI",
+                "nd_gain": 65.0,
+                "vulnerability": 40.0,
+                "readiness": 55.0,
+            }]
+        if "select count(*) as cnt" in q and "from countries" in q and "enabled = true" in q:
+            return [{"cnt": 2}]
+        if "from country_projections" in q and "where country_code = :cc" in q:
+            if cc != "FI":
+                return []
+            return [
+                {
+                    "scenario": "SSP1-2.6", "horizon_year": 2030, "temp_anomaly_c": 1.2,
+                    "methodology_version": "AR6-v1", "citation_url": "https://ipcc.ch/ar6",
+                },
+                {
+                    "scenario": "SSP1-2.6", "horizon_year": 2050, "temp_anomaly_c": 1.8,
+                    "methodology_version": "AR6-v1", "citation_url": "https://ipcc.ch/ar6",
+                },
+                {
+                    "scenario": "SSP2-4.5", "horizon_year": 2030, "temp_anomaly_c": 1.8,
+                    "methodology_version": "AR6-v1", "citation_url": "https://ipcc.ch/ar6",
+                },
+                {
+                    "scenario": "SSP2-4.5", "horizon_year": 2050, "temp_anomaly_c": 2.8,
+                    "methodology_version": "AR6-v1", "citation_url": "https://ipcc.ch/ar6",
+                },
+                {
+                    "scenario": "SSP3-7.0", "horizon_year": 2050, "temp_anomaly_c": 4.2,
+                    "methodology_version": "AR6-v1", "citation_url": "https://ipcc.ch/ar6",
+                },
+            ]
         return []
 
     db = MagicMock()
@@ -548,3 +602,200 @@ class TestMapQueryViewContext:
         assert resp.status_code == 200
         applied = resp.json()["filters_applied"]
         assert set(applied.get("countries") or []) == {"FI", "SE", "NO"}
+
+
+# ---------------------------------------------------------------------------
+# GET /api/map/layers/temperature-anomaly
+# ---------------------------------------------------------------------------
+
+class TestTemperatureAnomalyLayer:
+    def test_layer_returns_data_shape(self, client, map_db, monkeypatch):
+        from api import map_routes
+        from api.map import routes_layers as map_layers
+
+        map_routes._cache.clear()
+        monkeypatch.setattr(
+            map_layers, "_fetch_current_weather",
+            AsyncMock(return_value={
+                "temperature_c": 5.0, "precipitation_mm": 0.0,
+            }),
+        )
+        monkeypatch.setattr(
+            map_layers, "_fetch_historical_weather",
+            AsyncMock(return_value={"temperature_avg": 4.0, "precipitation_avg": 30.0}),
+        )
+
+        resp = client.get("/api/map/layers/temperature-anomaly")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        first = data[0]
+        assert first["country_code"] == "FI"
+        assert "anomaly_celsius" in first
+        assert "trend" in first
+        assert "current_temp" in first
+        assert "historical_avg" in first
+
+
+# ---------------------------------------------------------------------------
+# GET /api/map/layers/ndc-status
+# ---------------------------------------------------------------------------
+
+class TestNdcStatusLayer:
+    def test_layer_returns_status_categories(self, client, map_db):
+        from api import map_routes
+
+        map_routes._cache.clear()
+        resp = client.get("/api/map/layers/ndc-status")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        first = data[0]
+        assert first["country_code"] == "FI"
+        assert "status_category" in first
+        assert first["status_category"] in ("net_zero", "strong", "moderate", "weak", "no_data")
+        assert "ndc_target_year" in first
+        assert "ndc_target_reduction_pct" in first
+        assert "cat_overall_rating" in first
+
+
+# ---------------------------------------------------------------------------
+# GET /api/map/layers/warming-outlook
+# ---------------------------------------------------------------------------
+
+class TestWarmingOutlookLayer:
+    def test_layer_returns_scenario_anomalies(self, client, map_db):
+        from api import map_routes
+
+        map_routes._cache.clear()
+        resp = client.get("/api/map/layers/warming-outlook")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        first = data[0]
+        assert first["country_code"] == "FI"
+        assert "ssp126_anomaly_c" in first
+        assert "ssp245_anomaly_c" in first
+        assert "ssp370_anomaly_c" in first
+        assert "best_estimate_c" in first
+        assert "covered" in first
+
+    def test_layer_with_custom_horizon(self, client, map_db):
+        from api import map_routes
+
+        map_routes._cache.clear()
+        resp = client.get("/api/map/layers/warming-outlook?horizon_year=2030")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert len(data) >= 1
+        assert data[0]["country_code"] == "FI"
+
+
+# ---------------------------------------------------------------------------
+# GET /api/map/layers/adaptation-finance-gap
+# ---------------------------------------------------------------------------
+
+class TestAdaptationGapLayer:
+    def test_layer_returns_gap_scores(self, client, map_db):
+        from api import map_routes
+
+        map_routes._cache.clear()
+        resp = client.get("/api/map/layers/adaptation-finance-gap")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        first = data[0]
+        assert first["country_code"] == "FI"
+        assert "adaptation_gap_score" in first
+        assert "nd_gain_index" in first
+        assert "vulnerability_score" in first
+        assert "readiness_score" in first
+        assert "covered" in first
+
+
+# ---------------------------------------------------------------------------
+# GET /api/map/biome-overview
+# ---------------------------------------------------------------------------
+
+class TestBiomeOverview:
+    def test_overview_returns_biomes_with_taxonomy(self, client):
+        resp = client.get("/api/map/biome-overview")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert "countries" in data
+        assert "biome_taxonomy" in data
+        assert "koppen_taxonomy" in data
+        assert "total_countries" in data
+        assert isinstance(data["countries"], list)
+        assert len(data["countries"]) >= 1
+        first = data["countries"][0]
+        assert "country_code" in first
+        assert "biome_id" in first
+        assert "biome_label" in first
+        assert "koppen_id" in first
+        assert "koppen_color" in first
+
+
+# ---------------------------------------------------------------------------
+# GET /api/map/country/{cc}/biome
+# ---------------------------------------------------------------------------
+
+class TestCountryBiome:
+    def test_returns_biome_for_finland(self, client):
+        resp = client.get("/api/map/country/FI/biome")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["country_code"] == "FI"
+        assert "biome_summary" in data
+        assert "climate_effects" in data
+        assert "biome_symbol" in data
+        symbol = data["biome_symbol"]
+        assert "biome_id" in symbol
+        assert "biome_label" in symbol
+        assert "koppen_id" in symbol
+        assert "koppen_color" in symbol
+
+    def test_invalid_country_code_rejected(self, client):
+        resp = client.get("/api/map/country/FIN/biome")
+        assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# GET /api/map/country/{cc}/projections
+# ---------------------------------------------------------------------------
+
+class TestCountryProjections:
+    def test_returns_scenario_projections(self, client, map_db):
+        resp = client.get("/api/map/country/FI/projections")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["country_code"] == "FI"
+        assert "scenarios" in data
+        assert "available" in data
+        assert data["available"] is True
+        scenarios = data["scenarios"]
+        assert isinstance(scenarios, dict)
+        assert len(scenarios) >= 1
+        # each scenario key maps to a list of {horizon_year, temp_anomaly_c}
+        ssp126 = scenarios.get("SSP1-2.6")
+        assert ssp126 is not None
+        assert isinstance(ssp126, list)
+        assert len(ssp126) >= 1
+        assert "horizon_year" in ssp126[0]
+        assert "temp_anomaly_c" in ssp126[0]
+
+    def test_unknown_country_returns_empty_scenarios(self, client, map_db):
+        resp = client.get("/api/map/country/XX/projections")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["country_code"] == "XX"
+        assert data["available"] is False
+        assert data["scenarios"] == {}
+
+    def test_invalid_code_rejected(self, client):
+        resp = client.get("/api/map/country/FIN/projections")
+        assert resp.status_code == 400

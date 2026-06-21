@@ -324,6 +324,11 @@ ensure_scheduler_job "cn-sbti-sync"          "/api/companies/admin/sync/sbti?wai
 # 180s gcloud default. Daily at 07:00 UTC, after the overnight backfills settle.
 ensure_scheduler_job "cn-source-health"      "/api/admin/scheduler/source-health?wait=true"   "0 7 * * *"    "Daily RSS feed-liveness canary + auto-disable dead feeds (seq-9)" "1800s"
 
+# 2026-06-21 (audit): indicators and feed-registry sync were never
+# wired as scheduler jobs so the endpoints never fired in production.
+ensure_scheduler_job "cn-indicators-sync"   "/api/scheduler/indicators/sync"              "30 4 * * *"   "Daily indicators sync at 04:30 UTC"
+ensure_scheduler_job "cn-feed-registry-sync" "/api/admin/scheduler/sync-feed-registry"    "0 6 * * *"    "Daily feed registry sync at 06:00 UTC"
+
 # ---------------------------------------------------------------------------
 # 8. Grant Cloud Scheduler permission to invoke Cloud Run
 # ---------------------------------------------------------------------------

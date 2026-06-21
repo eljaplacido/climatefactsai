@@ -22,7 +22,7 @@ TIER_LIMITS = {
     "freemium": {
         "articles_per_day": 10,
         "url_analyses_per_month": 0,
-        "api_calls_per_day": 0,
+        "api_calls_per_day": 1000,
         "searches_per_day": 10,
         "discovery_queries_per_day": 1,
         "countries_limit": 3,
@@ -50,7 +50,7 @@ TIER_LIMITS = {
     "professional": {
         "articles_per_day": None,  # Unlimited
         "url_analyses_per_month": None,  # Unlimited
-        "api_calls_per_day": 1000,
+        "api_calls_per_day": 10000,
         "searches_per_day": 50,
         "discovery_queries_per_day": 10,
         "countries_limit": 10,

@@ -43,7 +43,7 @@ from api.map.services import (
     _llm_parse_query,
     _llm_generate_map_answer,
 )
-from api.map.cache import _cache_get, _cache_set, _query_sessions
+from api.map.cache import _cache, _cache_get, _cache_set, _query_sessions
 
 __all__ = [
     "router",

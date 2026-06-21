@@ -337,7 +337,7 @@ steps:
       - "--update-env-vars=HOSTNAME=0.0.0.0"
       - "--memory=256Mi"
       - "--cpu=1"
-      - "--concurrency=100"
+      - "--concurrency=60"
       - "--max-instances=3"
       - "--min-instances=0"
       - "--timeout=60"
