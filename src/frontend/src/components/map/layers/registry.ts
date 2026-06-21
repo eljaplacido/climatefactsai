@@ -54,6 +54,8 @@ export interface MapLayer {
     methodologyVersion?: string;
     datasetYear?: string;
     uncertainty?: string;
+    methodologyNote?: string;
+    uncertaintyNote?: string;
     note?: string;
   };
 }
@@ -129,6 +131,12 @@ export const MAP_LAYERS: MapLayer[] = [
     icon: Network,
     personas: ["consumer", "professional", "researcher"],
     statKey: "source_count",
+    provenance: {
+      sourceName: "Climatefacts.ai Corpus",
+      sourceUrl: "/methodology#source-tiers",
+      methodologyNote: "Source diversity is measured as the count of distinct sources with articles about each country, relative to the global maximum.",
+      uncertaintyNote: "Sources are counted by name; syndication and republishing across outlets may inflate counts for widely-carried stories.",
+    },
     legend: [
       { color: "bg-violet-100", text: "1-2" },
       { color: "bg-violet-300", text: "3-5" },
@@ -173,7 +181,7 @@ export const MAP_LAYERS: MapLayer[] = [
     },
     legend: [
       { color: "bg-amber-200", text: "Low" },
-      { color: "bg-amber-400", text: "Medium" },
+      { color: "bg-amber-500", text: "Medium" },
       { color: "bg-orange-500", text: "High" },
       { color: "bg-red-600", text: "Very High" },
     ],
@@ -251,6 +259,12 @@ export const MAP_LAYERS: MapLayer[] = [
     personas: ["consumer", "researcher"],
     dataEndpoint: "/api/map/biome-overview",
     statKey: "biome_zone",
+    provenance: {
+      sourceName: "Köppen-Geiger Climate Classification",
+      sourceUrl: "https://www.nature.com/articles/sdata2018214",
+      methodologyNote: "Biome categories mapped from the Köppen-Geiger climate classification at 1 km resolution (Beck et al. 2018). Emoji symbols are a visual shorthand for non-expert audiences.",
+      uncertaintyNote: "Köppen zones are long-term climate averages (1980-2016 baseline). Short-term weather events are not reflected.",
+    },
     legend: [
       { color: "bg-[#E76F51]", text: "Tropical" },
       { color: "bg-[#F4A261]", text: "Arid" },

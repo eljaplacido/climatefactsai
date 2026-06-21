@@ -22,7 +22,8 @@ from pydantic import BaseModel, Field
 
 from shared.database import get_postgres
 from shared.logger import setup_logging
-from api.auth_routes import get_current_user, get_optional_user
+from api.auth_routes import get_current_user
+from api.quota_service import QuotaService
 from api.rate_limiter import check_premium_feature
 
 logger = setup_logging("research")
@@ -163,13 +164,26 @@ async def get_research_analysis(analysis_id: str):
 @router.post("/analyze")
 async def analyze_research_report(
     request: ResearchAnalysisRequest,
-    current_user: dict = Depends(get_optional_user),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Submit a research report for analysis.
     Accepts one of: URL, DOI, or raw text.
     Returns comprehensive analysis with credibility scoring.
     """
+    if not check_premium_feature(current_user.get("tier"), "url_analysis"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "premium_feature_required",
+                "feature": "url_analysis",
+                "current_tier": current_user.get("subscription_tier", "freemium"),
+                "required_tier": "standard",
+                "upgrade_url": "/dashboard/subscription",
+                "message": "URL analysis requires a Standard subscription or higher.",
+            },
+        )
+
     if not request.url and not request.doi and not request.text:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -180,7 +194,7 @@ async def analyze_research_report(
         from app.domains.intelligence.research_report_service import ResearchReportService
 
         service = ResearchReportService()
-        user_id = str(current_user["user_id"]) if current_user else None
+        user_id = str(current_user["user_id"])
 
         result = await service.analyze_report(
             url=request.url,
@@ -323,6 +337,19 @@ async def weather_enrich_article(
     Enrich an article's credibility score with weather verification.
     Cross-references article claims with actual meteorological data.
     """
+    if not check_premium_feature(current_user.get("tier"), "weather_context"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "premium_feature_required",
+                "feature": "weather_context",
+                "current_tier": current_user.get("subscription_tier", "freemium"),
+                "required_tier": "standard",
+                "upgrade_url": "/dashboard/subscription",
+                "message": "Weather-enriched scoring requires a Standard subscription or higher.",
+            },
+        )
+
     try:
         from app.domains.intelligence.weather_enriched_scoring import WeatherEnrichedScorer
 

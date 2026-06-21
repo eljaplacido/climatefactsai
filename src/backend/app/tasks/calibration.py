@@ -6,7 +6,7 @@ without operator intervention. The Cloud Scheduler HTTP endpoint
 (`POST /api/methodology/calibration/refit?signal=...`) remains the
 manual override; this task is the unattended automation.
 
-Failure mode: if one signal lacks enough labels (default 5), the
+Failure mode: if one signal lacks enough labels (default 50), the
 refit returns `insufficient_data` and the task moves on. A real
 exception in any single signal does NOT abort the rest — each signal
 is wrapped in its own try/except so a transient DB blip on one
@@ -39,7 +39,7 @@ def _supported_signals() -> List[str]:
     max_retries=2,
     default_retry_delay=600,    # 10 min
 )
-def nightly_calibration_refit(self, min_labels: int = 5) -> Dict[str, Any]:
+def nightly_calibration_refit(self, min_labels: int = 50) -> Dict[str, Any]:
     """Refit every supported calibration signal once.
 
     Returns a summary dict per signal so Celery flower / logs can
@@ -51,9 +51,9 @@ def nightly_calibration_refit(self, min_labels: int = 5) -> Dict[str, Any]:
     same fit). Multiple runs per day are safe but wasteful.
 
     `min_labels` is the floor for triggering a refit on a given signal;
-    lower than 5 risks unstable Platt parameters. Override on the call
-    site if a deployment has very few labels and wants a placeholder
-    fit to show "any calibration at all".
+    defaults to 50 (consistent with STABLE_FIT_MIN in calibration_store).
+    Override on the call site if a deployment has very few labels and
+    wants a placeholder fit to show "any calibration at all".
     """
     from shared.database import get_postgres
     from app.domains.intelligence.calibration_store import refit_and_persist

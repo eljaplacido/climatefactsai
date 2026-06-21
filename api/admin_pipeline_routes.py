@@ -24,6 +24,7 @@ if str(SRC_BACKEND) not in sys.path:
 from shared.database import get_postgres
 from shared.logger import setup_logging
 from app.domains.intelligence.services import ClaimExtractor, VerdictAdjudicator, EvidenceRetriever
+from app.domains.intelligence.multi_llm_verifier import verify_claims
 from api.auth_routes import get_current_user
 
 logger = setup_logging("admin-pipeline")
@@ -180,49 +181,78 @@ async def verify_claims_for_article(article_id: str) -> tuple[int, Optional[str]
         adjudicator = VerdictAdjudicator()
         retriever = EvidenceRetriever()
         verified_count = 0
+        results = []
 
         for claim in claims:
             try:
-                # Create AtomicClaim object
                 from app.domains.intelligence.schemas import AtomicClaim
                 atomic_claim = AtomicClaim(
                     claim_text=claim["claim_text"],
                     claim_type=claim.get("claim_type", "factual"),
                     claim_context=claim.get("claim_context", "") or None
-                    # importance_score defaults to 1.0
                 )
 
-                # Retrieve evidence
                 evidence = await retriever.fetch_evidence(atomic_claim)
-
-                # Adjudicate verdict
                 verdict = await adjudicator.adjudicate(atomic_claim, evidence)
 
-                # Store fact-check result
-                import json
-                evidence_json = json.dumps([])
-                db.execute_update(
-                    """
-                    INSERT INTO fact_checks (
-                        claim_id, verification_status, confidence_score,
-                        justification, evidence, verified_at
-                    ) VALUES (
-                        :claim_id, :status, :confidence,
-                        :justification, CAST(:evidence AS jsonb), NOW()
-                    )
-                    """,
-                    {
-                        "claim_id": claim["claim_id"],
-                        "status": verdict.verdict,
-                        "confidence": verdict.confidence_score,
-                        "justification": verdict.justification,
-                        "evidence": evidence_json
-                    }
-                )
-                verified_count += 1
+                results.append({
+                    "claim_id": claim["claim_id"],
+                    "claim_text": claim["claim_text"],
+                    "status": verdict.verdict,
+                    "confidence": verdict.confidence_score,
+                    "justification": verdict.justification,
+                })
 
             except Exception as e:
                 logger.error(f"Error verifying claim {claim['claim_id']}: {e}")
+
+        if os.getenv("CLILENS_MULTI_LLM_VERIFY", "0") == "1":
+            try:
+                extractor = ClaimExtractor()
+                article = db.execute_query(
+                    "SELECT extracted_text, body FROM articles WHERE article_id = :id",
+                    {"id": article_id}
+                )
+                article_text = ""
+                if article:
+                    article_text = article[0].get("extracted_text") or article[0].get("body") or ""
+                verified = await verify_claims(
+                    primary_extractor=extractor.extract_claims_from_text,
+                    secondary_extractor=extractor.extract_claims_from_text,
+                    article_text=article_text,
+                    similarity_threshold=0.5,
+                )
+                verified_map = {v["claim_text"]: v for v in verified.get("verified_claims", [])}
+                for res in results:
+                    text = res.get("claim_text", "")
+                    if text in verified_map:
+                        vc = verified_map[text]
+                        if vc.get("corroborated"):
+                            res["confidence"] = vc.get("confidence", res["confidence"])
+            except Exception as e:
+                logger.warning(f"Multi-LLM verify skipped for article {article_id}: {e}")
+
+        import json
+        for res in results:
+            db.execute_update(
+                """
+                INSERT INTO fact_checks (
+                    claim_id, verification_status, confidence_score,
+                    justification, evidence, verified_at
+                ) VALUES (
+                    :claim_id, :status, :confidence,
+                    :justification, CAST(:evidence AS jsonb), NOW()
+                )
+                """,
+                {
+                    "claim_id": res["claim_id"],
+                    "status": res["status"],
+                    "confidence": res["confidence"],
+                    "justification": res["justification"],
+                    "evidence": json.dumps([])
+                }
+            )
+            verified_count += 1
 
         # Update article verified claims count
         db.execute_update(

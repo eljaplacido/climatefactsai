@@ -31,6 +31,7 @@ from firing.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
@@ -186,7 +187,7 @@ def _format_alert_email_html(sub: dict, observed: float) -> str:
       - a link to the country passport for context
       - an unsubscribe / manage-alerts link
     """
-    frontend = "https://climatefacts.ai"  # TODO: read from FRONTEND_URL env at call site
+    frontend = os.getenv("FRONTEND_URL", "https://climatefacts.ai")
     label = sub.get("label") or f"{sub['country_code']} {sub['variable']}"
     comparison_word = {
         "gt": "exceeded",

@@ -112,6 +112,7 @@ async def update_feed_preferences(
         "standard": "daily",
         "basic": "daily",  # alias for standard
         "professional": "daily",
+        "enterprise": "realtime",
     }
     update_freq = frequency_map.get(tier, "daily")
 
