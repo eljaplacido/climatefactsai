@@ -177,11 +177,18 @@ async def discover_news(request_body: DiscoverNewsRequest, request: Request) -> 
     task_id = f"discover-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:8]}"
 
     # Enforce discovery query limits if user is authenticated
-    from api.rate_limiter import UsageTracker
+    from api.rate_limiter import UsageTracker, RateLimitMiddleware
 
-    # Get user from request context (if available via auth header)
-    user_tier = "freemium"  # Default for unauthenticated
-    user_id = f"anon-{request.client.host if hasattr(request, 'client') and request.client else 'unknown'}"
+    # Resolve the authenticated user from the bearer token so the real
+    # tier drives discovery limits. Previously every caller was treated as
+    # freemium, making tier-aware limits dead code.
+    user = RateLimitMiddleware._resolve_user_from_token(request)
+    if user:
+        user_tier = user.get("subscription_tier", "freemium")
+        user_id = str(user.get("user_id"))
+    else:
+        user_tier = "freemium"
+        user_id = f"anon-{request.client.host if hasattr(request, 'client') and request.client else 'unknown'}"
 
     # Check discovery limit
     allowed, used, limit = UsageTracker.check_discovery_limit(user_id, user_tier)

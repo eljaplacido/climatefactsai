@@ -37,6 +37,8 @@ import os
 import signal
 import sys
 import time
+import urllib.parse
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -52,6 +54,25 @@ os.environ.setdefault("CLILENS_LOCAL_GX10_API_KEY", "ollama")
 os.environ.setdefault("CLILENS_LOCAL_GX10_MODEL", "qwen2.5:7b-instruct")
 
 from shared.database import get_postgres
+
+
+def send_telegram(message: str) -> None:
+    """Send a brief notification to the Climatefacts bot."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+    if not token or not chat_id:
+        return
+    try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = urllib.parse.urlencode({
+            "chat_id": chat_id,
+            "text": message[:4000],
+            "parse_mode": "Markdown",
+        }).encode()
+        urllib.request.urlopen(url, data=data, timeout=10)
+    except Exception:
+        pass  # Never let notifications break the worker
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -506,6 +527,12 @@ async def main() -> int:
                     validated["editorial_score"],
                     validated["factcheck_score"],
                     validated["transparency_score"],
+                )
+                send_telegram(
+                    f"🏛️ Scored source {source_name} "
+                    f"(E:{validated['editorial_score']}/"
+                    f"F:{validated['factcheck_score']}/"
+                    f"T:{validated['transparency_score']})"
                 )
             except Exception as exc:
                 breaker[source_name] = fail_count + 1

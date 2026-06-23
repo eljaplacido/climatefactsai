@@ -163,20 +163,20 @@ export default function ResearchPage() {
   }
 
   const sc = (s: number) =>
-    s >= 80 ? "text-green-600" : s >= 60 ? "text-yellow-600" : s >= 40 ? "text-orange-500" : "text-red-600";
+    s >= 80 ? "text-green-600 dark:text-emerald-400" : s >= 60 ? "text-yellow-600" : s >= 40 ? "text-orange-500 dark:text-orange-400" : "text-red-600 dark:text-red-400";
   const sb = (s: number) =>
     s >= 80 ? "bg-green-100" : s >= 60 ? "bg-yellow-100" : s >= 40 ? "bg-orange-100" : "bg-red-100";
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
+      <header className="bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
         <div className="max-w-5xl mx-auto px-4 py-4">
           <div className="flex items-center gap-4 flex-wrap">
-            <Link href="/" className="text-gray-500 hover:text-gray-700">
+            <Link href="/" className="text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 dark:text-slate-300">
               <ArrowLeft className="h-5 w-5" />
             </Link>
-            <BookOpen className="h-5 w-5 text-teal-600" />
-            <h1 className="text-xl font-bold text-gray-900">Research Feed</h1>
+            <BookOpen className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+            <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100">Research Feed</h1>
             {/* chat-as-heart (2026-05-28) — research-page chip.
                 Pre-fills with the page's purpose so the LLM can
                 suggest subscribe_research_topic skill or steer to
@@ -192,13 +192,13 @@ export default function ResearchPage() {
                   }),
                 );
               }}
-              className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full bg-clilens-teal-50 hover:bg-clilens-teal-100 text-clilens-teal-700 border border-clilens-teal-200"
+              className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full bg-clilens-teal-50 dark:bg-teal-900/30 hover:bg-clilens-teal-100 dark:hover:bg-teal-900/50 text-clilens-teal-700 dark:text-teal-300 border border-clilens-teal-200 dark:border-teal-800"
               data-testid="research-ask-assistant"
             >
               Ask the assistant
             </button>
           </div>
-          <p className="mt-2 text-sm text-gray-500 ml-9">
+          <p className="mt-2 text-sm text-gray-500 dark:text-slate-400 ml-9">
             Peer-reviewed climate research delivered daily via CrossRef — plus on-demand analysis of any paper, report, or PDF.
           </p>
         </div>
@@ -214,7 +214,7 @@ export default function ResearchPage() {
             queryable separately from news url_analyses. */}
 
         {/* 1 — Default topics browser: PRIMARY surface */}
-        <section className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+        <section className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 shadow-sm">
           <DefaultTopicsBrowser
             onSubscribed={() => setFeedRefreshKey((k) => k + 1)}
           />
@@ -226,34 +226,34 @@ export default function ResearchPage() {
         </section>
 
         {/* 3 — Analyze a specific document (collapsible secondary) */}
-        <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <section className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
           <button
             type="button"
             onClick={() => setAnalyzeOpen((o) => !o)}
-            className="w-full flex items-center justify-between p-5 hover:bg-gray-50 transition-colors text-left"
+            className="w-full flex items-center justify-between p-5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors text-left"
             aria-expanded={analyzeOpen}
           >
             <div className="flex items-center gap-2.5">
-              <BarChart3 className="h-5 w-5 text-teal-600" />
+              <BarChart3 className="h-5 w-5 text-teal-600 dark:text-teal-400" />
               <div>
-                <h2 className="text-base font-semibold text-gray-900">
+                <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">
                   Analyze a specific paper or report
                 </h2>
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
                   Drop a URL, DOI, paste text, or upload a PDF / Word document for full
                   credibility + methodology analysis.
                 </p>
               </div>
             </div>
             {analyzeOpen ? (
-              <ChevronUp className="h-5 w-5 text-gray-400" />
+              <ChevronUp className="h-5 w-5 text-gray-400 dark:text-slate-500" />
             ) : (
-              <ChevronDown className="h-5 w-5 text-gray-400" />
+              <ChevronDown className="h-5 w-5 text-gray-400 dark:text-slate-500" />
             )}
           </button>
 
           {analyzeOpen && (
-            <div className="p-6 pt-0 border-t border-gray-100">
+            <div className="p-6 pt-0 border-t border-gray-100 dark:border-slate-800">
               <div className="flex flex-wrap gap-2 my-4">
                 {(["url", "doi", "text", "upload"] as const).map((m) => (
                   <button
@@ -263,7 +263,7 @@ export default function ResearchPage() {
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                       inputMode === m
                         ? "bg-teal-600 text-white"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        : "bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-600"
                     }`}
                   >
                     {m === "url" && (
@@ -296,7 +296,7 @@ export default function ResearchPage() {
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="https://example.com/report.pdf"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
                 />
               )}
               {inputMode === "doi" && (
@@ -305,7 +305,7 @@ export default function ResearchPage() {
                   value={doi}
                   onChange={(e) => setDoi(e.target.value)}
                   placeholder="10.1038/s41586-021-03984-4"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
                 />
               )}
               {inputMode === "text" && (
@@ -314,7 +314,7 @@ export default function ResearchPage() {
                   onChange={(e) => setText(e.target.value)}
                   placeholder="Paste the research report text here..."
                   rows={8}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none resize-y"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none resize-y"
                 />
               )}
               {inputMode === "upload" && (
@@ -323,15 +323,15 @@ export default function ResearchPage() {
                     type="file"
                     accept=".pdf,.docx,.doc,.txt,.md,.html"
                     onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg text-sm file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:bg-teal-50 file:text-teal-700 dark:text-teal-300 hover:file:bg-teal-100"
                   />
                   {uploadFile && (
-                    <p className="text-xs text-gray-600">
+                    <p className="text-xs text-gray-600 dark:text-slate-400">
                       Selected: {uploadFile.name} ({(uploadFile.size / 1024).toFixed(1)} KB)
                     </p>
                   )}
                   {!hasAuthToken() && (
-                    <div className="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
+                    <div className="flex items-start gap-2 p-2.5 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded text-xs text-amber-800 dark:text-amber-300">
                       <LogIn className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
                       <span>
                         File upload requires sign-in (Standard+ tier).{" "}
@@ -342,7 +342,7 @@ export default function ResearchPage() {
                       </span>
                     </div>
                   )}
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-500 dark:text-slate-400">
                     Up to 25 MiB. PDF, Word (.docx/.doc), TXT, Markdown, HTML.
                     Sustainability reports + theses + working papers all welcome.
                   </p>
@@ -350,7 +350,7 @@ export default function ResearchPage() {
               )}
 
               {error && (
-                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-start gap-2">
+                <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-300 flex items-start gap-2">
                   <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
                   <span>{error}</span>
                 </div>
@@ -381,7 +381,7 @@ export default function ResearchPage() {
                       "Help me choose the best analysis mode (URL / DOI / text) and explain what evidence quality signals I should look for.",
                     )
                   }
-                  className="text-xs text-teal-700 hover:text-teal-900 flex items-center gap-1.5"
+                  className="text-xs text-teal-700 dark:text-teal-300 hover:text-teal-900 dark:hover:text-teal-300 flex items-center gap-1.5"
                 >
                   <MessageCircle className="h-3.5 w-3.5" />
                   Get help with analysis inputs
@@ -393,21 +393,21 @@ export default function ResearchPage() {
 
         {result && result.status === "completed" && (
           <div className="space-y-6">
-            <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-gray-900 mb-3">
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100 mb-3">
                 {result.document.title || "Untitled Document"}
               </h2>
-              <div className="flex flex-wrap gap-3 text-sm text-gray-500">
+              <div className="flex flex-wrap gap-3 text-sm text-gray-500 dark:text-slate-400">
                 {result.document.authors.length > 0 && (
                   <span>{result.document.authors.slice(0, 3).join(", ")}</span>
                 )}
                 {result.document.venue && (
-                  <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded">
+                  <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded">
                     {result.document.venue}
                   </span>
                 )}
                 {result.document.doi && (
-                  <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded">
+                  <span className="px-2 py-0.5 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded">
                     DOI: {result.document.doi}
                   </span>
                 )}
@@ -427,50 +427,50 @@ export default function ResearchPage() {
                 { label: "Data Transparency", value: result.analysis.data_transparency_score },
               ].map((item) => (
                 <div key={item.label} className={`rounded-xl p-5 ${sb(item.value)}`}>
-                  <p className="text-xs font-medium text-gray-500 uppercase mb-1">{item.label}</p>
+                  <p className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase mb-1">{item.label}</p>
                   <p className={`text-3xl font-bold ${sc(item.value)}`}>{item.value}</p>
-                  {item.sub && <p className="text-xs text-gray-500 mt-1">{item.sub}</p>}
+                  {item.sub && <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">{item.sub}</p>}
                 </div>
               ))}
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                <Activity className="h-4 w-4 text-teal-600" />
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-5 shadow-sm">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-3 flex items-center gap-2">
+                <Activity className="h-4 w-4 text-teal-600 dark:text-teal-400" />
                 Scientific Rigor Indicators
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-center">
-                <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
-                  <p className="text-lg font-bold text-gray-900">
+                <div className="bg-gray-50 dark:bg-slate-800 rounded-lg p-3 border border-gray-100 dark:border-slate-800">
+                  <p className="text-lg font-bold text-gray-900 dark:text-slate-100">
                     {result.document.reference_count ?? 0}
                   </p>
-                  <p className="text-[11px] text-gray-500">References detected</p>
+                  <p className="text-[11px] text-gray-500 dark:text-slate-400">References detected</p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                <div className="bg-gray-50 dark:bg-slate-800 rounded-lg p-3 border border-gray-100 dark:border-slate-800">
                   <p
                     className={`text-lg font-bold ${
-                      result.analysis.methodology_detected ? "text-green-600" : "text-gray-500"
+                      result.analysis.methodology_detected ? "text-green-600 dark:text-emerald-400" : "text-gray-500 dark:text-slate-400"
                     }`}
                   >
                     {result.analysis.methodology_detected ? "Yes" : "No"}
                   </p>
-                  <p className="text-[11px] text-gray-500">Methodology section</p>
+                  <p className="text-[11px] text-gray-500 dark:text-slate-400">Methodology section</p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                <div className="bg-gray-50 dark:bg-slate-800 rounded-lg p-3 border border-gray-100 dark:border-slate-800">
                   <p
                     className={`text-lg font-bold ${
-                      result.analysis.peer_reviewed_indicators ? "text-green-600" : "text-amber-600"
+                      result.analysis.peer_reviewed_indicators ? "text-green-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"
                     }`}
                   >
                     {result.analysis.peer_reviewed_indicators ? "Likely" : "Unclear"}
                   </p>
-                  <p className="text-[11px] text-gray-500">Peer-review signals</p>
+                  <p className="text-[11px] text-gray-500 dark:text-slate-400">Peer-review signals</p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
-                  <p className="text-lg font-bold text-gray-900">
+                <div className="bg-gray-50 dark:bg-slate-800 rounded-lg p-3 border border-gray-100 dark:border-slate-800">
+                  <p className="text-lg font-bold text-gray-900 dark:text-slate-100">
                     {result.credibility.posterior.evidence_count}
                   </p>
-                  <p className="text-[11px] text-gray-500">Evidence factors used</p>
+                  <p className="text-[11px] text-gray-500 dark:text-slate-400">Evidence factors used</p>
                 </div>
               </div>
 
@@ -481,8 +481,8 @@ export default function ResearchPage() {
                       key={k}
                       className={`px-2 py-1 rounded-full text-[11px] border ${
                         v
-                          ? "bg-green-50 text-green-700 border-green-200"
-                          : "bg-gray-50 text-gray-500 border-gray-200"
+                          ? "bg-green-50 dark:bg-emerald-900/30 text-green-700 dark:text-emerald-300 border-green-200 dark:border-emerald-800"
+                          : "bg-gray-50 dark:bg-slate-800 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-700"
                       }`}
                     >
                       {k.replace("has_", "").replace(/_/g, " ")}: {v ? "yes" : "no"}
@@ -492,32 +492,32 @@ export default function ResearchPage() {
               )}
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Key Claims</h3>
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 shadow-sm">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-3">Key Claims</h3>
               <ul className="space-y-2">
                 {result.analysis.key_claims.map((claim, idx) => (
-                  <li key={idx} className="flex items-start gap-2 text-sm text-gray-700">
-                    <CheckCircle className="h-4 w-4 text-teal-500 flex-shrink-0 mt-0.5" />
+                  <li key={idx} className="flex items-start gap-2 text-sm text-gray-700 dark:text-slate-300">
+                    <CheckCircle className="h-4 w-4 text-teal-500 dark:text-teal-400 flex-shrink-0 mt-0.5" />
                     <span>{claim}</span>
                   </li>
                 ))}
               </ul>
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-900 mb-2">Summary</h3>
-              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 shadow-sm">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-2">Summary</h3>
+              <p className="text-sm text-gray-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
                 {result.analysis.summary}
               </p>
             </div>
 
             {result.analysis.potential_biases.length > 0 && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
-                <h3 className="text-sm font-semibold text-amber-900 mb-2 flex items-center gap-2">
+              <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl p-5">
+                <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200 mb-2 flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4" />
                   Potential Biases
                 </h3>
-                <ul className="space-y-1 text-sm text-amber-800">
+                <ul className="space-y-1 text-sm text-amber-800 dark:text-amber-300">
                   {result.analysis.potential_biases.map((bias, idx) => (
                     <li key={idx}>• {bias}</li>
                   ))}

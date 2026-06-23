@@ -38,6 +38,8 @@ import os
 import signal
 import sys
 import time
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 # Make the existing repo's modules importable. Worker expects to be invoked
@@ -68,6 +70,25 @@ if not _FALLBACK_OK:
 
 from shared.database import get_postgres
 from app.domains.content.article_enrichment_service import ArticleEnrichmentService
+
+
+def send_telegram(message: str) -> None:
+    """Send a brief notification to the Climatefacts bot."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+    if not token or not chat_id:
+        return
+    try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = urllib.parse.urlencode({
+            "chat_id": chat_id,
+            "text": message[:4000],
+            "parse_mode": "Markdown",
+        }).encode()
+        urllib.request.urlopen(url, data=data, timeout=10)
+    except Exception:
+        pass  # Never let notifications break the worker
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -150,6 +171,11 @@ async def main() -> int:
             summary.get("failed", 0),
             summary.get("skipped", 0),
             summary.get("total_found", 0),
+        )
+        send_telegram(
+            f"✅ Enriched batch {batches_run} | "
+            f"{summary.get('processed', 0)} ok, {summary.get('failed', 0)} failed "
+            f"({os.environ.get('CLILENS_ENRICHMENT_PROVIDER', 'local-gx10')})"
         )
 
         if MAX_BATCHES and batches_run >= MAX_BATCHES:

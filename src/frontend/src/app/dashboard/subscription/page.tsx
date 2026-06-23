@@ -40,7 +40,7 @@ const PLANS = [
     price: 0,
     icon: User,
     features: [
-      "5 articles per day",
+      "10 articles per day",
       "Basic search",
       "Map view",
       "Community features",
@@ -52,11 +52,11 @@ const PLANS = [
     price: 9.99,
     icon: Zap,
     features: [
-      "50 articles per day",
+      "100 articles per day",
       "Deep search",
       "Bookmarks & history",
       "Email digests",
-      "50 searches per day",
+      "25 searches per day",
     ],
   },
   {
@@ -67,11 +67,11 @@ const PLANS = [
     popular: true,
     features: [
       "Unlimited articles",
-      "API access (1,000/day)",
+      "10,000 API calls/day",
       "Priority analysis",
       "Custom feeds",
-      "URL analysis (20/mo)",
-      "Unlimited searches",
+      "30 URL analyses/month",
+      "50 searches per day",
     ],
   },
   {

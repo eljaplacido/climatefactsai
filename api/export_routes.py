@@ -249,6 +249,20 @@ async def export_article_pdf(
             detail="PDF export requires Professional or Enterprise subscription"
         )
 
+    # PDF is Professional+ only — Basic/Standard get CSV only.
+    _user_tier = (
+        current_user.get("subscription_tier", "freemium")
+        if isinstance(current_user, dict)
+        else str(current_user)
+    )
+    if isinstance(_user_tier, str):
+        _user_tier = _user_tier.lower()
+    if _user_tier not in ("professional", "pro", "enterprise"):
+        raise HTTPException(
+            status_code=403,
+            detail="PDF export requires Professional tier"
+        )
+
     db = get_postgres()
 
     # Fetch article

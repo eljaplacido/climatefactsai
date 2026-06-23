@@ -94,6 +94,8 @@ GX10_WORKER_MAX_BATCHES=0
 # of silently burning cloud tokens.
 GX10_WORKER_DEEPSEEK_FALLBACK=0
 EOF
+    echo "TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}" >> "$ENV_FILE"
+    echo "TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}" >> "$ENV_FILE"
     echo
     echo "⚠ Wrote env template to $ENV_FILE"
     echo "  Edit it to set DATABASE_URL, then re-run this script."

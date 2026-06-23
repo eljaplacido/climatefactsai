@@ -35,6 +35,17 @@ PRICE_IDS = {
     "enterprise": os.getenv("STRIPE_PRICE_ID_ENTERPRISE", ""),
 }
 
+# Tier rank ordering for upgrade/downgrade proration decisions.
+# "basic" and "standard" share rank 1; "pro" and "professional" share rank 2.
+TIER_RANKS = {
+    "freemium": 0,
+    "basic": 1,
+    "standard": 1,
+    "pro": 2,
+    "professional": 2,
+    "enterprise": 3,
+}
+
 # =============================================================================
 # REQUEST/RESPONSE MODELS
 # =============================================================================
@@ -208,6 +219,11 @@ async def create_subscription(
         # Create subscription
         price_id = PRICE_IDS.get(request.tier)
         if not price_id:
+            if request.tier == "enterprise":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Enterprise tier requires custom pricing. Please contact sales@climatefacts.ai"
+                )
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid tier or price ID not configured: {request.tier}"
@@ -330,13 +346,20 @@ async def upgrade_subscription(
         # Update Stripe subscription
         subscription = stripe.Subscription.retrieve(row["stripe_subscription_id"])
 
+        # Determine upgrade vs downgrade by comparing tier ranks.
+        # Upgrades prorate immediately; downgrades take effect at period end
+        # to avoid issuing proration credits/charges on a tier reduction.
+        current_rank = TIER_RANKS.get(row["tier"], 0)
+        new_rank = TIER_RANKS.get(request.new_tier, 0)
+        proration_behavior = "always_invoice" if new_rank > current_rank else "none"
+
         updated_subscription = stripe.Subscription.modify(
             subscription.id,
             items=[{
                 "id": subscription["items"]["data"][0].id,
                 "price": new_price_id
             }],
-            proration_behavior="always_invoice",
+            proration_behavior=proration_behavior,
             metadata={
                 "user_id": current_user["user_id"],
                 "tier": request.new_tier
@@ -572,21 +595,64 @@ async def stripe_webhook(
     elif event.type == "customer.subscription.updated":
         subscription = event.data.object
 
-        # Update subscription status
-        db.execute_update(
-            """
-            UPDATE subscriptions
-            SET status = :status,
-                current_period_end = :end_date,
-                updated_at = NOW()
-            WHERE stripe_subscription_id = :stripe_id
-            """,
-            params={
-                "status": subscription.status,
-                "end_date": datetime.fromtimestamp(subscription.current_period_end),
-                "stripe_id": subscription.id,
-            }
-        )
+        # Resolve the tier from the subscription's price ID so that
+        # upgrades/downgrades made in Stripe are reflected locally.
+        price_id = None
+        try:
+            price_id = subscription["items"]["data"][0]["price"]["id"]
+        except (KeyError, IndexError, TypeError):
+            price_id = None
+
+        new_tier = None
+        if price_id:
+            for tier, pid in PRICE_IDS.items():
+                if pid == price_id:
+                    new_tier = tier
+                    break
+
+        # Update subscription status and tier
+        if new_tier:
+            db.execute_update(
+                """
+                UPDATE subscriptions
+                SET status = :status,
+                    tier = :tier,
+                    stripe_price_id = :price_id,
+                    current_period_end = :end_date,
+                    updated_at = NOW()
+                WHERE stripe_subscription_id = :stripe_id
+                """,
+                params={
+                    "status": subscription.status,
+                    "tier": new_tier,
+                    "price_id": price_id,
+                    "end_date": datetime.fromtimestamp(subscription.current_period_end),
+                    "stripe_id": subscription.id,
+                }
+            )
+
+            # Sync the user's tier as well
+            user_id = subscription.metadata.get("user_id")
+            if user_id:
+                db.execute_update(
+                    "UPDATE users SET subscription_tier = :tier WHERE user_id = :user_id",
+                    params={"tier": new_tier, "user_id": user_id}
+                )
+        else:
+            db.execute_update(
+                """
+                UPDATE subscriptions
+                SET status = :status,
+                    current_period_end = :end_date,
+                    updated_at = NOW()
+                WHERE stripe_subscription_id = :stripe_id
+                """,
+                params={
+                    "status": subscription.status,
+                    "end_date": datetime.fromtimestamp(subscription.current_period_end),
+                    "stripe_id": subscription.id,
+                }
+            )
 
         logger.info(f"Subscription updated webhook: {subscription.id}")
 

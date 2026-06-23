@@ -50,7 +50,16 @@ MS_TOKEN_URL_TEMPLATE = "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/
 MS_USERINFO_URL = "https://graph.microsoft.com/v1.0/me"
 
 
-OAUTH_STATE_SECRET = os.getenv("OAUTH_STATE_SECRET", secrets.token_hex(32))
+_env_state_secret = os.getenv("OAUTH_STATE_SECRET", "")
+if _env_state_secret:
+    OAUTH_STATE_SECRET = _env_state_secret
+elif os.getenv("ENVIRONMENT", "").lower() == "production":
+    raise RuntimeError(
+        "OAUTH_STATE_SECRET must be set in production. "
+        'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
+    )
+else:
+    OAUTH_STATE_SECRET = secrets.token_hex(32)
 
 
 def _read_secret_env(*names: str) -> str:

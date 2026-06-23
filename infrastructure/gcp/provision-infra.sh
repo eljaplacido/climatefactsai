@@ -31,7 +31,7 @@ ARTIFACT_REGISTRY_REPO="climatenews"
 
 # Cloud SQL — public IP, no VPC needed for tiny launch
 SQL_INSTANCE="climatenews-postgres"
-SQL_TIER="db-f1-micro"     # cheapest; upgrade later via gcloud sql instances patch
+SQL_TIER="db-g1-small"     # regional HA; upgrade later via gcloud sql instances patch
 SQL_DB_NAME="climatenews"
 SQL_USER="climatenews_user"
 
@@ -88,7 +88,9 @@ if ! gcloud sql instances describe "${SQL_INSTANCE}" \
         --region="${REGION}" \
         --storage-size=10GB \
         --storage-auto-increase \
-        --availability-type=zonal \
+        --availability-type=regional \
+        --backup-start-time=03:00 \
+        --enable-point-in-time-recovery \
         --assign-ip \
         --project="${PROJECT_ID}"
     log "Created Cloud SQL instance: ${SQL_INSTANCE}"
@@ -177,9 +179,16 @@ SQL_IP="$(gcloud sql instances describe "${SQL_INSTANCE}" \
 
 DATABASE_URL="postgresql+psycopg2://${SQL_USER}:${SQL_PASSWORD}@${SQL_IP}:5432/${SQL_DB_NAME}"
 SCHEDULER_SECRET="$(openssl rand -hex 32)"
+OAUTH_STATE_SECRET="$(openssl rand -hex 32)"
+CLILENS_CALIBRATION_ADMIN_SECRET="$(openssl rand -hex 32)"
 
 ensure_secret "database-url" "${DATABASE_URL}"
 ensure_secret "scheduler-secret" "${SCHEDULER_SECRET}"
+ensure_secret "oauth-state-secret" "${OAUTH_STATE_SECRET}"
+ensure_secret "clilens-calibration-admin-secret" "${CLILENS_CALIBRATION_ADMIN_SECRET}"
+ensure_secret "microsoft-client-id" ""
+ensure_secret "microsoft-client-secret" ""
+ensure_secret "stripe-price-enterprise" ""
 
 # Ingest remaining secrets from .env if available
 ENV_FILE="${ROOT_DIR}/.env"
@@ -214,6 +223,9 @@ if [[ -f "${ENV_FILE}" ]]; then
             # 2026-06-14 — Stripe Basic ($10) and Pro ($20) subscription price IDs.
             STRIPE_PRICE_ID_BASIC) secret_name="stripe-price-basic" ;;
             STRIPE_PRICE_ID_PRO) secret_name="stripe-price-pro" ;;
+            STRIPE_PRICE_ID_ENTERPRISE) secret_name="stripe-price-enterprise" ;;
+            MICROSOFT_CLIENT_ID) secret_name="microsoft-client-id" ;;
+            MICROSOFT_CLIENT_SECRET) secret_name="microsoft-client-secret" ;;
         esac
 
         if [[ -n "$secret_name" && -n "$value" ]]; then

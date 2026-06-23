@@ -93,7 +93,7 @@ const PERSONA_LENSES = [
     label: "Policymaker",
     icon: ShieldCheck,
     href: "/map",
-    color: "bg-amber-50 text-amber-700 border-amber-200",
+    color: "bg-amber-50 text-amber-700 dark:text-amber-400 border-amber-200",
     blurb: "Country passport + scenario explorer + NDC indicators",
   },
   {
@@ -101,7 +101,7 @@ const PERSONA_LENSES = [
     label: "Financial Analyst",
     icon: TrendingUp,
     href: "/companies",
-    color: "bg-teal-50 text-teal-700 border-teal-200",
+    color: "bg-teal-50 dark:bg-teal-900/30 text-teal-700 border-teal-200",
     blurb: "SBTi-validated portfolio + transition risk",
   },
   {
@@ -115,7 +115,7 @@ const PERSONA_LENSES = [
 ];
 
 const TIER_COLORS: Record<string, string> = {
-  freemium: "bg-gray-100 text-gray-700",
+  freemium: "bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300",
   basic: "bg-blue-100 text-blue-700",
   professional: "bg-teal-100 text-teal-700",
   enterprise: "bg-purple-100 text-purple-700",
@@ -194,10 +194,10 @@ export default function DashboardPage() {
       {/* Welcome header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">
             Welcome back, {user?.full_name?.split(" ")[0] || "there"}
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
             Here is what is happening with your climate intelligence.
           </p>
         </div>
@@ -239,12 +239,12 @@ export default function DashboardPage() {
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Recent reading history */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-5">
+        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 dark:border-slate-700 dark:bg-slate-800 dark:border-slate-700 p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-gray-900">Recent Reading</h2>
+            <h2 className="font-semibold text-gray-900 dark:text-slate-100">Recent Reading</h2>
             <Link
               href="/dashboard/history"
-              className="text-sm text-teal-600 hover:text-teal-700 font-medium flex items-center gap-1"
+              className="text-sm text-teal-600 dark:text-teal-400 hover:text-teal-700 font-medium flex items-center gap-1"
             >
               View all <ArrowRight className="h-3.5 w-3.5" />
             </Link>
@@ -252,15 +252,15 @@ export default function DashboardPage() {
 
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400 dark:text-slate-500" />
             </div>
           ) : history.length === 0 ? (
             <div className="text-center py-12">
-              <BookOpen className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-              <p className="text-sm text-gray-500">No reading history yet.</p>
+              <BookOpen className="h-10 w-10 text-gray-300 dark:text-slate-600 mx-auto mb-3" />
+              <p className="text-sm text-gray-500 dark:text-slate-400">No reading history yet.</p>
               <Link
                 href="/"
-                className="text-sm text-teal-600 hover:text-teal-700 font-medium mt-1 inline-block"
+                className="text-sm text-teal-600 dark:text-teal-400 hover:text-teal-700 font-medium mt-1 inline-block"
               >
                 Browse articles
               </Link>
@@ -271,16 +271,16 @@ export default function DashboardPage() {
                 <Link
                   key={item.article_id}
                   href={`/articles/${item.article_id}`}
-                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors group"
+                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group"
                 >
-                  <div className="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center flex-shrink-0">
-                    <BookOpen className="h-4 w-4 text-teal-600" />
+                  <div className="w-8 h-8 rounded-lg bg-teal-50 dark:bg-teal-900/30 flex items-center justify-center flex-shrink-0">
+                    <BookOpen className="h-4 w-4 text-teal-600 dark:text-teal-400" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate group-hover:text-teal-700">
+                    <p className="text-sm font-medium text-gray-900 dark:text-slate-100 truncate group-hover:text-teal-700 dark:group-hover:text-teal-400">
                       {item.title}
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-gray-500 dark:text-slate-400">
                       {item.source_name} &middot;{" "}
                       {new Date(item.read_at).toLocaleDateString()}
                     </p>
@@ -307,19 +307,19 @@ export default function DashboardPage() {
         {/* Subscription status & Quick actions */}
         <div className="space-y-6">
           {/* Subscription card */}
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h2 className="font-semibold text-gray-900 mb-3">Subscription</h2>
+          <div className="bg-white rounded-xl border border-gray-200 dark:border-slate-700 dark:bg-slate-800 dark:border-slate-700 p-5">
+            <h2 className="font-semibold text-gray-900 dark:text-slate-100 mb-3">Subscription</h2>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-500">Current Plan</span>
-                <span className="text-sm font-semibold text-gray-900">
+                <span className="text-sm text-gray-500 dark:text-slate-400">Current Plan</span>
+                <span className="text-sm font-semibold text-gray-900 dark:text-slate-100">
                   {TIER_LABELS[tier] || tier}
                 </span>
               </div>
               {stats?.tier_usage && (
                 <>
                   <div>
-                    <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                    <div className="flex items-center justify-between text-xs text-gray-500 dark:text-slate-400 mb-1">
                       <span>Articles today</span>
                       <span>
                         {stats.tier_usage.articles_used}
@@ -328,9 +328,9 @@ export default function DashboardPage() {
                           : " / Unlimited"}
                       </span>
                     </div>
-                    <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="w-full h-1.5 bg-gray-100 dark:bg-slate-700 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-teal-500 rounded-full transition-all"
+                        className="h-full bg-teal-50 dark:bg-teal-900/300 rounded-full transition-all"
                         style={{
                           width: `${
                             stats.tier_usage.articles_limit > 0
@@ -359,7 +359,7 @@ export default function DashboardPage() {
               {tier !== "freemium" && (
                 <Link
                   href="/dashboard/subscription"
-                  className="block w-full text-center py-2 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                  className="block w-full text-center py-2 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-slate-300 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
                 >
                   Manage Subscription
                 </Link>
@@ -368,21 +368,21 @@ export default function DashboardPage() {
           </div>
 
           {/* Quick actions */}
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h2 className="font-semibold text-gray-900 mb-3">Quick Actions</h2>
+          <div className="bg-white rounded-xl border border-gray-200 dark:border-slate-700 dark:bg-slate-800 dark:border-slate-700 p-5">
+            <h2 className="font-semibold text-gray-900 dark:text-slate-100 mb-3">Quick Actions</h2>
             <div className="grid grid-cols-2 gap-2">
               {QUICK_ACTIONS.map(({ href, label, icon: Icon, color }) => (
                 <Link
                   key={href}
                   href={href}
-                  className="flex flex-col items-center gap-1.5 p-3 rounded-lg hover:bg-gray-50 transition-colors group"
+                  className="flex flex-col items-center gap-1.5 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group"
                 >
                   <div
                     className={`w-9 h-9 rounded-lg flex items-center justify-center ${color}`}
                   >
                     <Icon className="h-4.5 w-4.5" />
                   </div>
-                  <span className="text-xs font-medium text-gray-700 group-hover:text-gray-900">
+                  <span className="text-xs font-medium text-gray-700 dark:text-slate-300 group-hover:text-gray-900">
                     {label}
                   </span>
                 </Link>
@@ -418,17 +418,17 @@ function PersonaLensSection({
   loading: boolean;
 }) {
   return (
-    <section className="bg-white rounded-xl border border-gray-200 p-5">
+    <section className="bg-white rounded-xl border border-gray-200 dark:border-slate-700 dark:bg-slate-800 dark:border-slate-700 p-5">
       <header className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="font-semibold text-gray-900">Persona Lens</h2>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <h2 className="font-semibold text-gray-900 dark:text-slate-100">Persona Lens</h2>
+          <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
             Jump into the workflow that matches your role. Each lens preloads
             credibility + view filters appropriate to that audience.
           </p>
         </div>
         {!loading && savedCounts && (
-          <div className="text-xs text-gray-500 hidden sm:flex gap-2">
+          <div className="text-xs text-gray-500 dark:text-slate-400 hidden sm:flex gap-2">
             <span>{savedCounts.article} saved articles</span>
             <span>·</span>
             <span>{savedCounts.company} companies</span>
@@ -458,10 +458,10 @@ function PersonaLensSection({
         })}
       </div>
       {tier === "freemium" && (
-        <p className="text-xs text-gray-500 mt-3 italic">
+        <p className="text-xs text-gray-500 dark:text-slate-400 mt-3 italic">
           Some persona surfaces (corporate report analysis, deep search,
           research upload) require a paid tier — see{" "}
-          <Link href="/dashboard/subscription" className="text-teal-700 hover:underline">
+          <Link href="/dashboard/subscription" className="text-teal-700 dark:text-teal-400 hover:underline">
             Subscription
           </Link>{" "}
           to upgrade.
@@ -480,10 +480,10 @@ function ExportsAndAnalyticsSection({
 }) {
   const isPaid = ["standard", "basic", "professional", "enterprise"].includes(tier);
   return (
-    <section className="bg-white rounded-xl border border-gray-200 p-5">
+    <section className="bg-white rounded-xl border border-gray-200 dark:border-slate-700 dark:bg-slate-800 dark:border-slate-700 p-5">
       <header className="mb-4">
-        <h2 className="font-semibold text-gray-900">Analytics & Exports</h2>
-        <p className="text-xs text-gray-500 mt-0.5">
+        <h2 className="font-semibold text-gray-900 dark:text-slate-100">Analytics & Exports</h2>
+        <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
           Pull your saved items as a report or feed the API directly. Paid
           tiers required for the heavy exports.
         </p>
@@ -519,7 +519,7 @@ function ExportsAndAnalyticsSection({
         />
       </div>
       {!isPaid && (
-        <p className="text-xs text-gray-500 mt-3 italic">
+        <p className="text-xs text-gray-500 dark:text-slate-400 mt-3 italic">
           Article / company / country exports require a Standard subscription
           or higher. Saved searches are available to all tiers.
         </p>
@@ -542,17 +542,17 @@ function ExportTile({
       href={enabled ? href : "/dashboard/subscription"}
       className={`flex flex-col gap-1 p-3 rounded-lg border transition-colors ${
         enabled
-          ? "border-gray-200 hover:bg-gray-50"
-          : "border-gray-100 bg-gray-50 opacity-70 hover:opacity-100"
+          ? "border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800"
+          : "border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-800 opacity-70 hover:opacity-100"
       }`}
     >
       <div className="flex items-center justify-between">
-        <Icon className="h-4 w-4 text-gray-500" />
-        <span className="text-sm font-semibold text-gray-900">{count}</span>
+        <Icon className="h-4 w-4 text-gray-500 dark:text-slate-400" />
+        <span className="text-sm font-semibold text-gray-900 dark:text-slate-100">{count}</span>
       </div>
-      <span className="text-xs text-gray-700 leading-snug">{label}</span>
+      <span className="text-xs text-gray-700 dark:text-slate-300 leading-snug">{label}</span>
       {!enabled && (
-        <span className="text-[10px] text-amber-700 mt-0.5">Standard+</span>
+        <span className="text-[10px] text-amber-700 dark:text-amber-400 mt-0.5">Standard+</span>
       )}
     </Link>
   );
@@ -570,17 +570,17 @@ function StatCard({
   loading: boolean;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
+    <div className="bg-white rounded-xl border border-gray-200 dark:border-slate-700 dark:bg-slate-800 dark:border-slate-700 p-4">
       <div className="flex items-center justify-between mb-2">
-        <Icon className="h-5 w-5 text-gray-400" />
-        <TrendingUp className="h-3.5 w-3.5 text-teal-500" />
+        <Icon className="h-5 w-5 text-gray-400 dark:text-slate-500" />
+        <TrendingUp className="h-3.5 w-3.5 text-teal-500 dark:text-teal-400" />
       </div>
       {loading ? (
         <div className="h-8 w-16 animate-shimmer rounded" />
       ) : (
-        <p className="text-2xl font-bold text-gray-900">{value}</p>
+        <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{value}</p>
       )}
-      <p className="text-xs text-gray-500 mt-1">{label}</p>
+      <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">{label}</p>
     </div>
   );
 }

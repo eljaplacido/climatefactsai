@@ -17,7 +17,7 @@ logger = setup_logging("rate_limiter")
 
 
 # Subscription tier limits
-# Tiers: freemium (free), standard (10 EUR/mo), professional (20 EUR/mo)
+# Tiers: freemium (free), standard ($9.99/mo), professional ($29.99/mo), enterprise ($99.99/mo)
 TIER_LIMITS = {
     "freemium": {
         "articles_per_day": 10,
@@ -36,7 +36,7 @@ TIER_LIMITS = {
     "standard": {
         "articles_per_day": 100,
         "url_analyses_per_month": 5,
-        "api_calls_per_day": 0,
+        "api_calls_per_day": 10000,
         "searches_per_day": 25,
         "discovery_queries_per_day": 5,
         "countries_limit": 5,
@@ -79,8 +79,8 @@ TIER_LIMITS = {
 }
 
 # Backwards-compatible aliases:
-#   "basic"    → "standard" ($10/mo platform tier)
-#   "pro"      → "professional" ($20/mo platform + API tier)
+#   "basic"    → "standard" ($9.99/mo platform tier)
+#   "pro"      → "professional" ($29.99/mo platform + API tier)
 #   "standard" is kept for legacy compatibility
 TIER_LIMITS["basic"] = TIER_LIMITS["standard"]
 TIER_LIMITS["pro"] = TIER_LIMITS["professional"]
@@ -375,7 +375,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             else:
                 # IP-based rate limiting for unauthenticated users
                 client_ip = request.client.host if request.client else "unknown"
-                self._check_ip_rate_limit(client_ip, "article_view", max_per_day=20)
+                self._check_ip_rate_limit(client_ip, "article_view", max_per_day=5)
 
         # For search endpoints
         elif request.url.path.startswith("/api/search") and request.method in ["GET", "POST"]:
@@ -403,7 +403,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             else:
                 # IP-based rate limiting for unauthenticated users
                 client_ip = request.client.host if request.client else "unknown"
-                self._check_ip_rate_limit(client_ip, "search", max_per_day=15)
+                self._check_ip_rate_limit(client_ip, "search", max_per_day=5)
 
         # For URL analysis — allow all users with rate limiting
         elif request.url.path.startswith("/api/analyze-url") and request.method == "POST":
@@ -426,13 +426,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             else:
                 # IP-based rate limiting for unauthenticated users
                 client_ip = request.client.host if request.client else "unknown"
-                self._check_ip_rate_limit(client_ip, "url_analysis", max_per_day=5)
+                self._check_ip_rate_limit(client_ip, "url_analysis", max_per_day=1)
 
         # For corporate claim verification — Phase 8 (2026-05-24).
         # The /analyze endpoint writes a row to company_claims on every call.
         # Even with Pydantic length bounds + DB enum constraints, an
         # unthrottled endpoint would let an attacker spam claim rows. Anon
-        # callers get 10/day per IP; authenticated callers get 50/day,
+        # callers get 3/day per IP; authenticated callers get 50/day,
         # higher tiers proportionally higher. The claim taxonomy is
         # deterministic so verification itself is cheap — this gate is
         # about preventing storage pollution, not compute exhaustion.
@@ -464,7 +464,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             else:
                 client_ip = request.client.host if request.client else "unknown"
                 self._check_ip_rate_limit(
-                    client_ip, "corporate_claim_verify", max_per_day=10
+                    client_ip, "corporate_claim_verify", max_per_day=3
                 )
 
         response = await call_next(request)

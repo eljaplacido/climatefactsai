@@ -59,19 +59,19 @@ export default function DataSourcesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <Link href="/" className="text-2xl font-bold text-clilens-primary">
+              <Link href="/" className="text-2xl font-bold text-clilens-primary dark:text-teal-400">
                 Climatefacts.ai
               </Link>
-              <span className="text-gray-300">/</span>
-              <h1 className="text-lg font-semibold text-gray-900">Source Trust Profiles</h1>
+              <span className="text-gray-300 dark:text-slate-600">/</span>
+              <h1 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Source Trust Profiles</h1>
             </div>
-            <div className="flex items-center gap-3 text-sm text-gray-500 flex-wrap">
+            <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-slate-400 flex-wrap">
               <div className="flex items-center space-x-2">
                 <Shield className="h-4 w-4" />
                 <span>{profiles.length} sources tracked</span>
@@ -88,7 +88,7 @@ export default function DataSourcesPage() {
                     }),
                   );
                 }}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full bg-clilens-teal-50 hover:bg-clilens-teal-100 text-clilens-teal-700 border border-clilens-teal-200"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full bg-clilens-teal-50 dark:bg-teal-900/30 hover:bg-clilens-teal-100 dark:hover:bg-teal-900/50 text-clilens-teal-700 dark:text-teal-300 border border-clilens-teal-200 dark:border-teal-800"
                 data-testid="sources-ask-assistant"
               >
                 Ask about source tiers
@@ -99,28 +99,28 @@ export default function DataSourcesPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex flex-wrap items-center gap-4">
             {/* Search */}
             <div className="relative flex-1 min-w-[200px] max-w-md">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400 dark:text-slate-500" />
               <input
                 type="text"
                 placeholder="Search sources..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clilens-primary focus:border-transparent"
+                className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clilens-primary focus:border-transparent"
               />
             </div>
 
             {/* Source type filter */}
             <div className="flex items-center space-x-2">
-              <Filter className="h-4 w-4 text-gray-400" />
+              <Filter className="h-4 w-4 text-gray-400 dark:text-slate-500" />
               <select
                 value={sourceType}
                 onChange={(e) => setSourceType(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clilens-primary focus:border-transparent"
+                className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clilens-primary focus:border-transparent"
               >
                 {sourceTypes.map((st) => (
                   <option key={st} value={st}>{sourceTypeLabels[st]}</option>
@@ -132,7 +132,7 @@ export default function DataSourcesPage() {
             <select
               value={minCredibility ?? ''}
               onChange={(e) => setMinCredibility(e.target.value ? Number(e.target.value) : undefined)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clilens-primary focus:border-transparent"
+              className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clilens-primary focus:border-transparent"
             >
               <option value="">All credibility</option>
               <option value="80">80+ (Highly Trusted)</option>
@@ -151,13 +151,13 @@ export default function DataSourcesPage() {
           </div>
         ) : error ? (
           <div className="text-center py-16">
-            <p className="text-gray-500 mb-4">{error}</p>
-            <p className="text-sm text-gray-400">Source profiles are populated as articles are analyzed.</p>
+            <p className="text-gray-500 dark:text-slate-400 mb-4">{error}</p>
+            <p className="text-sm text-gray-400 dark:text-slate-500">Source profiles are populated as articles are analyzed.</p>
           </div>
         ) : filteredProfiles.length === 0 ? (
           <div className="text-center py-16">
-            <Shield className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500">
+            <Shield className="h-12 w-12 text-gray-300 dark:text-slate-600 mx-auto mb-4" />
+            <p className="text-gray-500 dark:text-slate-400">
               {searchQuery
                 ? `No sources matching "${searchQuery}"`
                 : 'No source profiles yet. Profiles are created as articles are ingested and analyzed.'}
@@ -179,8 +179,8 @@ export default function DataSourcesPage() {
             historical reliability — and the tier badge surfaces the prior
             bonus directly on each card.) */}
         {!loading && (
-          <div className="mt-16 border-t border-gray-200 pt-12">
-            <h2 className="text-2xl font-bold text-gray-900 mb-3 flex items-center gap-2 flex-wrap">
+          <div className="mt-16 border-t border-gray-200 dark:border-slate-700 pt-12">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-slate-100 mb-3 flex items-center gap-2 flex-wrap">
               How sources are scored
               <button
                 type="button"
@@ -193,13 +193,13 @@ export default function DataSourcesPage() {
                     }),
                   );
                 }}
-                className="text-xs px-2.5 py-1 rounded-full bg-clilens-teal-50 hover:bg-clilens-teal-100 text-clilens-teal-700 border border-clilens-teal-200 font-normal"
+                className="text-xs px-2.5 py-1 rounded-full bg-clilens-teal-50 dark:bg-teal-900/30 hover:bg-clilens-teal-100 dark:hover:bg-teal-900/50 text-clilens-teal-700 dark:text-teal-300 border border-clilens-teal-200 dark:border-teal-800 font-normal"
                 data-testid="source-scoring-ask-assistant"
               >
                 Ask the assistant
               </button>
             </h2>
-            <p className="text-gray-600 mb-4 max-w-3xl">
+            <p className="text-gray-600 dark:text-slate-400 mb-4 max-w-3xl">
               Every source above is graded against the same rubric. We combine four
               independent signals into the 0&ndash;100 credibility score shown on each
               card: tier classification, editorial standards, historical fact-check
@@ -224,19 +224,19 @@ export default function DataSourcesPage() {
                   body: 'Whether the source publishes its methodology, links to primary data, and discloses funding. High / moderate / low / unknown.',
                 },
               ].map((ref) => (
-                <div key={ref.title} className="border border-gray-200 rounded-lg p-4 bg-white">
-                  <p className="font-semibold text-gray-900 text-sm mb-1">{ref.title}</p>
-                  <p className="text-xs text-gray-600 leading-relaxed">{ref.body}</p>
+                <div key={ref.title} className="border border-gray-200 dark:border-slate-700 rounded-lg p-4 bg-white dark:bg-slate-800">
+                  <p className="font-semibold text-gray-900 dark:text-slate-100 text-sm mb-1">{ref.title}</p>
+                  <p className="text-xs text-gray-600 dark:text-slate-400 leading-relaxed">{ref.body}</p>
                 </div>
               ))}
             </div>
-            <p className="text-xs text-gray-500 mt-6 max-w-3xl">
+            <p className="text-xs text-gray-500 dark:text-slate-400 mt-6 max-w-3xl">
               Source not yet listed? Submit it via{' '}
-              <Link href="/suggest-source" className="text-clilens-primary underline">
+              <Link href="/suggest-source" className="text-clilens-primary dark:text-teal-400 underline">
                 /suggest-source
               </Link>
               . Full methodology is at{' '}
-              <Link href="/methodology" className="text-clilens-primary underline">
+              <Link href="/methodology" className="text-clilens-primary dark:text-teal-400 underline">
                 /methodology
               </Link>
               .

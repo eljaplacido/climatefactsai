@@ -41,7 +41,7 @@ export default function SearchPage() {
   // Suspense wrapper required by Next.js 14 because the inner component
   // calls useSearchParams via useUrlState.
   return (
-    <Suspense fallback={<div className="p-8 text-gray-500">Loading search…</div>}>
+    <Suspense fallback={<div className="p-8 text-gray-500 dark:text-slate-400">Loading search…</div>}>
       <SearchPageInner />
     </Suspense>
   );
@@ -227,27 +227,27 @@ function SearchPageInner() {
   const renderSuggestionIcon = (category: string) => {
     switch (category) {
       case "tag":
-        return <TagIcon className="h-4 w-4 text-gray-500" />;
+        return <TagIcon className="h-4 w-4 text-gray-500 dark:text-slate-400" />;
       case "country":
-        return <Globe className="h-4 w-4 text-gray-500" />;
+        return <Globe className="h-4 w-4 text-gray-500 dark:text-slate-400" />;
       case "source":
-        return <Newspaper className="h-4 w-4 text-gray-500" />;
+        return <Newspaper className="h-4 w-4 text-gray-500 dark:text-slate-400" />;
       default:
-        return <SearchIcon className="h-4 w-4 text-gray-500" />;
+        return <SearchIcon className="h-4 w-4 text-gray-500 dark:text-slate-400" />;
     }
   };
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <section className="border-b bg-white">
+    <main className="min-h-screen bg-gray-50 dark:bg-slate-900">
+      <section className="border-b bg-white dark:bg-slate-800 dark:border-slate-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-bold text-gray-900">Search</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Search</h1>
             {activeFilterCount > 0 && (
               <button
                 type="button"
                 onClick={clearAllFilters}
-                className="text-sm text-gray-500 hover:text-red-600 flex items-center gap-1"
+                className="text-sm text-gray-500 dark:text-slate-400 hover:text-red-600 flex items-center gap-1"
               >
                 <X className="h-3.5 w-3.5" />
                 Clear all filters ({activeFilterCount})
@@ -265,23 +265,23 @@ function SearchPageInner() {
                   onFocus={() => { if (q.trim().length >= 2) setShowSuggestions(true); }}
                   onBlur={() => { setTimeout(() => setShowSuggestions(false), 200); }}
                   placeholder="Search topics, titles, keywords..."
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-clilens-primary focus:border-transparent bg-white"
+                  className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:placeholder:text-slate-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-clilens-primary focus:border-transparent bg-white"
                   aria-label="Search query"
                 />
-                <svg className="absolute left-3 top-3.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="absolute left-3 top-3.5 h-5 w-5 text-gray-400 dark:text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
                 {showSuggestions && (
-                  <div className="absolute z-20 mt-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg">
+                  <div className="absolute z-20 mt-2 w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg shadow-lg">
                     {/* Category filter tabs */}
-                    <div className="flex items-center gap-1 px-2 pt-2 pb-1 border-b border-gray-100 text-xs">
+                    <div className="flex items-center gap-1 px-2 pt-2 pb-1 border-b border-gray-100 dark:border-slate-700 text-xs">
                       {(["all","tag","country","source"] as const).map((cat) => (
                         <button
                           key={cat}
                           type="button"
                           onMouseDown={(e) => e.preventDefault()}
                           onClick={() => setSuggestionFilter(cat)}
-                          className={`px-2 py-1 rounded ${suggestionFilter===cat?"bg-clilens-teal-50 text-clilens-teal-700":"text-gray-600 hover:bg-gray-50"}`}
+                          className={`px-2 py-1 rounded ${suggestionFilter===cat?"bg-clilens-teal-50 text-clilens-teal-700 dark:bg-teal-900/30 dark:text-teal-300":"text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700"}`}
                         >
                           {cat === "all" ? "All" : cat.charAt(0).toUpperCase()+cat.slice(1)}
                         </button>
@@ -289,21 +289,21 @@ function SearchPageInner() {
                     </div>
                     <div className="max-h-64 overflow-auto">
                       {suggestions.length === 0 && debouncedQ.length >= 2 ? (
-                        <div className="px-3 py-3 text-sm text-gray-500">No suggestions</div>
+                        <div className="px-3 py-3 text-sm text-gray-500 dark:text-slate-400">No suggestions</div>
                       ) : (
                         suggestions.map((s, i) => (
                           <button
                             key={`${s.category}-${s.text}-${i}`}
-                            className={`w-full text-left px-3 py-2 flex items-center justify-between ${i===suggestionIndex?"bg-gray-100":"hover:bg-gray-50"}`}
+                            className={`w-full text-left px-3 py-2 flex items-center justify-between ${i===suggestionIndex?"bg-gray-100 dark:bg-slate-700":"hover:bg-gray-50 dark:hover:bg-slate-700"}`}
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => onSelectSuggestion(s)}
                             type="button"
                           >
-                            <span className="flex items-center gap-2 text-sm text-gray-800">
+                            <span className="flex items-center gap-2 text-sm text-gray-800 dark:text-slate-200">
                               {renderSuggestionIcon(s.category)}
                               {s.text}
                             </span>
-                            <span className="text-xs text-gray-500">{s.category} &bull; {s.count}</span>
+                            <span className="text-xs text-gray-500 dark:text-slate-400">{s.category} &bull; {s.count}</span>
                           </button>
                         ))
                       )}
@@ -311,18 +311,18 @@ function SearchPageInner() {
                   </div>
                 )}
               </div>
-              <p className="text-sm text-gray-500 mt-2">{filtersSummary}</p>
+              <p className="text-sm text-gray-500 dark:text-slate-400 mt-2">{filtersSummary}</p>
 
               {/* Content category pills (inline, below search) */}
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="text-xs font-medium text-gray-500">Category:</span>
+                <span className="text-xs font-medium text-gray-500 dark:text-slate-400">Category:</span>
                 <button
                   type="button"
                   onClick={() => setContentCategory("")}
                   className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
                     contentCategory === ""
                       ? "bg-clilens-primary text-white border-clilens-primary"
-                      : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
+                      : "bg-gray-50 text-gray-600 dark:bg-slate-700 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:bg-gray-100 dark:hover:bg-slate-600"
                   }`}
                 >
                   All
@@ -335,7 +335,7 @@ function SearchPageInner() {
                     className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
                       contentCategory === cat.value
                         ? "bg-clilens-primary text-white border-clilens-primary"
-                        : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
+                        : "bg-gray-50 text-gray-600 dark:bg-slate-700 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:bg-gray-100 dark:hover:bg-slate-600"
                     }`}
                   >
                     {cat.label}
@@ -348,11 +348,11 @@ function SearchPageInner() {
               <CountrySelector value={country} onChange={setCountry} />
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Credibility</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Credibility</label>
                 <select
                   value={credibility}
                   onChange={(e) => setCredibility(e.target.value as Credibility)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-clilens-primary focus:border-transparent"
+                  className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-700 dark:text-slate-100 focus:ring-2 focus:ring-clilens-primary focus:border-transparent"
                 >
                   <option value="ALL">All</option>
                   <option value="HIGH">High</option>
@@ -363,27 +363,27 @@ function SearchPageInner() {
 
               {/* Date range filter */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
                   <Calendar className="inline h-4 w-4 mr-1" />
                   Date Range
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">From</label>
+                    <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">From</label>
                     <input
                       type="date"
                       value={dateFrom}
                       onChange={(e) => setDateFrom(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:ring-2 focus:ring-clilens-primary focus:border-transparent"
+                      className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-slate-700 dark:text-slate-100 focus:ring-2 focus:ring-clilens-primary focus:border-transparent"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">To</label>
+                    <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">To</label>
                     <input
                       type="date"
                       value={dateTo}
                       onChange={(e) => setDateTo(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:ring-2 focus:ring-clilens-primary focus:border-transparent"
+                      className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-slate-700 dark:text-slate-100 focus:ring-2 focus:ring-clilens-primary focus:border-transparent"
                     />
                   </div>
                 </div>
@@ -391,7 +391,7 @@ function SearchPageInner() {
                   <button
                     type="button"
                     onClick={() => { setDateFrom(""); setDateTo(""); }}
-                    className="mt-1 text-xs text-gray-500 hover:text-red-600"
+                    className="mt-1 text-xs text-gray-500 dark:text-slate-400 hover:text-red-600"
                   >
                     Clear dates
                   </button>
@@ -400,13 +400,13 @@ function SearchPageInner() {
 
               {/* Tags with clickable pills */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
                   <TagIcon className="inline h-4 w-4 mr-1" />
                   Tags / Themes
                 </label>
                 <input
                   placeholder="e.g. climate_change, esg"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-clilens-primary focus:border-transparent"
+                  className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-700 dark:text-slate-100 dark:placeholder:text-slate-400 focus:ring-2 focus:ring-clilens-primary focus:border-transparent"
                   value={tags.join(", ")}
                   onChange={(e) =>
                     setTags(
@@ -427,8 +427,8 @@ function SearchPageInner() {
                         onClick={() => toggleTag(t.tag)}
                         className={`px-2 py-1 rounded-full text-xs border ${
                           tags.includes(t.tag)
-                            ? "bg-clilens-teal-50 text-clilens-teal-700 border-clilens-teal-200"
-                            : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
+                            ? "bg-clilens-teal-50 text-clilens-teal-700 dark:bg-teal-900/30 dark:text-teal-300 border-clilens-teal-200 dark:border-teal-800"
+                            : "bg-gray-50 text-gray-700 dark:bg-slate-700 dark:text-slate-300 border-gray-200 dark:border-slate-600 hover:bg-gray-100 dark:hover:bg-slate-600"
                         }`}
                         aria-pressed={tags.includes(t.tag)}
                       >
@@ -454,7 +454,7 @@ function SearchPageInner() {
           {/* Results count */}
           {!loading && !error && (
             <div className="flex items-center justify-between mb-4">
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-slate-400">
                 {articles.length} result{articles.length !== 1 ? "s" : ""}
               </p>
             </div>
@@ -466,21 +466,21 @@ function SearchPageInner() {
             // the home-page skeleton pattern.
             <div className="grid gap-6 md:grid-cols-2" aria-busy="true" aria-label="Loading search results">
               {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="rounded-lg border border-gray-200 bg-white p-5 animate-pulse">
-                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-3"></div>
-                  <div className="h-3 bg-gray-200 rounded w-full mb-2"></div>
-                  <div className="h-3 bg-gray-200 rounded w-5/6 mb-2"></div>
-                  <div className="h-3 bg-gray-200 rounded w-2/3 mb-4"></div>
+                <div key={i} className="rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-5 animate-pulse">
+                  <div className="h-4 bg-gray-200 dark:bg-slate-700 rounded w-3/4 mb-3"></div>
+                  <div className="h-3 bg-gray-200 dark:bg-slate-700 rounded w-full mb-2"></div>
+                  <div className="h-3 bg-gray-200 dark:bg-slate-700 rounded w-5/6 mb-2"></div>
+                  <div className="h-3 bg-gray-200 dark:bg-slate-700 rounded w-2/3 mb-4"></div>
                   <div className="flex gap-2">
-                    <div className="h-5 bg-gray-200 rounded w-16"></div>
-                    <div className="h-5 bg-gray-200 rounded w-20"></div>
+                    <div className="h-5 bg-gray-200 dark:bg-slate-700 rounded w-16"></div>
+                    <div className="h-5 bg-gray-200 dark:bg-slate-700 rounded w-20"></div>
                   </div>
                 </div>
               ))}
             </div>
           )}
           {error && (
-            <div className="text-red-600 mb-4">{error}</div>
+            <div className="text-red-600 dark:text-red-400 mb-4">{error}</div>
           )}
           {!loading && !error && articles.length > 0 && (
             <div className="grid gap-6 md:grid-cols-2">
@@ -491,8 +491,8 @@ function SearchPageInner() {
           )}
           {!loading && !error && articles.length === 0 && (
             <div className="text-center py-12">
-              <SearchIcon className="h-8 w-8 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500 mb-4">No results found. Try adjusting your filters.</p>
+              <SearchIcon className="h-8 w-8 text-gray-300 dark:text-slate-600 mx-auto mb-3" />
+              <p className="text-gray-500 dark:text-slate-400 mb-4">No results found. Try adjusting your filters.</p>
               {/* Slice 3 extension (2026-05-28) — ask-the-assistant chip
                   for the search-page empty state. Captures every active
                   filter into the prompt so the LLM can suggest concrete
@@ -519,7 +519,7 @@ function SearchPageInner() {
                     }),
                   );
                 }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full bg-clilens-teal-50 hover:bg-clilens-teal-100 text-clilens-teal-700 border border-clilens-teal-200"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full bg-clilens-teal-50 dark:bg-teal-900/30 hover:bg-clilens-teal-100 dark:hover:bg-teal-900/50 text-clilens-teal-700 dark:text-teal-300 border border-clilens-teal-200 dark:border-teal-800"
                 data-testid="search-empty-ask-assistant"
               >
                 Ask the assistant to help me find articles

@@ -87,16 +87,22 @@ async def ask_article_question(
     if current_user and isinstance(current_user, dict):
         user_tier = current_user.get("subscription_tier", "freemium")
         user_id = str(current_user.get("user_id", "anonymous"))
+        engine_user_id = UUID(user_id)
     else:
         user_tier = "freemium"
-        user_id = "anonymous"
+        # Use the article UUID as the usage-tracking key for anonymous
+        # callers — UsageTracker._coerce_user_uuid rejects "anonymous" and
+        # any non-UUID string, which previously made the per-article Q&A
+        # limit a no-op.
+        user_id = article_id
+        engine_user_id = None
 
     # Check Q&A rate limit
     qa_limit = QA_LIMITS.get(user_tier)
     if qa_limit is not None:
         try:
             count = UsageTracker.get_usage_count(
-                user_id=f"{user_id}:{article_id}",
+                user_id=user_id,
                 usage_type="article_qa",
                 period="day",
             )
@@ -113,7 +119,7 @@ async def ask_article_question(
     # Log usage
     try:
         UsageTracker.log_usage(
-            user_id=f"{user_id}:{article_id}",
+            user_id=user_id,
             usage_type="article_qa",
             resource_id=article_id,
             metadata={"question": request.question[:100]},
@@ -141,7 +147,7 @@ async def ask_article_question(
                         lambda: asyncio.run(engine.ask(
                             article_id=UUID(article_id),
                             question=request.question,
-                            user_id=UUID(user_id) if user_id != "anonymous" else None,
+                            user_id=engine_user_id,
                             conversation_context=request.conversation_context,
                             scope=request.scope,
                         ))
@@ -150,7 +156,7 @@ async def ask_article_question(
                 result = await engine.ask(
                     article_id=UUID(article_id),
                     question=request.question,
-                    user_id=UUID(user_id) if user_id != "anonymous" else None,
+                    user_id=engine_user_id,
                     conversation_context=request.conversation_context,
                     scope=request.scope,
                 )
@@ -158,7 +164,7 @@ async def ask_article_question(
             result = asyncio.run(engine.ask(
                 article_id=UUID(article_id),
                 question=request.question,
-                user_id=UUID(user_id) if user_id != "anonymous" else None,
+                user_id=engine_user_id,
                 conversation_context=request.conversation_context,
                 scope=request.scope,
             ))

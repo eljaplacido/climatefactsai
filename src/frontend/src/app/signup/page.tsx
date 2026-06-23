@@ -28,7 +28,7 @@ const TIERS = [
     period: "forever",
     icon: User,
     features: [
-      "5 articles per day",
+      "10 articles per day",
       "Basic search",
       "Map view",
       "Community features",
@@ -42,7 +42,8 @@ const TIERS = [
     period: "/month",
     icon: Zap,
     features: [
-      "50 articles per day",
+      "100 articles per day",
+      "25 searches per day",
       "Deep search",
       "Bookmarks & history",
       "Email digests",
@@ -57,7 +58,9 @@ const TIERS = [
     icon: Crown,
     features: [
       "Unlimited articles",
-      "API access (1,000/day)",
+      "50 searches per day",
+      "10,000 API calls/day",
+      "30 URL analyses/month",
       "Priority analysis",
       "Custom feeds",
     ],

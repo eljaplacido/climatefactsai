@@ -43,7 +43,7 @@ const TIERS = [
   },
   {
     name: "Basic",
-    price: "$10",
+    price: "$9.99",
     period: "/month",
     calls: "10,000 / day",
     icon: Zap,
@@ -54,9 +54,9 @@ const TIERS = [
   },
   {
     name: "Pro",
-    price: "$20",
+    price: "$29.99",
     period: "/month",
-    calls: "100,000 / day",
+    calls: "10,000 / day",
     icon: Crown,
     color: "border-teal-800 bg-teal-900/20 ring-1 ring-teal-700/40",
     iconBg: "bg-teal-700 text-teal-200",
@@ -65,8 +65,8 @@ const TIERS = [
   },
   {
     name: "Enterprise",
-    price: "Custom",
-    period: "",
+    price: "$99.99",
+    period: "/month",
     calls: "Custom volume",
     icon: Building2,
     color: "border-purple-800 bg-purple-900/20",
@@ -169,6 +169,9 @@ export default function ApiAccessPage() {
               );
             })}
           </div>
+          <p className="text-xs text-amber-300 bg-amber-950/30 border border-amber-800/40 rounded-lg px-3 py-2.5">
+            API keys require Professional tier or higher.
+          </p>
         </section>
 
         {/* Quick-start code examples */}

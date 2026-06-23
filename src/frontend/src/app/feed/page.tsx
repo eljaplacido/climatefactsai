@@ -189,9 +189,9 @@ export default function FeedPage() {
   if (!token) {
     return (
       <div className="max-w-3xl mx-auto text-center py-16">
-        <Globe className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">My Feed</h1>
-        <p className="text-gray-500 mb-6">
+        <Globe className="h-12 w-12 text-gray-300 dark:text-slate-600 mx-auto mb-4" />
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100 mb-2">My Feed</h1>
+        <p className="text-gray-500 dark:text-slate-400 mb-6">
           Sign in to configure your personalized climate news feed.
         </p>
         <Link href="/login" className="px-6 py-2 bg-clilens-primary text-white rounded-lg hover:bg-clilens-teal-700 transition">
@@ -204,7 +204,7 @@ export default function FeedPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-8 w-8 animate-spin text-clilens-primary" />
+        <Loader2 className="h-8 w-8 animate-spin text-clilens-primary dark:text-teal-400" />
       </div>
     )
   }
@@ -212,32 +212,32 @@ export default function FeedPage() {
   return (
     <div className="max-w-3xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">My Feed</h1>
-        <p className="text-gray-500 mt-1">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">My Feed</h1>
+        <p className="text-gray-500 dark:text-slate-400 mt-1">
           Select countries and keywords for your personalized climate news feed.
         </p>
       </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-sm text-red-700">
+        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg flex items-center gap-2 text-sm text-red-700 dark:text-red-300">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
           {error}
         </div>
       )}
 
       {success && (
-        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+        <div className="mb-4 p-3 bg-green-50 dark:bg-emerald-900/30 border border-green-200 dark:border-emerald-800 rounded-lg text-sm text-green-700 dark:text-emerald-300">
           {success}
         </div>
       )}
 
       {/* Country Selection */}
-      <section className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
-          <Globe className="h-5 w-5 text-clilens-primary" />
+      <section className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-3 flex items-center gap-2">
+          <Globe className="h-5 w-5 text-clilens-primary dark:text-teal-400" />
           Countries
         </h2>
-        <p className="text-sm text-gray-500 mb-4">
+        <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
           Select which countries to track. Limit depends on your subscription tier.
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -247,8 +247,8 @@ export default function FeedPage() {
               onClick={() => toggleCountry(c.code)}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition ${
                 selectedCountries.includes(c.code)
-                  ? 'bg-clilens-teal-50 border-clilens-primary text-clilens-teal-700 font-medium'
-                  : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                  ? 'bg-clilens-teal-50 dark:bg-teal-900/30 border-clilens-primary dark:border-teal-700 text-clilens-teal-700 dark:text-teal-300 font-medium'
+                  : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-400 hover:border-gray-300 dark:hover:border-slate-600'
               }`}
             >
               <span>{c.flag}</span>
@@ -259,9 +259,9 @@ export default function FeedPage() {
       </section>
 
       {/* Keywords */}
-      <section className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
-          <Search className="h-5 w-5 text-clilens-primary" />
+      <section className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-3 flex items-center gap-2">
+          <Search className="h-5 w-5 text-clilens-primary dark:text-teal-400" />
           Keywords
         </h2>
         <input
@@ -269,18 +269,18 @@ export default function FeedPage() {
           value={keywords}
           onChange={e => setKeywords(e.target.value)}
           placeholder="e.g. carbon tax, renewable energy, IPCC"
-          className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clilens-primary"
+          className="w-full px-4 py-2 border border-gray-200 dark:border-slate-700 dark:bg-slate-700 dark:text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clilens-primary"
         />
-        <p className="mt-1 text-xs text-gray-400">Comma-separated keywords to filter articles</p>
+        <p className="mt-1 text-xs text-gray-400 dark:text-slate-500">Comma-separated keywords to filter articles</p>
       </section>
 
       {/* Source Types */}
-      <section className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
-          <Globe className="h-5 w-5 text-clilens-primary" />
+      <section className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-3 flex items-center gap-2">
+          <Globe className="h-5 w-5 text-clilens-primary dark:text-teal-400" />
           Source Types
         </h2>
-        <p className="text-sm text-gray-500 mb-3">
+        <p className="text-sm text-gray-500 dark:text-slate-400 mb-3">
           Choose what kinds of climate intelligence you want in your feed.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -296,14 +296,14 @@ export default function FeedPage() {
                 }
                 className={`flex flex-col items-start px-3 py-2.5 rounded-lg border text-left transition-all ${
                   isSelected
-                    ? 'border-clilens-primary bg-teal-50 ring-1 ring-clilens-primary'
-                    : 'border-gray-200 bg-white hover:border-gray-300'
+                    ? 'border-clilens-primary bg-teal-50 dark:bg-teal-900/30 ring-1 ring-clilens-primary dark:ring-teal-600'
+                    : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-gray-300 dark:hover:border-slate-600'
                 }`}
               >
-                <span className={`text-sm font-medium ${isSelected ? 'text-clilens-primary' : 'text-gray-700'}`}>
+                <span className={`text-sm font-medium ${isSelected ? 'text-clilens-primary dark:text-teal-400' : 'text-gray-700 dark:text-slate-300'}`}>
                   {st.label}
                 </span>
-                <span className="text-xs text-gray-400 mt-0.5">{st.desc}</span>
+                <span className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{st.desc}</span>
               </button>
             )
           })}
@@ -311,18 +311,18 @@ export default function FeedPage() {
       </section>
 
       {/* Update Frequency */}
-      <section className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
-          <Clock className="h-5 w-5 text-clilens-primary" />
+      <section className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-3 flex items-center gap-2">
+          <Clock className="h-5 w-5 text-clilens-primary dark:text-teal-400" />
           Update Frequency
         </h2>
-        <p className="text-sm text-gray-500 mb-3">
+        <p className="text-sm text-gray-500 dark:text-slate-400 mb-3">
           How often should we check for new articles from your selected countries?
         </p>
         <select
           value={updateFrequency}
           onChange={e => setUpdateFrequency(e.target.value)}
-          className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clilens-primary bg-white"
+          className="w-full px-4 py-2 border border-gray-200 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clilens-primary bg-white dark:bg-slate-700 dark:text-slate-100"
         >
           <option value="daily">Daily (once per day)</option>
           <option value="twice_daily">Twice daily</option>
@@ -344,7 +344,7 @@ export default function FeedPage() {
         <button
           onClick={refreshFeed}
           disabled={refreshing || !preferences?.country_codes?.length}
-          className="px-5 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 flex items-center gap-2 text-sm"
+          className="px-5 py-2 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 flex items-center gap-2 text-sm"
         >
           <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
           Refresh Now
@@ -353,24 +353,24 @@ export default function FeedPage() {
 
       {/* Feed Status */}
       {feedStatus.length > 0 && (
-        <section className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Clock className="h-5 w-5 text-clilens-primary" />
+        <section className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+            <Clock className="h-5 w-5 text-clilens-primary dark:text-teal-400" />
             Feed Status
           </h2>
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-gray-100 dark:divide-slate-800">
             {feedStatus.map(s => {
               const country = availableCountries.find(c => c.code === s.country_code)
               return (
                 <div key={s.country_code} className="flex items-center justify-between py-3">
                   <div className="flex items-center gap-2">
                     <span>{country?.flag || '\u{1F310}'}</span>
-                    <span className="font-medium text-gray-800">{country?.name || s.country_code}</span>
+                    <span className="font-medium text-gray-800 dark:text-slate-200">{country?.name || s.country_code}</span>
                   </div>
                   <div className="text-right text-sm">
-                    <div className="text-gray-600">{s.article_count} articles</div>
+                    <div className="text-gray-600 dark:text-slate-400">{s.article_count} articles</div>
                     {s.last_update && (
-                      <div className="text-xs text-gray-400">
+                      <div className="text-xs text-gray-400 dark:text-slate-500">
                         Last: {new Date(s.last_update).toLocaleDateString('en-GB')}
                       </div>
                     )}
@@ -384,7 +384,7 @@ export default function FeedPage() {
 
       {/* Update frequency info */}
       {preferences && (
-        <div className="mt-4 text-center text-sm text-gray-400">
+        <div className="mt-4 text-center text-sm text-gray-400 dark:text-slate-500">
           Update frequency: <span className="font-medium">{preferences.update_frequency.replace('_', ' ')}</span>
         </div>
       )}

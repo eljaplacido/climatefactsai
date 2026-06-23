@@ -37,9 +37,9 @@ const NAV_ITEMS = [
 ];
 
 const TIER_COLORS: Record<string, string> = {
-  freemium: "bg-gray-100 text-gray-600",
+  freemium: "bg-gray-100 text-gray-600 dark:text-slate-300",
   basic: "bg-blue-100 text-blue-700",
-  professional: "bg-teal-100 text-teal-700",
+  professional: "bg-teal-100 text-teal-700 dark:text-teal-300",
   enterprise: "bg-purple-100 text-purple-700",
 };
 
@@ -59,15 +59,15 @@ export default function GlobalNav() {
   const langRef = useRef<HTMLDivElement>(null);
   const { user, isLoggedIn, loading: authLoading, logout } = useAuth();
   const { locale, setLocale, t, isTranslating } = useI18n();
-  // 2026-05-28 — dark mode is partially implemented:
-  //   * globals.css has `.dark` overrides on text colors + bg-white
-  //     + bg-gray-50, but NOT on gradient stops (to-white, to-blue-50)
-  //     or on most component-specific colored cards.
-  //   * Result: with `.dark` active, body bg flips to slate but cards
-  //     that use bg-gradient-to-r / bg-clilens-teal-50 / to-white
-  //     stay light, while text colors flip to slate-100 — producing
-  //     near-white-on-white that's invisible. User reported this on
-  //     Featured Analysis + article detail.
+  // 2026-05-28 → 2026-06-23 — dark mode is now implemented across all
+  //   primary pages and shared components (home, search, dashboard, feed,
+  //   about, sources, companies, forecasts, methodology, ArticleCard,
+  //   GlobalNav, SourceProfileCard). Each surface ships the standard
+  //   dark: palette: page bg dark:bg-slate-900, cards dark:bg-slate-800,
+  //   borders dark:border-slate-700, text dark:text-slate-100/400/500,
+  //   inputs dark:bg-slate-700, and gradient cards fall back to
+  //   dark:from-slate-800 dark:to-slate-800 so the old to-white stops no
+  //   longer produce invisible text. next-themes drives the .dark class.
   //
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -107,7 +107,7 @@ export default function GlobalNav() {
   if (isStandalone) return null;
 
   return (
-    <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
+    <header className="bg-white dark:bg-slate-800 shadow-sm border-b border-gray-200 dark:border-slate-700 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-14">
           {/* Logo */}
@@ -116,8 +116,8 @@ export default function GlobalNav() {
               <Globe className="h-5 w-5 text-white" />
             </div>
             <div className="hidden sm:block">
-              <p className="text-lg font-bold text-gray-900 leading-tight">Climatefacts.ai</p>
-              <p className="text-[10px] text-gray-400 leading-tight -mt-0.5">Climate Intelligence</p>
+              <p className="text-lg font-bold text-gray-900 dark:text-slate-100 leading-tight">Climatefacts.ai</p>
+              <p className="text-[10px] text-gray-400 dark:text-slate-500 leading-tight -mt-0.5">Climate Intelligence</p>
             </div>
           </Link>
 
@@ -129,8 +129,8 @@ export default function GlobalNav() {
                 href={href}
                 className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
                   isActive(href)
-                    ? "bg-teal-50 text-teal-700 font-semibold"
-                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                    ? "bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 font-semibold"
+                    : "text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-slate-100 dark:text-slate-100"
                 }`}
               >
                 <Icon className="h-4 w-4" />
@@ -145,7 +145,7 @@ export default function GlobalNav() {
             {mounted && (
               <button
                 onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                className="p-2 text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
                 aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
                 title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
               >
@@ -161,7 +161,7 @@ export default function GlobalNav() {
             <div className="relative" ref={langRef}>
               <button
                 onClick={() => setLangOpen(!langOpen)}
-                className="flex items-center space-x-1.5 px-2 py-1.5 text-xs text-gray-500 hover:bg-gray-50 rounded-md transition-colors"
+                className="flex items-center space-x-1.5 px-2 py-1.5 text-xs text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-md transition-colors"
                 aria-label={t("label.language")}
               >
                 {isTranslating ? (
@@ -172,20 +172,20 @@ export default function GlobalNav() {
                 <span className="uppercase font-semibold">{locale}</span>
               </button>
               {langOpen && (
-                <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto py-1">
+                <div className="absolute right-0 top-full mt-1 w-52 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto py-1">
                   {SUPPORTED_LANGUAGES.map((lang) => (
                     <button
                       key={lang.code}
                       onClick={() => handleLangChange(lang.code)}
-                      className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2.5 transition-colors ${
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-800 flex items-center gap-2.5 transition-colors ${
                         locale === lang.code
-                          ? "bg-teal-50 text-teal-700 font-medium"
-                          : "text-gray-700"
+                          ? "bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 font-medium"
+                          : "text-gray-700 dark:text-slate-300"
                       }`}
                     >
                       <span className="text-base w-6 text-center">{getFlagEmoji(lang.flag)}</span>
                       <span className="flex-1">{lang.name}</span>
-                      <span className="text-[10px] text-gray-400 uppercase font-mono">{lang.code}</span>
+                      <span className="text-[10px] text-gray-400 dark:text-slate-500 uppercase font-mono">{lang.code}</span>
                     </button>
                   ))}
                 </div>
@@ -196,7 +196,7 @@ export default function GlobalNav() {
             {isLoggedIn && (
               <Link
                 href="/admin/analytics"
-                className="hidden md:flex items-center px-2 py-1.5 text-gray-500 hover:bg-gray-50 rounded-md transition-colors"
+                className="hidden md:flex items-center px-2 py-1.5 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-md transition-colors"
                 title={t("nav.analytics")}
                 aria-label={t("nav.analytics")}
               >
@@ -207,7 +207,7 @@ export default function GlobalNav() {
             {/* About */}
             <Link
               href="/about"
-              className="hidden md:flex items-center px-2 py-1.5 text-gray-500 hover:bg-gray-50 rounded-md transition-colors"
+              className="hidden md:flex items-center px-2 py-1.5 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-md transition-colors"
               title={t("nav.about")}
               aria-label={t("nav.about")}
             >
@@ -221,7 +221,7 @@ export default function GlobalNav() {
                   <div className="relative hidden md:block" ref={userMenuRef}>
                     <button
                       onClick={() => setUserMenuOpen(!userMenuOpen)}
-                      className="flex items-center space-x-2 px-2 py-1 rounded-md hover:bg-gray-50 transition-colors"
+                      className="flex items-center space-x-2 px-2 py-1 rounded-md hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
                     >
                       <div className="w-7 h-7 rounded-full bg-gradient-to-br from-teal-500 to-emerald-500 flex items-center justify-center text-white text-xs font-bold">
                         {user.full_name?.charAt(0)?.toUpperCase() || "U"}
@@ -231,24 +231,24 @@ export default function GlobalNav() {
                       </span>
                     </button>
                     {userMenuOpen && (
-                      <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-xl z-50 py-1">
-                        <div className="px-4 py-2.5 border-b border-gray-100">
-                          <p className="text-sm font-semibold text-gray-900 truncate">{user.full_name}</p>
-                          <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                      <div className="absolute right-0 top-full mt-1 w-56 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl z-50 py-1">
+                        <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800">
+                          <p className="text-sm font-semibold text-gray-900 dark:text-slate-100 truncate">{user.full_name}</p>
+                          <p className="text-xs text-gray-500 dark:text-slate-400 truncate">{user.email}</p>
                         </div>
-                        <Link href="/dashboard" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                          <LayoutDashboard className="h-4 w-4 text-gray-400" />
+                        <Link href="/dashboard" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
+                          <LayoutDashboard className="h-4 w-4 text-gray-400 dark:text-slate-500" />
                           {t("nav.dashboard")}
                         </Link>
-                        <Link href="/feed" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                          <Rss className="h-4 w-4 text-gray-400" />
+                        <Link href="/feed" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
+                          <Rss className="h-4 w-4 text-gray-400 dark:text-slate-500" />
                           {t("nav.my_feed")}
                         </Link>
-                        <Link href="/dashboard/settings" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                          <Settings className="h-4 w-4 text-gray-400" />
+                        <Link href="/dashboard/settings" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
+                          <Settings className="h-4 w-4 text-gray-400 dark:text-slate-500" />
                           {t("nav.settings")}
                         </Link>
-                        <div className="border-t border-gray-100 mt-1 pt-1">
+                        <div className="border-t border-gray-100 dark:border-slate-800 mt-1 pt-1">
                           <button
                             onClick={() => { setUserMenuOpen(false); logout(); }}
                             className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
@@ -264,7 +264,7 @@ export default function GlobalNav() {
                   <div className="hidden md:flex items-center space-x-1.5">
                     <Link
                       href="/login"
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md transition-colors font-medium"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-slate-100 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-md transition-colors font-medium"
                     >
                       <LogIn className="h-4 w-4" />
                       {t("nav.sign_in")}
@@ -283,7 +283,7 @@ export default function GlobalNav() {
 
             {/* Mobile menu button */}
             <button
-              className="lg:hidden p-2 text-gray-500 hover:bg-gray-50 rounded-md"
+              className="lg:hidden p-2 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-md"
               onClick={() => setMobileOpen(!mobileOpen)}
               aria-label="Toggle menu"
             >
@@ -294,36 +294,36 @@ export default function GlobalNav() {
 
         {/* Mobile menu */}
         {mobileOpen && (
-          <nav className="lg:hidden border-t border-gray-100 py-2 space-y-0.5 pb-3">
+          <nav className="lg:hidden border-t border-gray-100 dark:border-slate-800 py-2 space-y-0.5 pb-3">
             {NAV_ITEMS.map(({ href, labelKey, fallback, icon: Icon }) => (
               <Link
                 key={href}
                 href={href}
                 className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm ${
                   isActive(href)
-                    ? "bg-teal-50 text-teal-700 font-semibold"
-                    : "text-gray-600 hover:bg-gray-50"
+                    ? "bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 font-semibold"
+                    : "text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800"
                 }`}
               >
                 <Icon className="h-5 w-5" />
                 <span>{t(labelKey) !== labelKey.split(".").pop() ? t(labelKey) : fallback}</span>
               </Link>
             ))}
-            <div className="border-t border-gray-100 mt-2 pt-2">
+            <div className="border-t border-gray-100 dark:border-slate-800 mt-2 pt-2">
               {isLoggedIn && (
-                <Link href="/admin/analytics" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+                <Link href="/admin/analytics" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800">
                   <BarChart3 className="h-5 w-5" />
                   <span>{t("nav.analytics")}</span>
                 </Link>
               )}
-              <Link href="/about" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+              <Link href="/about" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800">
                 <Info className="h-5 w-5" />
                 <span>{t("nav.about")}</span>
               </Link>
             </div>
             {/* Mobile auth section */}
             {!authLoading && (
-              <div className="border-t border-gray-100 mt-2 pt-2">
+              <div className="border-t border-gray-100 dark:border-slate-800 mt-2 pt-2">
                 {isLoggedIn && user ? (
                   <>
                     <div className="px-3 py-2 mb-1">
@@ -332,18 +332,18 @@ export default function GlobalNav() {
                           {user.full_name?.charAt(0)?.toUpperCase() || "U"}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold text-gray-900 truncate">{user.full_name}</p>
+                          <p className="text-sm font-semibold text-gray-900 dark:text-slate-100 truncate">{user.full_name}</p>
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${TIER_COLORS[user.subscription_tier] || TIER_COLORS.freemium}`}>
                             {TIER_LABELS[user.subscription_tier] || "Free"}
                           </span>
                         </div>
                       </div>
                     </div>
-                    <Link href="/dashboard" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+                    <Link href="/dashboard" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800">
                       <LayoutDashboard className="h-5 w-5" />
                       <span>{t("nav.dashboard")}</span>
                     </Link>
-                    <Link href="/feed" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+                    <Link href="/feed" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800">
                       <Rss className="h-5 w-5" />
                       <span>{t("nav.my_feed")}</span>
                     </Link>
@@ -357,7 +357,7 @@ export default function GlobalNav() {
                   </>
                 ) : (
                   <>
-                    <Link href="/login" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+                    <Link href="/login" className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800">
                       <LogIn className="h-5 w-5" />
                       <span>{t("nav.sign_in")}</span>
                     </Link>

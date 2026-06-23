@@ -56,7 +56,7 @@ export default function Home() {
       : 'grid gap-3 md:grid-cols-2 lg:grid-cols-4'
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
       {/* Hero Section */}
       <div className="bg-gradient-to-br from-clilens-teal-700 via-clilens-teal-600 to-clilens-teal-500 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
@@ -127,7 +127,7 @@ export default function Home() {
       </div>
 
       {/* Trending Topics */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white border-b border-gray-200 dark:bg-slate-800 dark:border-slate-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
           <TrendingTopics
             onTopicClick={(tag) => setFilterTag(filterTag === tag ? null : tag)}
@@ -138,7 +138,7 @@ export default function Home() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white border-b border-gray-200 dark:bg-slate-800 dark:border-slate-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-end gap-4 flex-wrap">
             <div className="flex-shrink-0 w-64">
@@ -146,11 +146,11 @@ export default function Home() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Credibility</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Credibility</label>
               <select
                 value={filterCredibility}
                 onChange={(e) => setFilterCredibility(e.target.value)}
-                className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clilens-primary focus:border-transparent"
+                className="px-4 py-2.5 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clilens-primary focus:border-transparent"
               >
                 <option value="all">All Levels</option>
                 <option value="HIGH">High</option>
@@ -160,7 +160,7 @@ export default function Home() {
             </div>
 
             {/* View mode toggle */}
-            <div className="ml-auto flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+            <div className="ml-auto flex items-center gap-1 bg-gray-100 dark:bg-slate-700 rounded-lg p-1">
               {([
                 { mode: 'grid' as ViewMode, label: 'Grid', icon: 'M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z' },
                 { mode: 'list' as ViewMode, label: 'List', icon: 'M4 6h16M4 10h16M4 14h16M4 18h16' },
@@ -172,8 +172,8 @@ export default function Home() {
                   title={label}
                   className={`p-1.5 rounded ${
                     viewMode === mode
-                      ? 'bg-white shadow-sm text-clilens-primary'
-                      : 'text-gray-400 hover:text-gray-600'
+                      ? 'bg-white shadow-sm text-clilens-primary dark:bg-slate-800 dark:text-teal-400'
+                      : 'text-gray-400 hover:text-gray-600 dark:text-slate-400 dark:hover:text-slate-300'
                   }`}
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -191,23 +191,23 @@ export default function Home() {
         {/* Featured Analysis section */}
         {!loading && featured.length > 0 && !filterTag && (
           <div className="mb-8">
-            <h2 className="text-lg font-bold text-gray-900 mb-3">Featured Analysis</h2>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100 mb-3">Featured Analysis</h2>
             <div className="grid gap-4 md:grid-cols-3">
               {featured.map((a) => (
                 <Link
                   key={a.article_id}
                   href={`/articles/${a.article_id}`}
-                  className="block p-4 bg-gradient-to-br from-clilens-teal-50 to-white rounded-xl border border-clilens-teal-200 hover:shadow-md transition-all duration-200"
+                  className="block p-4 bg-gradient-to-br from-clilens-teal-50 to-white dark:from-slate-800 dark:to-slate-800 rounded-xl border border-clilens-teal-200 dark:border-slate-700 hover:shadow-md transition-all duration-200"
                 >
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs font-medium text-clilens-primary px-2 py-0.5 bg-clilens-teal-100 rounded-full">
+                    <span className="text-xs font-medium text-clilens-primary dark:text-teal-400 px-2 py-0.5 bg-clilens-teal-100 dark:bg-slate-700 rounded-full">
                       Featured
                     </span>
-                    <span className="text-xs text-gray-400">{a.source_name}</span>
+                    <span className="text-xs text-gray-400 dark:text-slate-500">{a.source_name}</span>
                   </div>
-                  <h3 className="text-sm font-semibold text-gray-900 line-clamp-2">{a.title}</h3>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 line-clamp-2">{a.title}</h3>
                   {a.executive_brief && (
-                    <p className="text-xs text-gray-500 mt-1 line-clamp-2">{a.executive_brief}</p>
+                    <p className="text-xs text-gray-500 dark:text-slate-400 mt-1 line-clamp-2">{a.executive_brief}</p>
                   )}
                 </Link>
               ))}
@@ -217,13 +217,13 @@ export default function Home() {
 
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Latest Verified Reports</h2>
-            <p className="text-gray-600 mt-1">All articles are fact-checked and verified using AI-powered analysis of scientific sources</p>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Latest Verified Reports</h2>
+            <p className="text-gray-600 dark:text-slate-400 mt-1">All articles are fact-checked and verified using AI-powered analysis of scientific sources</p>
           </div>
           {filterTag && (
             <button
               onClick={() => setFilterTag(null)}
-              className="text-sm text-clilens-primary hover:underline"
+              className="text-sm text-clilens-primary dark:text-teal-400 hover:underline"
             >
               Clear topic filter
             </button>
@@ -231,7 +231,7 @@ export default function Home() {
         </div>
 
         {error && (
-          <div className="mb-6 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg text-sm">
+          <div className="mb-6 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-200 px-4 py-3 rounded-lg text-sm">
             {error}
           </div>
         )}
@@ -250,11 +250,11 @@ export default function Home() {
           </div>
         ) : !error ? (
           <div className="text-center py-12">
-            <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="mx-auto h-12 w-12 text-gray-400 dark:text-slate-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m5.231 13.481L15 17.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v16.5c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
             </svg>
-            <p className="text-gray-500 text-lg mb-2">No articles found</p>
-            <p className="text-gray-400 text-sm">Try adjusting your filters or check back later for new reports.</p>
+            <p className="text-gray-500 dark:text-slate-400 text-lg mb-2">No articles found</p>
+            <p className="text-gray-400 dark:text-slate-500 text-sm">Try adjusting your filters or check back later for new reports.</p>
             <div className="mt-4 flex justify-center">
               <button
                 type="button"
@@ -283,7 +283,7 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 mt-16">
+      <footer className="bg-white border-t border-gray-200 dark:bg-slate-800 dark:border-slate-700 mt-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div>
@@ -291,44 +291,44 @@ export default function Home() {
                 <div className="w-8 h-8 bg-clilens-primary rounded-full flex items-center justify-center">
                   <span className="text-white font-bold text-sm">C</span>
                 </div>
-                <span className="font-bold text-xl text-gray-900">Climatefacts.ai</span>
+                <span className="font-bold text-xl text-gray-900 dark:text-slate-100">Climatefacts.ai</span>
               </div>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-slate-400">
                 Global climate trust intelligence: making claims auditable, uncertainty explicit, and evidence usable.
               </p>
             </div>
 
             <div>
-              <h3 className="font-semibold text-gray-900 mb-4">Platform</h3>
-              <ul className="space-y-2 text-sm text-gray-600">
-                <li><Link href="/about" className="hover:text-clilens-primary">How it works</Link></li>
-                <li><Link href="/methodology" className="hover:text-clilens-primary">Methodology</Link></li>
-                <li><Link href="/sources" className="hover:text-clilens-primary">Data sources</Link></li>
-                <li><Link href="/map" className="hover:text-clilens-primary">Intelligence Map</Link></li>
-                <li><Link href="/forecasts" className="hover:text-clilens-primary">Forecasts</Link></li>
+              <h3 className="font-semibold text-gray-900 dark:text-slate-100 mb-4">Platform</h3>
+              <ul className="space-y-2 text-sm text-gray-600 dark:text-slate-400">
+                <li><Link href="/about" className="hover:text-clilens-primary dark:hover:text-teal-400">How it works</Link></li>
+                <li><Link href="/methodology" className="hover:text-clilens-primary dark:hover:text-teal-400">Methodology</Link></li>
+                <li><Link href="/sources" className="hover:text-clilens-primary dark:hover:text-teal-400">Data sources</Link></li>
+                <li><Link href="/map" className="hover:text-clilens-primary dark:hover:text-teal-400">Intelligence Map</Link></li>
+                <li><Link href="/forecasts" className="hover:text-clilens-primary dark:hover:text-teal-400">Forecasts</Link></li>
               </ul>
             </div>
 
             <div>
-              <h3 className="font-semibold text-gray-900 mb-4">Resources</h3>
-              <ul className="space-y-2 text-sm text-gray-600">
-                <li><Link href="/about" className="hover:text-clilens-primary">About us</Link></li>
-                <li><Link href="/analyze" className="hover:text-clilens-primary">Analyze URL</Link></li>
-                <li><Link href="/search" className="hover:text-clilens-primary">Search</Link></li>
+              <h3 className="font-semibold text-gray-900 dark:text-slate-100 mb-4">Resources</h3>
+              <ul className="space-y-2 text-sm text-gray-600 dark:text-slate-400">
+                <li><Link href="/about" className="hover:text-clilens-primary dark:hover:text-teal-400">About us</Link></li>
+                <li><Link href="/analyze" className="hover:text-clilens-primary dark:hover:text-teal-400">Analyze URL</Link></li>
+                <li><Link href="/search" className="hover:text-clilens-primary dark:hover:text-teal-400">Search</Link></li>
               </ul>
             </div>
 
             <div>
-              <h3 className="font-semibold text-gray-900 mb-4">Legal</h3>
-              <ul className="space-y-2 text-sm text-gray-600">
-                <li><Link href="/privacy" className="hover:text-clilens-primary">Privacy policy</Link></li>
-                <li><Link href="/terms" className="hover:text-clilens-primary">Terms of service</Link></li>
-                <li><Link href="/cookies" className="hover:text-clilens-primary">Cookie policy</Link></li>
+              <h3 className="font-semibold text-gray-900 dark:text-slate-100 mb-4">Legal</h3>
+              <ul className="space-y-2 text-sm text-gray-600 dark:text-slate-400">
+                <li><Link href="/privacy" className="hover:text-clilens-primary dark:hover:text-teal-400">Privacy policy</Link></li>
+                <li><Link href="/terms" className="hover:text-clilens-primary dark:hover:text-teal-400">Terms of service</Link></li>
+                <li><Link href="/cookies" className="hover:text-clilens-primary dark:hover:text-teal-400">Cookie policy</Link></li>
               </ul>
             </div>
           </div>
 
-          <div className="mt-8 pt-8 border-t border-gray-200 text-center text-sm text-gray-500">
+          <div className="mt-8 pt-8 border-t border-gray-200 dark:border-slate-700 text-center text-sm text-gray-500 dark:text-slate-400">
             <p>&copy; {new Date().getFullYear()} Climatefacts.ai. Powered by Multi-Agent AI System.</p>
           </div>
         </div>
