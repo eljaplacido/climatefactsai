@@ -467,6 +467,61 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     client_ip, "corporate_claim_verify", max_per_day=3
                 )
 
+        # LLM-backed chat — rate limit by tier (2026-06-23).
+        # /api/chat streams an LLM response per call, so an unthrottled
+        # endpoint is a direct token-cost blast. Freemium=5/day,
+        # basic/standard=25, pro/enterprise unlimited. Mirrors the
+        # corporate-claim-verify pattern (per-user key + IP fallback).
+        elif request.url.path == "/api/chat" and request.method == "POST":
+            if user:
+                user_id = str(user.get("user_id"))
+                subscription_tier = user.get("subscription_tier", "freemium")
+                chat_limits = {
+                    "freemium": 5,
+                    "free": 5,
+                    "standard": 25,
+                    "basic": 25,  # alias
+                    "professional": None,  # unlimited
+                    "pro": None,  # alias
+                    "enterprise": None,
+                }
+                per_day = chat_limits.get(subscription_tier, 5)
+                if per_day is not None:
+                    self._check_ip_rate_limit(
+                        f"user:{user_id}",
+                        "chat",
+                        max_per_day=per_day,
+                    )
+            else:
+                client_ip = request.client.host if request.client else "unknown"
+                self._check_ip_rate_limit(client_ip, "chat", max_per_day=5)
+
+        # Deep search — monthly quota via QuotaService is already enforced in
+        # the route; add a per-day IP limit for anonymous abuse prevention.
+        elif (
+            request.url.path.startswith("/api/deep-search")
+            and request.method == "POST"
+        ):
+            subscription_tier = (
+                user.get("subscription_tier", "anonymous") if user else "anonymous"
+            )
+            if subscription_tier in ("anonymous", "freemium", "free"):
+                client_ip = request.client.host if request.client else "unknown"
+                self._check_ip_rate_limit(
+                    client_ip, "deep_search", max_per_day=3
+                )
+
+        # Map query (LLM-backed) — rate limit anonymous/freemium abuse.
+        elif request.url.path == "/api/map/query" and request.method == "POST":
+            subscription_tier = (
+                user.get("subscription_tier", "anonymous") if user else "anonymous"
+            )
+            if subscription_tier in ("anonymous", "freemium", "free"):
+                client_ip = request.client.host if request.client else "unknown"
+                self._check_ip_rate_limit(
+                    client_ip, "map_query", max_per_day=10
+                )
+
         response = await call_next(request)
 
         return response

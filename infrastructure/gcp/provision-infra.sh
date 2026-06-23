@@ -352,6 +352,51 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --quiet || true
 
 # ---------------------------------------------------------------------------
+# 9. Cloud Monitoring Alert Policies
+# ---------------------------------------------------------------------------
+# Defaults — cloudbuild.yaml / deploy.sh own the canonical service names and
+# frontend host; mirror them here so a fresh provision run can create alerts
+# without sourcing deploy.sh. Override by exporting API_SERVICE /
+# FRONTEND_DOMAIN before invoking this script.
+API_SERVICE="${API_SERVICE:-climatenews-api}"
+FRONTEND_DOMAIN="${FRONTEND_DOMAIN:-}"
+
+log "Creating monitoring alert policies..."
+
+# 1. API 5xx error rate alert
+gcloud monitoring policies create --project="${PROJECT_ID}" \
+  --display-name="API High 5xx Rate" \
+  --condition-filter='resource.type="cloud_run_revision" AND resource.label.service_name="'"${API_SERVICE}"'" AND metric.type="run.googleapis.com/request_count" AND metric.label.response_code_class="5xx"' \
+  --condition-threshold-val-comparison=COMPARISON_GT \
+  --condition-threshold-value=0.05 \
+  --condition-duration=300s \
+  --no-notification-channel 2>/dev/null || log "  (alert policy may already exist)"
+
+# 2. Cloud SQL CPU utilization alert
+gcloud monitoring policies create --project="${PROJECT_ID}" \
+  --display-name="Cloud SQL High CPU" \
+  --condition-filter='resource.type="cloudsql_database" AND metric.type="cloudsql.googleapis.com/database/cpu/utilization"' \
+  --condition-threshold-val-comparison=COMPARISON_GT \
+  --condition-threshold-value=0.8 \
+  --condition-duration=600s \
+  --no-notification-channel 2>/dev/null || log "  (alert policy may already exist)"
+
+# 3. Uptime check on frontend (skip if FRONTEND_DOMAIN is unset — the frontend
+#    is not deployed yet during first provision).
+if [[ -n "${FRONTEND_DOMAIN}" ]]; then
+  gcloud monitoring uptime-check-configs create "frontend-uptime" \
+    --project="${PROJECT_ID}" \
+    --display-name="Frontend Uptime" \
+    --resource-type=uptime-url \
+    --resource-labels=host="${FRONTEND_DOMAIN}" \
+    --http-check-path=/ \
+    --period=60s \
+    --timeout=10s 2>/dev/null || log "  (uptime check may already exist)"
+else
+  log "  Skipping frontend uptime check (FRONTEND_DOMAIN not set; set it and re-run after first deploy)."
+fi
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 log "============================================================"

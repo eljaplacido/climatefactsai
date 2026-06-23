@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# DEPRECATED: This script is not maintained in sync with cloudbuild.yaml.
+# Use cloudbuild.yaml for production deployments: gcloud builds submit --config=cloudbuild.yaml
+# This script is kept for emergency manual deploys only and may have stale config.
 # =============================================================================
 # ClimateNews GCP Deployment Script — LEAN / Tiny Launch Edition
 # =============================================================================
