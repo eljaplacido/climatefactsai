@@ -48,10 +48,11 @@ export default function ArticleDetailTabs({
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [originalTextOpen, setOriginalTextOpen] = useState(false);
 
-  const hasClaims = claims.length > 0;
+  const safeClaims = claims ?? [];
+  const hasClaims = safeClaims.length > 0;
 
   // Collect evidence from all claims
-  const evidenceItems = claims.flatMap((c, idx) => {
+  const evidenceItems = safeClaims.flatMap((c, idx) => {
     const fc = c.fact_check;
     if (!fc?.evidence_chain || fc.evidence_chain.length === 0) return [];
     return fc.evidence_chain.map((ev) => ({
@@ -109,7 +110,7 @@ export default function ArticleDetailTabs({
               <Shield className="h-5 w-5 text-clilens-primary" />
               Verified Claims
               <span className="text-sm font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                {claims.length}
+                {safeClaims.length}
               </span>
             </h2>
             {claimsOpen ? (
@@ -120,8 +121,8 @@ export default function ArticleDetailTabs({
           </button>
           {claimsOpen && (
             <div className="space-y-4 mt-2">
-              {claims.map((c, index) => (
-                <div key={c.claim_id} id={`claim-${index + 1}`}>
+              {safeClaims.map((c, index) => (
+                <div key={c.claim_id || `claim-${index}`} id={`claim-${index + 1}`}>
                   <ClaimCard claim={c} index={index} />
                 </div>
               ))}

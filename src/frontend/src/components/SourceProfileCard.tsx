@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { Shield, ExternalLink, FileText, AlertTriangle, CheckCircle } from "lucide-react";
+import { Shield, ExternalLink, FileText, AlertTriangle, CheckCircle, Clock } from "lucide-react";
 import type { SourceProfile } from "../types";
 import AskAboutButton from "./AskAboutButton";
 
@@ -14,7 +14,7 @@ const EDITORIAL_CONFIG: Record<string, { label: string; color: string }> = {
   rigorous: { label: "Rigorous", color: "text-emerald-700" },
   moderate: { label: "Moderate", color: "text-amber-700" },
   low: { label: "Low", color: "text-red-700" },
-  unknown: { label: "Not assessed", color: "text-gray-500" },
+  unknown: { label: "Awaiting analysis", color: "text-gray-400" },
 };
 
 const FACTCHECK_CONFIG: Record<string, { label: string; color: string }> = {
@@ -22,7 +22,7 @@ const FACTCHECK_CONFIG: Record<string, { label: string; color: string }> = {
   good: { label: "Good", color: "text-emerald-600" },
   mixed: { label: "Mixed", color: "text-amber-700" },
   poor: { label: "Poor", color: "text-red-700" },
-  unknown: { label: "Not assessed", color: "text-gray-500" },
+  unknown: { label: "Awaiting analysis", color: "text-gray-400" },
 };
 
 function getCredibilityBand(score: number): { label: string; color: string; bg: string } {
@@ -98,26 +98,33 @@ function SourceProfileCard({ profile, compact = false }: SourceProfileCardProps)
         <div className="grid grid-cols-3 gap-3">
           <div>
             <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">Editorial Standards</p>
-            <p className={clsx("text-sm font-medium", editorial.color)}>{editorial.label}</p>
+            <p className={clsx("text-sm font-medium flex items-center gap-1", editorial.color)}>
+              {profile.editorial_standards === "unknown" && <Clock className="w-3 h-3" />}
+              {editorial.label}
+            </p>
             {typeof profile.editorial_score === "number" && (
               <p className="text-[10px] text-gray-500 mt-0.5 font-mono">{profile.editorial_score}/100</p>
             )}
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">Fact-Check Record</p>
-            <p className={clsx("text-sm font-medium", factcheck.color)}>{factcheck.label}</p>
+            <p className={clsx("text-sm font-medium flex items-center gap-1", factcheck.color)}>
+              {profile.fact_check_record === "unknown" && <Clock className="w-3 h-3" />}
+              {factcheck.label}
+            </p>
             {typeof profile.factcheck_score === "number" && (
               <p className="text-[10px] text-gray-500 mt-0.5 font-mono">{profile.factcheck_score}/100</p>
             )}
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">Transparency</p>
-            <p className={clsx("text-sm font-medium",
+            <p className={clsx("text-sm font-medium flex items-center gap-1",
               profile.transparency_level === "high" ? "text-emerald-700" :
               profile.transparency_level === "moderate" ? "text-amber-700" :
-              profile.transparency_level === "low" ? "text-red-700" : "text-gray-500"
+              profile.transparency_level === "low" ? "text-red-700" : "text-gray-400"
             )}>
-              {profile.transparency_level === "unknown" ? "Not assessed" :
+              {profile.transparency_level === "unknown" && <Clock className="w-3 h-3" />}
+              {profile.transparency_level === "unknown" ? "Awaiting analysis" :
                profile.transparency_level.charAt(0).toUpperCase() + profile.transparency_level.slice(1)}
             </p>
             {typeof profile.transparency_score === "number" && (
@@ -174,6 +181,16 @@ function SourceProfileCard({ profile, compact = false }: SourceProfileCardProps)
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* GX10 pending-assessment notice — shown when any trust factor is unknown */}
+        {(profile.editorial_standards === "unknown" || profile.fact_check_record === "unknown" || profile.transparency_level === "unknown") && (
+          <div className="flex items-start gap-2 pt-2 border-t border-gray-100">
+            <Clock className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
+            <p className="text-[10px] text-gray-400 leading-relaxed">
+              This source will be automatically assessed by our GX10 analysis pipeline once sufficient articles have been ingested.
+            </p>
           </div>
         )}
 

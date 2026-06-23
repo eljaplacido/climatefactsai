@@ -8,6 +8,7 @@ import {
   Marker,
   Tooltip,
   useMap,
+  ZoomControl,
 } from "react-leaflet";
 import type { Layer, PathOptions, LeafletMouseEvent, LatLngTuple } from "leaflet";
 import L from "leaflet";
@@ -624,10 +625,11 @@ export default function InteractiveClimateMap({
         minZoom={2}
         maxZoom={8}
         scrollWheelZoom={true}
-        zoomControl={true}
+        zoomControl={false}
         className="w-full h-full rounded-lg"
         style={{ background: "#0f172a" }}
       >
+        <ZoomControl position="bottomright" />
         <TileLayer
           attribution='&copy; <a href="https://carto.com/">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png"
@@ -724,6 +726,12 @@ export default function InteractiveClimateMap({
           align-items: center !important;
           justify-content: center !important;
           pointer-events: none !important;
+        }
+        .leaflet-control-zoom a {
+          width: 36px !important;
+          height: 36px !important;
+          line-height: 36px !important;
+          font-size: 20px !important;
         }
       `}</style>
     </div>

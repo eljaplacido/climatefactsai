@@ -100,6 +100,7 @@ function MapPageInner() {
   // Core state
   const [countryStats, setCountryStats] = useState<CountryStatEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingLayer, setLoadingLayer] = useState<string | null>(null);
 
   // Phase 9 (2026-05-25) — onboarding walkthrough. Opens automatically
   // on first visit; re-openable via the "Take the tour" trigger.
@@ -264,6 +265,7 @@ function MapPageInner() {
     if (countryStats.some((s) => s.temperature_anomaly != null)) return;
 
     async function fetchTempAnomalies() {
+      setLoadingLayer("temperature_anomaly");
       try {
         const res = await fetch(`${API_BASE}/api/map/layers/temperature-anomaly`);
         if (!res.ok) return;
@@ -281,6 +283,8 @@ function MapPageInner() {
         );
       } catch {
         // silently fail
+      } finally {
+        setLoadingLayer(null);
       }
     }
     fetchTempAnomalies();
@@ -293,6 +297,7 @@ function MapPageInner() {
     if (countryStats.some((s) => s.company_count != null)) return;
 
     async function fetchCorporateDensity() {
+      setLoadingLayer("corporate_density");
       try {
         const res = await fetch(`${API_BASE}/api/map/layers/corporate-density`);
         if (!res.ok) return;
@@ -339,6 +344,8 @@ function MapPageInner() {
         );
       } catch {
         // silently fail
+      } finally {
+        setLoadingLayer(null);
       }
     }
 
@@ -351,6 +358,7 @@ function MapPageInner() {
     if (countryStats.some((s) => s.controversy_score != null)) return;
 
     async function fetchNewsEvents() {
+      setLoadingLayer("news_events");
       try {
         const res = await fetch(`${API_BASE}/api/map/layers/news-events?window_days=21`);
         if (!res.ok) return;
@@ -398,6 +406,8 @@ function MapPageInner() {
         });
       } catch {
         // silently fail
+      } finally {
+        setLoadingLayer(null);
       }
     }
 
@@ -410,6 +420,7 @@ function MapPageInner() {
     if (countryStats.some((s) => s.ndc_status_category != null)) return;
 
     async function fetchNdcStatus() {
+      setLoadingLayer("ndc_status");
       try {
         const res = await fetch(`${API_BASE}/api/map/layers/ndc-status`);
         if (!res.ok) return;
@@ -449,7 +460,7 @@ function MapPageInner() {
           }
           return merged;
         });
-      } catch { /* silent */ }
+      } catch { /* silent */ } finally { setLoadingLayer(null); }
     }
     fetchNdcStatus();
   }, [activeLayer, countryStats]);
@@ -459,6 +470,7 @@ function MapPageInner() {
     if (activeLayer !== "warming_outlook") return;
 
     async function fetchWarmingOutlook() {
+      setLoadingLayer("warming_outlook");
       try {
         const res = await fetch(`${API_BASE}/api/map/layers/warming-outlook?horizon_year=${warmingHorizon}`);
         if (!res.ok) return;
@@ -499,9 +511,10 @@ function MapPageInner() {
           }
           return merged;
         });
-      } catch { /* silent */ }
+      } catch { /* silent */ } finally { setLoadingLayer(null); }
     }
     fetchWarmingOutlook();
+
   }, [activeLayer, warmingHorizon, countryStats]);
 
   // Fetch adaptation gap layer data when switching.
@@ -510,6 +523,7 @@ function MapPageInner() {
     if (countryStats.some((s) => s.adaptation_gap_score != null)) return;
 
     async function fetchAdaptationGap() {
+      setLoadingLayer("adaptation_gap");
       try {
         const res = await fetch(`${API_BASE}/api/map/layers/adaptation-finance-gap`);
         if (!res.ok) return;
@@ -541,7 +555,7 @@ function MapPageInner() {
           }
           return merged;
         });
-      } catch { /* silent */ }
+      } catch { /* silent */ } finally { setLoadingLayer(null); }
     }
     fetchAdaptationGap();
   }, [activeLayer, countryStats]);
@@ -843,6 +857,18 @@ function MapPageInner() {
             <div className="bg-slate-800/90 backdrop-blur-sm rounded-full px-4 py-2 border border-slate-700 flex items-center gap-2">
               <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-400" />
               <span className="text-xs text-slate-300">Updating map...</span>
+            </div>
+          </div>
+        )}
+
+        {/* Layer loading indicator */}
+        {loadingLayer && !loading && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1001]">
+            <div className="bg-slate-800/90 backdrop-blur-sm rounded-full px-4 py-2 border border-slate-700 flex items-center gap-2">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-400" />
+              <span className="text-xs text-slate-300">
+                Loading {loadingLayer.replace(/_/g, " ")} data...
+              </span>
             </div>
           </div>
         )}

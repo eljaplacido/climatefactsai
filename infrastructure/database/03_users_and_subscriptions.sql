@@ -190,7 +190,7 @@ CREATE TABLE IF NOT EXISTS url_analyses (
 
     -- Analysis results
     source_credibility_score INTEGER CHECK (source_credibility_score >= 0 AND source_credibility_score <= 100),
-    overall_credibility VARCHAR(20), -- HIGH, MEDIUM, LOW, MIXED
+    overall_credibility VARCHAR(50), -- HIGH, MEDIUM, LOW, MIXED, UNVERIFIED
     reliability_score INTEGER CHECK (reliability_score >= 0 AND reliability_score <= 100),
 
     -- Extracted claims and fact checks (JSON arrays)

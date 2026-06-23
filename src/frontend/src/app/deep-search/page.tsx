@@ -24,6 +24,9 @@ import {
   HelpCircle,
   Microscope,
   Database,
+  ShieldCheck,
+  ShieldOff,
+  Info,
 } from "lucide-react";
 import TranslatableText from "@/components/TranslatableText";
 import MethodologyDrawer from "@/components/MethodologyDrawer";
@@ -615,7 +618,218 @@ function DeepSearchPageInner() {
             />
           </div>
 
-          {/* Insights dashboard */}
+          {/* Confidence & Credibility Breakdown */}
+          {(() => {
+            const citations = searchResult.citations || [];
+            const credCounts = { HIGH: 0, MEDIUM: 0, LOW: 0 };
+            let avgReliability = 0;
+            let relSamples = 0;
+            let internalWithLowRel = 0;
+            citations.forEach(c => {
+              if (c.credibility === "HIGH") credCounts.HIGH++;
+              else if (c.credibility === "MEDIUM") credCounts.MEDIUM++;
+              else credCounts.LOW++;
+              if (c.type === "internal_article" && (c.reliability_score ?? 0) < 40) {
+                internalWithLowRel += 1;
+              }
+              if (c.reliability_score != null) {
+                avgReliability += c.reliability_score;
+                relSamples += 1;
+              }
+            });
+            const total = citations.length || 1;
+            const totalReal = citations.length;
+            const avgRel = relSamples > 0 ? Math.round(avgReliability / relSamples) : null;
+            const halInfo = searchResult.methodology?.hallucination_check;
+            const grounded = halInfo?.is_grounded;
+            const retrieval = searchResult.methodology?.queries_run || [];
+            const internalHits = retrieval.find((q: any) => q.layer === "internal_corpus")?.hits ?? searchResult.internal_articles_count;
+            const externalHits = retrieval.find((q: any) => q.layer === "perplexity_external")?.hits ?? searchResult.external_sources_count;
+            const guidance = (searchResult.methodology as any)?.guidance;
+            const lowCoverage = totalReal <= 3;
+            const likelyWeakEvidence = lowCoverage || (externalHits === 0 && internalHits < 5) || internalWithLowRel >= 3;
+            const evidencePlain = formatEvidenceStrengthPlain(internalHits, externalHits);
+            const env = searchResult.confidence_envelope;
+            const struct = searchResult.structured_synthesis;
+
+            return (
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm p-5 space-y-6">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-clilens-primary" />
+                  <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Confidence &amp; Credibility</h2>
+                </div>
+
+                {/* Confidence score + evidence strength gauge */}
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div className="rounded-xl border border-gray-100 dark:border-slate-700 bg-gray-50/70 dark:bg-slate-800/50 p-4">
+                    <p className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-3">Confidence Score</p>
+                    {struct?.confidence_score != null ? (
+                      <>
+                        <div className="flex items-end gap-2 mb-2">
+                          <span className={`text-3xl font-bold ${
+                            struct.confidence_score > 0.7 ? 'text-emerald-600 dark:text-emerald-400' :
+                            struct.confidence_score >= 0.4 ? 'text-amber-600 dark:text-amber-400' :
+                            'text-red-600 dark:text-red-400'
+                          }`}>{Math.round(struct.confidence_score * 100)}%</span>
+                          <span className={`text-sm font-medium mb-1 ${
+                            struct.confidence_score > 0.7 ? 'text-emerald-700 dark:text-emerald-300' :
+                            struct.confidence_score >= 0.4 ? 'text-amber-700 dark:text-amber-300' :
+                            'text-red-700 dark:text-red-300'
+                          }`}>
+                            {struct.confidence_score > 0.7 ? 'Strong' : struct.confidence_score >= 0.4 ? 'Moderate' : 'Weak'}
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-3 overflow-hidden">
+                          <div className={`h-3 rounded-full bg-gradient-to-r ${
+                            struct.confidence_score > 0.7 ? 'from-emerald-400 to-emerald-600' :
+                            struct.confidence_score >= 0.4 ? 'from-amber-400 to-amber-600' :
+                            'from-red-400 to-red-600'
+                          } transition-all duration-700`} style={{ width: `${Math.round(struct.confidence_score * 100)}%` }} />
+                        </div>
+                      </>
+                    ) : env?.confidence ? (
+                      <>
+                        <div className="flex items-end gap-2 mb-2">
+                          <span className={`text-3xl font-bold ${
+                            env.confidence === 'high' ? 'text-emerald-600 dark:text-emerald-400' :
+                            env.confidence === 'medium' ? 'text-amber-600 dark:text-amber-400' :
+                            'text-red-600 dark:text-red-400'
+                          }`}>
+                            {env.confidence === 'high' ? 'High' : env.confidence === 'medium' ? 'Medium' : 'Low'}
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-3 overflow-hidden">
+                          <div className={`h-3 rounded-full bg-gradient-to-r ${
+                            env.confidence === 'high' ? 'from-emerald-400 to-emerald-600' :
+                            env.confidence === 'medium' ? 'from-amber-400 to-amber-600' :
+                            'from-red-400 to-red-600'
+                          }`} style={{ width: env.confidence === 'high' ? '85%' : env.confidence === 'medium' ? '50%' : '20%' }} />
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-sm text-gray-400 dark:text-slate-500">Not assessed</p>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-gray-100 dark:border-slate-700 bg-gray-50/70 dark:bg-slate-800/50 p-4">
+                    <p className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-3">Evidence Strength</p>
+                    {struct?.evidence_strength ? (
+                      <>
+                        <div className="flex items-end gap-2 mb-2">
+                          <span className={`text-3xl font-bold capitalize ${
+                            struct.evidence_strength === 'strong' ? 'text-emerald-600 dark:text-emerald-400' :
+                            struct.evidence_strength === 'moderate' ? 'text-amber-600 dark:text-amber-400' :
+                            'text-red-600 dark:text-red-400'
+                          }`}>{struct.evidence_strength}</span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-3 overflow-hidden">
+                          <div className={`h-3 rounded-full bg-gradient-to-r ${
+                            struct.evidence_strength === 'strong' ? 'from-emerald-400 to-emerald-600 w-[85%]' :
+                            struct.evidence_strength === 'moderate' ? 'from-amber-400 to-amber-600 w-[50%]' :
+                            'from-red-400 to-red-600 w-[20%]'
+                          }`} />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex items-end gap-2 mb-2">
+                        <span className={`text-3xl font-bold ${avgRel != null ? (avgRel > 70 ? 'text-emerald-600 dark:text-emerald-400' : avgRel > 40 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400') : 'text-gray-400 dark:text-slate-500'}`}>
+                          {avgRel != null ? `${avgRel}%` : '—'}
+                        </span>
+                        <span className="text-sm text-gray-500 dark:text-slate-400 mb-1">avg reliability</span>
+                      </div>
+                    )}
+                    {evidencePlain.sentence && (
+                      <p className={`text-[11px] leading-snug mt-2 ${
+                        evidencePlain.tone === "alert" ? "text-red-600 dark:text-red-300" :
+                        evidencePlain.tone === "warn" ? "text-amber-600 dark:text-amber-300" :
+                        "text-emerald-600 dark:text-emerald-300"
+                      }`}>{evidencePlain.sentence}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Source credibility distribution bar */}
+                {citations.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Source Credibility ({totalReal} sources)</p>
+                      <div className="flex items-center gap-3 text-[11px]">
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> {credCounts.HIGH} High</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> {credCounts.MEDIUM} Medium</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> {credCounts.LOW} Low</span>
+                      </div>
+                    </div>
+                    <div className="w-full bg-gray-100 dark:bg-slate-800 rounded-full h-4 overflow-hidden flex">
+                      {credCounts.HIGH > 0 && (
+                        <div className="bg-gradient-to-r from-emerald-400 to-emerald-500 h-full transition-all duration-500 flex items-center justify-center text-[10px] font-bold text-white" style={{ width: `${(credCounts.HIGH / total) * 100}%` }}>
+                          {credCounts.HIGH > 0 && Math.round((credCounts.HIGH / total) * 100) > 8 ? `${Math.round((credCounts.HIGH / total) * 100)}%` : ''}
+                        </div>
+                      )}
+                      {credCounts.MEDIUM > 0 && (
+                        <div className="bg-gradient-to-r from-amber-400 to-amber-500 h-full transition-all duration-500 flex items-center justify-center text-[10px] font-bold text-white" style={{ width: `${(credCounts.MEDIUM / total) * 100}%` }}>
+                          {Math.round((credCounts.MEDIUM / total) * 100) > 8 ? `${Math.round((credCounts.MEDIUM / total) * 100)}%` : ''}
+                        </div>
+                      )}
+                      {credCounts.LOW > 0 && (
+                        <div className="bg-gradient-to-r from-red-400 to-red-500 h-full transition-all duration-500 flex items-center justify-center text-[10px] font-bold text-white" style={{ width: `${(credCounts.LOW / total) * 100}%` }}>
+                          {Math.round((credCounts.LOW / total) * 100) > 8 ? `${Math.round((credCounts.LOW / total) * 100)}%` : ''}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Verdict indicator */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className={`px-3 py-1.5 rounded-full text-xs font-semibold uppercase border ${
+                    grounded === true ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700/40' :
+                    grounded === false ? 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700/40' :
+                    'bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-700'
+                  }`}>
+                    {grounded === true ? (
+                      <span className="flex items-center gap-1.5"><CheckCircle className="w-3 h-3" /> Grounded</span>
+                    ) : grounded === false ? (
+                      <span className="flex items-center gap-1.5"><ShieldOff className="w-3 h-3" /> Weak grounding</span>
+                    ) : (
+                      <span className="flex items-center gap-1.5"><Info className="w-3 h-3" /> Not checked</span>
+                    )}
+                  </div>
+                  {halInfo?.hallucination_risk != null && (
+                    <div className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                      halInfo.hallucination_risk < 0.3 ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700/40' :
+                      halInfo.hallucination_risk < 0.6 ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-700/40' :
+                      'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700/40'
+                    }`}>
+                      Hallucination risk: {Math.round(halInfo.hallucination_risk * 100)}%
+                    </div>
+                  )}
+                  {!likelyWeakEvidence && citations.length > 0 && (
+                    <div className="px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700/40 flex items-center gap-1.5">
+                      <Activity className="w-3 h-3" /> Acceptable evidence
+                    </div>
+                  )}
+                </div>
+
+                {/* Scoring legend */}
+                <div className="flex flex-wrap gap-3 text-[11px] text-gray-500 dark:text-slate-400 border-t border-gray-100 dark:border-slate-700 pt-4">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-6 h-1.5 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600 inline-block" />
+                    Strong (&gt;70%)
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-6 h-1.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-600 inline-block" />
+                    Moderate (40-70%)
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-6 h-1.5 rounded-full bg-gradient-to-r from-red-400 to-red-600 inline-block" />
+                    Weak (&lt;40%)
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Source stats and country context */}
           {(() => {
             const citations = searchResult.citations || [];
             const credCounts = { HIGH: 0, MEDIUM: 0, LOW: 0 };
@@ -634,141 +848,104 @@ function DeepSearchPageInner() {
                 relSamples += 1;
               }
             });
-            const total = citations.length || 1;
             const totalReal = citations.length;
-            const halInfo = searchResult.methodology?.hallucination_check;
-            const grounded = halInfo?.is_grounded;
-            const avgRel = relSamples > 0 ? Math.round(avgReliability / relSamples) : null;
             const retrieval = searchResult.methodology?.queries_run || [];
             const internalHits = retrieval.find((q: any) => q.layer === "internal_corpus")?.hits ?? searchResult.internal_articles_count;
             const externalHits = retrieval.find((q: any) => q.layer === "perplexity_external")?.hits ?? searchResult.external_sources_count;
             const guidance = (searchResult.methodology as any)?.guidance;
             const lowCoverage = totalReal <= 3;
             const likelyWeakEvidence = lowCoverage || (externalHits === 0 && internalHits < 5) || internalWithLowRel >= 3;
-            const evidencePlain = formatEvidenceStrengthPlain(internalHits, externalHits);
+            const avgRel = relSamples > 0 ? Math.round(avgReliability / relSamples) : null;
+
             return (
-              <div className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-700 p-4">
-                <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
-                  <h3 className="text-xs font-semibold text-gray-600 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                    <BarChart3 className="w-3.5 h-3.5" /> Analysis Insights
-                  </h3>
-                  {/* Phase 2C (2026-05-23): plain-language evidence summary
-                      — turns "5 internal + 2 external" into "Evidence is
-                      moderate — main findings are corroborated…" so the
-                      reader gets the meaning without parsing counts. */}
-                  {evidencePlain.sentence && (
-                    <p
-                      className={`text-[11px] leading-snug max-w-md ${
-                        evidencePlain.tone === "alert"
-                          ? "text-red-700 dark:text-red-300"
-                          : evidencePlain.tone === "warn"
-                            ? "text-amber-700 dark:text-amber-300"
-                            : "text-emerald-700 dark:text-emerald-300"
-                      }`}
-                      data-testid="deep-search-evidence-plain"
-                    >
-                      {evidencePlain.sentence}
-                    </p>
-                  )}
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm p-5 space-y-4">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5 text-clilens-primary" />
+                  <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Source Stats &amp; Retrieval</h2>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-center">
-                  <div className="bg-gray-50 dark:bg-slate-800 rounded p-2">
-                    <div className="text-lg font-bold text-gray-900 dark:text-slate-100">{searchResult.internal_articles_count}</div>
-                    <div className="text-xs text-gray-600 dark:text-slate-400">Internal articles</div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+                  <div className="bg-gray-50 dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 p-3">
+                    <div className="text-2xl font-bold text-gray-900 dark:text-slate-100">{searchResult.internal_articles_count}</div>
+                    <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Internal articles</div>
                   </div>
-                  <div className="bg-gray-50 dark:bg-slate-800 rounded p-2">
-                    <div className="text-lg font-bold text-gray-900 dark:text-slate-100">{searchResult.external_sources_count}</div>
-                    <div className="text-xs text-gray-600 dark:text-slate-400">External sources</div>
+                  <div className="bg-gray-50 dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 p-3">
+                    <div className="text-2xl font-bold text-gray-900 dark:text-slate-100">{searchResult.external_sources_count}</div>
+                    <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">External sources</div>
                   </div>
-                  <div className="bg-gray-50 dark:bg-slate-800 rounded p-2">
-                    <div className="flex gap-1 justify-center">
-                      <span className="w-2.5 h-2.5 rounded-full bg-green-500" title={`${credCounts.HIGH} HIGH`}/>
-                      <span className="w-2.5 h-2.5 rounded-full bg-yellow-500" title={`${credCounts.MEDIUM} MEDIUM`}/>
-                      <span className="w-2.5 h-2.5 rounded-full bg-red-500" title={`${credCounts.LOW} LOW`}/>
-                    </div>
-                    <div className="text-xs text-gray-600 dark:text-slate-400 mt-1">Credibility spread</div>
+                  <div className="bg-gray-50 dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 p-3">
+                    <div className="text-2xl font-bold text-gray-900 dark:text-slate-100">{totalReal}</div>
+                    <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Total citations</div>
                   </div>
-                  <div className="bg-gray-50 dark:bg-slate-800 rounded p-2">
-                    <div className={`text-lg font-bold ${grounded ? 'text-green-600 dark:text-green-400' : grounded === false ? 'text-red-600 dark:text-red-400' : 'text-gray-400 dark:text-slate-500'}`}>
-                      {grounded ? 'Grounded' : grounded === false ? 'Weak' : '—'}
-                    </div>
-                    <div className="text-xs text-gray-600 dark:text-slate-400">Hallucination check</div>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-slate-800 rounded p-2">
-                    <div className="text-lg font-bold text-gray-900 dark:text-slate-100">
-                      {halInfo?.hallucination_risk != null ? `${Math.round((1 - halInfo.hallucination_risk) * 100)}%` : '—'}
-                    </div>
-                    <div className="text-xs text-gray-600 dark:text-slate-400">Scientific confidence</div>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-slate-800 rounded p-2">
-                    <div className={`text-lg font-bold ${avgRel != null ? avgRel > 70 ? "text-green-600 dark:text-green-400" : avgRel > 40 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400" : "text-gray-400 dark:text-slate-500"}`}>
+                  <div className="bg-gray-50 dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 p-3">
+                    <div className={`text-2xl font-bold ${avgRel != null ? avgRel > 70 ? "text-emerald-600 dark:text-emerald-400" : avgRel > 40 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400" : "text-gray-400 dark:text-slate-500"}`}>
                       {avgRel != null ? `${avgRel}%` : "—"}
                     </div>
-                    <div className="text-xs text-gray-600 dark:text-slate-400">Avg reliability</div>
+                    <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Avg reliability</div>
                   </div>
                 </div>
-                {searchResult.citations.length > 0 && (
-                  <div className="mt-3 flex gap-1 h-1.5 rounded-full overflow-hidden bg-gray-100 dark:bg-slate-800">
-                    {credCounts.HIGH > 0 && <div className="bg-green-500" style={{width:`${(credCounts.HIGH/total)*100}%`}} title={`${credCounts.HIGH} HIGH`}/>}
-                    {credCounts.MEDIUM > 0 && <div className="bg-yellow-500" style={{width:`${(credCounts.MEDIUM/total)*100}%`}} title={`${credCounts.MEDIUM} MEDIUM`}/>}
-                    {credCounts.LOW > 0 && <div className="bg-red-500" style={{width:`${(credCounts.LOW/total)*100}%`}} title={`${credCounts.LOW} LOW`}/>}
-                  </div>
-                )}
-                <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                  <div className="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-2 text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                    <Database className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2.5 text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                    <Database className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 flex-shrink-0" />
                     Retrieval: {internalHits} internal / {externalHits} external
                   </div>
-                  <div className="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-2 text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                    <Microscope className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-                    Evidence quality: {likelyWeakEvidence ? "Potentially weak" : "Acceptable"}
+                  <div className={`rounded-lg border px-3 py-2.5 flex items-center gap-2 text-xs ${
+                    likelyWeakEvidence
+                      ? 'border-amber-200 dark:border-amber-700/40 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300'
+                      : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                  }`}>
+                    <Microscope className={`w-3.5 h-3.5 flex-shrink-0 ${likelyWeakEvidence ? 'text-amber-500' : 'text-slate-500 dark:text-slate-400'}`} />
+                    Evidence: {likelyWeakEvidence ? "Potentially weak" : "Acceptable"}
                   </div>
                   <button
                     type="button"
-                    onClick={() => openAssistant(`Help me improve this deep-search query for stronger scientific evidence: \"${searchResult.query}\"`)}
-                    className="rounded border border-teal-200 dark:border-teal-700/50 bg-teal-50 dark:bg-teal-900/30 px-2.5 py-2 text-teal-700 dark:text-teal-200 hover:bg-teal-100 dark:hover:bg-teal-800/40 transition-colors flex items-center gap-1.5 justify-center"
+                    onClick={() => openAssistant(`Help me improve this deep-search query for stronger scientific evidence: "${searchResult.query}"`)}
+                    className="rounded-lg border border-teal-200 dark:border-teal-700/50 bg-teal-50 dark:bg-teal-900/30 px-3 py-2.5 text-teal-700 dark:text-teal-200 hover:bg-teal-100 dark:hover:bg-teal-800/40 transition-colors flex items-center gap-1.5 justify-center"
                   >
-                    <HelpCircle className="w-3.5 h-3.5" /> Improve query with chat
+                    <HelpCircle className="w-3.5 h-3.5 flex-shrink-0" /> Improve query
                   </button>
                   <a
                     href={`/map?q=${encodeURIComponent(searchResult.query)}${searchResult.filters?.country ? `&country=${encodeURIComponent(searchResult.filters.country)}` : ""}`}
-                    className="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 justify-center"
+                    className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2.5 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 justify-center"
                   >
-                    <MapPin className="w-3.5 h-3.5 text-teal-500" /> Visualize on map
+                    <MapPin className="w-3.5 h-3.5 text-teal-500 flex-shrink-0" /> Visualize on map
                   </a>
                 </div>
 
                 {searchResult.filters?.country && (
-                  <div className="mt-3">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs text-slate-400">Country context</span>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Country Context</span>
                       <a
                         href={`/map?country=${searchResult.filters.country}`}
-                        className="text-[10px] text-teal-400 hover:text-teal-300 flex items-center gap-1"
+                        className="text-[11px] text-teal-600 dark:text-teal-400 hover:text-teal-500 flex items-center gap-1"
                       >
-                        <MapPin className="h-2.5 w-2.5" /> Open on map
+                        <MapPin className="h-3 w-3" /> Open on map
                       </a>
                     </div>
-                    <ClimateMiniMap
-                      countries={[searchResult.filters.country]}
-                      layer="climate_risk"
-                    />
+                    <div className="rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700">
+                      <ClimateMiniMap
+                        countries={[searchResult.filters.country]}
+                        layer="climate_risk"
+                      />
+                    </div>
                   </div>
                 )}
 
                 {(guidance || likelyWeakEvidence) && (
-                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
-                    <p className="text-xs font-medium text-amber-800 flex items-center gap-1.5">
+                  <div className="rounded-lg border border-amber-200 dark:border-amber-700/40 bg-amber-50 dark:bg-amber-900/20 px-4 py-3">
+                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
                       <AlertTriangle className="w-3.5 h-3.5" />
                       Guidance
                     </p>
-                    <p className="text-xs text-amber-700 mt-1">
+                    <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
                       {guidance?.message || "This result may have weak or narrow evidence coverage. Consider refining scope before relying on conclusions."}
                     </p>
                     {Array.isArray(guidance?.suggested_actions) && guidance.suggested_actions.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {guidance.suggested_actions.slice(0, 3).map((act: string) => (
-                          <span key={act} className="px-2 py-1 rounded-full text-[10px] bg-amber-100 text-amber-800 border border-amber-200">
+                          <span key={act} className="px-2 py-1 rounded-full text-[10px] bg-amber-100 dark:bg-amber-800/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700/40">
                             {act}
                           </span>
                         ))}
@@ -1190,7 +1367,7 @@ function DeepSearchPageInner() {
                 <p className="text-xs text-gray-600 dark:text-slate-400 mb-3">
                   {r.internal_articles_count} internal, {r.external_sources_count} external sources
                 </p>
-                <div className="text-sm text-gray-700 dark:text-slate-200 whitespace-pre-wrap line-clamp-[12]">
+                <div className="text-sm text-gray-700 dark:text-slate-200 whitespace-pre-wrap max-h-80 overflow-y-auto">
                   {r.answer}
                 </div>
                 {r.citations.length > 0 && (

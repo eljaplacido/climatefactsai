@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS articles (
     source_credibility_score INTEGER,
     content_relevance_score DECIMAL(3, 2), -- 0.00 - 1.00
     reliability_score INTEGER CHECK (reliability_score >= 0 AND reliability_score <= 100),
-    overall_credibility VARCHAR(20), -- HIGH, MEDIUM, LOW, MIXED
+    overall_credibility VARCHAR(50), -- HIGH, MEDIUM, LOW, MIXED, UNVERIFIED
     
     -- Tehtävä-ID (linkki workflow:hun)
     task_id VARCHAR(50),

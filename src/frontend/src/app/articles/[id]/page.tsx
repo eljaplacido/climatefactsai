@@ -212,7 +212,7 @@ export default async function ArticlePage({ params }: { params: { id: string } }
                     crashing the entire article page with HTTP 500. */}
                 <div className="ml-auto">
                   <AskAboutButton
-                    prompt={`Explain this article in plain language and tell me what to take from it. Title: "${article.title}". Source: ${article.source_name || "unknown"}. Walk me through the key claims, their credibility, and whether I should trust this reporting.`}
+                    prompt={`Explain this article in plain language and tell me what to take from it. Title: "${article.title ?? "Untitled"}". Source: ${article.source_name || "unknown"}. Walk me through the key claims, their credibility, and whether I should trust this reporting.`}
                     ariaLabel="Ask the assistant about this article"
                     variant="chip"
                   />
@@ -238,8 +238,8 @@ export default async function ArticlePage({ params }: { params: { id: string } }
             {/* Credibility Gauge */}
             <div className="flex-shrink-0">
               <CredibilityGauge
-                score={reliabilityScore}
-                level={credibilityLevel}
+                score={reliabilityScore ?? 0}
+                level={credibilityLevel ?? "UNKNOWN"}
                 decomposedConfidence={article.decomposed_confidence}
                 size="lg"
               />
@@ -287,16 +287,16 @@ export default async function ArticlePage({ params }: { params: { id: string } }
               </>
             )}
             {/* Bookmark & Share */}
-            <BookmarkButton articleId={article.article_id} />
+            <BookmarkButton articleId={article.article_id ?? ""} />
             <ShareButton
-              articleId={article.article_id}
-              title={article.title}
-              excerpt={article.executive_brief || article.excerpt}
+              articleId={article.article_id ?? ""}
+              title={article.title ?? ""}
+              excerpt={article.executive_brief || article.excerpt || ""}
             />
             {/* Export buttons (Professional+) — POST + blob download via
                 axios client so the Authorization header lands; the prior
                 <a href> GET was hitting routes that don't exist. */}
-            <ArticleExportButtons articleId={article.article_id} />
+            <ArticleExportButtons articleId={article.article_id ?? ""} />
           </div>
 
           {/* Claims by category pills */}
@@ -559,7 +559,7 @@ export default async function ArticlePage({ params }: { params: { id: string } }
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold text-gray-900">Reliability Breakdown</h2>
                 <Link
-                  href={`/articles/${article.article_id}/transparency`}
+                  href={`/articles/${article.article_id ?? params.id}/transparency`}
                   className="text-xs text-clilens-primary hover:underline"
                 >
                   View full methodology &rarr;
@@ -590,7 +590,7 @@ export default async function ArticlePage({ params }: { params: { id: string } }
                           Weight: {weight}%
                         </p>
                         <Link
-                          href={`/articles/${article.article_id}/transparency#${key}`}
+                          href={`/articles/${article.article_id ?? params.id}/transparency#${key}`}
                           className="text-[10px] text-clilens-primary hover:underline"
                         >
                           How computed?
@@ -608,7 +608,7 @@ export default async function ArticlePage({ params }: { params: { id: string } }
             analysisHtml={article.analysis_article_html}
             excerpt={article.excerpt}
             fullText={article.full_text}
-            claims={article.claims}
+            claims={article.claims ?? []}
           />
 
           {/* Infographic — embedded SVGs */}
@@ -621,8 +621,8 @@ export default async function ArticlePage({ params }: { params: { id: string } }
                   className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden"
                 >
                   <img
-                    src={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400"}/api/articles/${article.article_id}/infographic?template=${tpl}`}
-                    alt={`${tpl} infographic for ${article.title}`}
+                    src={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5400"}/api/articles/${article.article_id ?? params.id}/infographic?template=${tpl}`}
+                    alt={`${tpl} infographic for ${article.title ?? ""}`}
                     className="w-full h-auto"
                     loading="lazy"
                   />
@@ -654,27 +654,27 @@ export default async function ArticlePage({ params }: { params: { id: string } }
           )}
 
           <ArticleMapBridge
-            articleId={article.article_id}
-            articleTitle={article.title}
+            articleId={article.article_id ?? ""}
+            articleTitle={article.title ?? ""}
             countryCode={article.country_code}
-            tags={article.tags}
+            tags={article.tags ?? []}
           />
 
           {/* Local Weather Context */}
-          <WeatherContext articleId={article.article_id} />
+          <WeatherContext articleId={article.article_id ?? ""} />
 
           {/* Knowledge Graph / Argumentation */}
-          <ArgumentationGraph articleId={article.article_id} />
+          <ArgumentationGraph articleId={article.article_id ?? ""} />
 
           {/* Similar Articles */}
-          <SimilarArticles articleId={article.article_id} />
+          <SimilarArticles articleId={article.article_id ?? ""} />
 
           {/* Article Q&A */}
           <ArticleQA
-            articleId={article.article_id}
-            articleTitle={article.title}
+            articleId={article.article_id ?? ""}
+            articleTitle={article.title ?? ""}
             contentCategory={article.content_category}
-            claims={article.claims}
+            claims={article.claims ?? []}
           />
 
           {/* Advanced Insights — Transparency Report */}
@@ -684,7 +684,7 @@ export default async function ArticlePage({ params }: { params: { id: string } }
               Detailed transparency breakdown, evidence chains with traceable sources, causal analysis, and confidence intervals.
             </p>
             <Link
-              href={`/articles/${article.article_id}/transparency`}
+              href={`/articles/${article.article_id ?? params.id}/transparency`}
               className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm"
             >
               View Transparency Report
@@ -695,9 +695,11 @@ export default async function ArticlePage({ params }: { params: { id: string } }
           <div className="pt-4 border-t border-gray-100">
             <p className="text-xs text-gray-400">
               This analysis was generated by AI. Always refer to the{" "}
-              <a href={article.url} target="_blank" rel="noopener noreferrer" className="text-clilens-primary hover:underline">
-                original article
-              </a>{" "}
+              {article.url ? (
+                <a href={article.url} target="_blank" rel="noopener noreferrer" className="text-clilens-primary hover:underline">
+                  original article
+                </a>
+              ) : "original article"}{" "}
               for the authoritative source.
             </p>
           </div>

@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import {
   Building2, Loader2, CheckCircle, AlertTriangle, XCircle,
   HelpCircle, FileText, ExternalLink, ArrowLeft, ShieldCheck,
-  Leaf, Users, Coins,
+  Leaf, Users, Coins, Clock, Info,
 } from "lucide-react";
 import { useUrlState } from "@/lib/useUrlState";
 import { type ViewMode } from "@/lib/plainLanguage";
@@ -476,6 +476,30 @@ export default function CompanyDetailPage() {
                     );
                   })}
                 </div>
+                <details className="text-xs mb-2">
+                  <summary className="cursor-pointer text-gray-500 hover:text-gray-700 flex items-center gap-1">
+                    <Info className="w-3 h-3" />
+                    What do these statuses mean?
+                  </summary>
+                  <div className="mt-2 p-3 bg-gray-50 rounded-md border border-gray-100 space-y-1.5">
+                    <div className="flex items-start gap-1.5">
+                      <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase bg-emerald-50 text-emerald-800 border border-emerald-200 mt-0.5">Aligned</span>
+                      <span className="text-gray-600">This company&apos;s disclosures meet the framework&apos;s core requirements.</span>
+                    </div>
+                    <div className="flex items-start gap-1.5">
+                      <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase bg-amber-50 text-amber-800 border border-amber-200 mt-0.5">Partial</span>
+                      <span className="text-gray-600">Some elements are addressed but gaps remain.</span>
+                    </div>
+                    <div className="flex items-start gap-1.5">
+                      <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase bg-rose-50 text-rose-800 border border-rose-200 mt-0.5">Gap</span>
+                      <span className="text-gray-600">No evidence of compliance with this standard was found.</span>
+                    </div>
+                    <div className="flex items-start gap-1.5">
+                      <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase bg-gray-100 text-gray-600 border border-gray-200 mt-0.5">Unknown</span>
+                      <span className="text-gray-600">Insufficient data to assess compliance.</span>
+                    </div>
+                  </div>
+                </details>
                 <details className="text-xs">
                   <summary className="cursor-pointer text-gray-700 hover:text-gray-900 font-medium">
                     Show detailed point-by-point breakdown
@@ -566,30 +590,66 @@ export default function CompanyDetailPage() {
                       </p>
                     </div>
 
-                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-4">
                       <div className="flex items-center gap-2 mb-2">
-                        <Users className="w-4 h-4 text-gray-500" />
-                        <span className="font-semibold text-gray-700">People</span>
+                        <Users className="w-4 h-4 text-blue-600" />
+                        <span className="font-semibold text-blue-900">People</span>
                       </div>
-                      <p className="text-sm text-gray-500">Not yet ingested.</p>
-                      <p className="text-xs text-gray-400 mt-2">
-                        Social/workforce metrics (safety, pay equity,
-                        labour-rights audits) require GRI/CSRD report parsing,
-                        which isn't in the current disclosure pipeline.
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Clock className="w-3.5 h-3.5 text-blue-400" />
+                        <span className="text-xs font-medium text-blue-600">Awaiting data ingestion</span>
+                      </div>
+                      <p className="text-sm text-blue-900/80 mb-2">
+                        Social and workforce metrics — once ingested — would display:
                       </p>
+                      <ul className="text-sm text-blue-800/70 space-y-1 list-disc pl-4 mb-3">
+                        <li>Workforce diversity &amp; inclusion</li>
+                        <li>Labour practices &amp; safety records</li>
+                        <li>Community impact &amp; human rights</li>
+                      </ul>
+                      <p className="text-xs text-blue-600/80 mb-2">
+                        Requires GRI / CSRD social-disclosure report parsing.
+                      </p>
+                      <a
+                        href="https://www.globalreporting.org/standards/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 underline"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        Suggest a data source
+                      </a>
                     </div>
 
-                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <div className="rounded-lg border border-violet-200 bg-violet-50/50 p-4">
                       <div className="flex items-center gap-2 mb-2">
-                        <Coins className="w-4 h-4 text-gray-500" />
-                        <span className="font-semibold text-gray-700">Profit</span>
+                        <Coins className="w-4 h-4 text-violet-600" />
+                        <span className="font-semibold text-violet-900">Profit</span>
                       </div>
-                      <p className="text-sm text-gray-500">Not yet ingested.</p>
-                      <p className="text-xs text-gray-400 mt-2">
-                        Financial-sustainability metrics (clean-capex share,
-                        green-taxonomy revenue alignment) require annual-report
-                        parsing.
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Clock className="w-3.5 h-3.5 text-violet-400" />
+                        <span className="text-xs font-medium text-violet-600">Awaiting data ingestion</span>
+                      </div>
+                      <p className="text-sm text-violet-900/80 mb-2">
+                        Financial climate alignment — once ingested — would display:
                       </p>
+                      <ul className="text-sm text-violet-800/70 space-y-1 list-disc pl-4 mb-3">
+                        <li>Green revenue share &amp; taxonomy alignment</li>
+                        <li>Fossil fuel exposure &amp; stranded-asset risk</li>
+                        <li>ESG-linked financing &amp; sustainable bonds</li>
+                      </ul>
+                      <p className="text-xs text-violet-600/80 mb-2">
+                        Requires annual-report / EU-Taxonomy financial disclosure parsing.
+                      </p>
+                      <a
+                        href="https://ec.europa.eu/sustainable-finance-taxonomy/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-violet-600 hover:text-violet-800 underline"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        Suggest a data source
+                      </a>
                     </div>
                   </div>
                 </section>

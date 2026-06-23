@@ -102,6 +102,11 @@ metrics/
 *.tar.gz
 *.zip
 
+# Stray media files (user drag-and-drop)
+*.png
+*.jpg
+*.jpeg
+
 # Golden dataset (keep template only)
 data/golden_dataset_filled.json
 
@@ -162,3 +167,4 @@ hive-mind-prompt-*.txt
 # Ephemeral session logs + one-off reference extracts (kept locally, not in repo)
 docs/sessionlogs/
 .claude/*_extract.txt
+*.png

@@ -363,7 +363,8 @@ class SourceProfileService:
 
         try:
             tier_rows = self.db.execute_query(
-                "SELECT domain, source_name, prior_bonus, tier "
+                "SELECT domain, source_name, prior_bonus, tier, "
+                "editorial_score, factcheck_score, transparency_score "
                 "FROM source_credibility_tiers "
                 f"WHERE {' OR '.join(clauses)}",
                 params,
@@ -382,6 +383,9 @@ class SourceProfileService:
             payload = {
                 "tier": tr.get("tier"),
                 "tier_prior_bonus": tr.get("prior_bonus"),
+                "editorial_score": tr.get("editorial_score"),
+                "factcheck_score": tr.get("factcheck_score"),
+                "transparency_score": tr.get("transparency_score"),
             }
             d = self._norm_domain(tr.get("domain"))
             n = str(tr.get("source_name") or "").strip().lower()

@@ -34,6 +34,8 @@ SERVICE_NAME="clilens-lane-a"
 SYSTEMD_UNIT="$HOME/.config/systemd/user/${SERVICE_NAME}.service"
 ENTITY_SERVICE_NAME="clilens-lane-a-entity"
 ENTITY_SYSTEMD_UNIT="$HOME/.config/systemd/user/${ENTITY_SERVICE_NAME}.service"
+SOURCE_SERVICE_NAME="clilens-lane-a-source"
+SOURCE_SYSTEMD_UNIT="$HOME/.config/systemd/user/${SOURCE_SERVICE_NAME}.service"
 
 # --- 1. Clone or update the repo ------------------------------------------
 if [[ ! -d "$REPO_DIR/.git" ]]; then
@@ -165,10 +167,34 @@ StandardError=append:$HOME/clilens/lane-a-entity.log
 WantedBy=default.target
 EOF
 
+# --- 4c. Source assessment sibling unit ---------------------------------
+# Per asusgx10inferencestrategy.md Lane A item #3: 3-axis source scoring
+# (editorial / factcheck / transparency) runs alongside enrichment +
+# entity extraction, sharing the same DB + Ollama backend.
+cat > "$SOURCE_SYSTEMD_UNIT" <<EOF
+[Unit]
+Description=Climatefacts Lane A source assessment worker (GX10)
+After=network-online.target ollama.service ${SERVICE_NAME}.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=$ENV_FILE
+WorkingDirectory=$REPO_DIR
+ExecStart=$VENV_DIR/bin/python infrastructure/gx10/lane_a_source_worker.py
+Restart=on-failure
+RestartSec=15
+StandardOutput=append:$HOME/clilens/lane-a-source.log
+StandardError=append:$HOME/clilens/lane-a-source.log
+
+[Install]
+WantedBy=default.target
+EOF
+
 # --- 6. Reload + start ----------------------------------------------------
 systemctl --user daemon-reload
-systemctl --user enable "${SERVICE_NAME}.service" "${ENTITY_SERVICE_NAME}.service"
-systemctl --user restart "${SERVICE_NAME}.service" "${ENTITY_SERVICE_NAME}.service"
+systemctl --user enable "${SERVICE_NAME}.service" "${ENTITY_SERVICE_NAME}.service" "${SOURCE_SERVICE_NAME}.service"
+systemctl --user restart "${SERVICE_NAME}.service" "${ENTITY_SERVICE_NAME}.service" "${SOURCE_SERVICE_NAME}.service"
 sleep 3
 echo "=== Enrichment worker status ==="
 systemctl --user --no-pager status "${SERVICE_NAME}.service" | head -12
@@ -176,15 +202,22 @@ echo
 echo "=== Entity worker status ==="
 systemctl --user --no-pager status "${ENTITY_SERVICE_NAME}.service" | head -12
 echo
+echo "=== Source worker status ==="
+systemctl --user --no-pager status "${SOURCE_SERVICE_NAME}.service" | head -12
+echo
 echo "Last 20 log lines (enrichment):"
 tail -20 "$HOME/clilens/lane-a.log" 2>/dev/null || echo "(log empty)"
 echo
 echo "Last 20 log lines (entity):"
 tail -20 "$HOME/clilens/lane-a-entity.log" 2>/dev/null || echo "(log empty)"
 echo
+echo "Last 20 log lines (source):"
+tail -20 "$HOME/clilens/lane-a-source.log" 2>/dev/null || echo "(log empty)"
+echo
 echo "Done. Useful commands:"
-echo "  systemctl --user status   clilens-lane-a clilens-lane-a-entity"
-echo "  systemctl --user restart  clilens-lane-a clilens-lane-a-entity"
-echo "  systemctl --user stop     clilens-lane-a clilens-lane-a-entity"
+echo "  systemctl --user status   clilens-lane-a clilens-lane-a-entity clilens-lane-a-source"
+echo "  systemctl --user restart  clilens-lane-a clilens-lane-a-entity clilens-lane-a-source"
+echo "  systemctl --user stop     clilens-lane-a clilens-lane-a-entity clilens-lane-a-source"
 echo "  tail -f \$HOME/clilens/lane-a.log"
 echo "  tail -f \$HOME/clilens/lane-a-entity.log"
+echo "  tail -f \$HOME/clilens/lane-a-source.log"

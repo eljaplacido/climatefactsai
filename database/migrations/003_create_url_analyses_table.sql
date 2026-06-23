@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS url_analyses (
 
     -- Credibility assessment
     reliability_score INTEGER,  -- 0-100 score
-    overall_credibility VARCHAR(20),  -- HIGH, MEDIUM, LOW
+    overall_credibility VARCHAR(50),  -- HIGH, MEDIUM, LOW, MIXED, UNVERIFIED
 
     -- Timing
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS url_analyses (
     -- Constraints
     CONSTRAINT valid_status CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
     CONSTRAINT valid_priority CHECK (priority IN ('normal', 'high')),
-    CONSTRAINT valid_credibility CHECK (overall_credibility IS NULL OR overall_credibility IN ('HIGH', 'MEDIUM', 'LOW'))
+    CONSTRAINT valid_credibility CHECK (overall_credibility IS NULL OR overall_credibility IN ('HIGH', 'MEDIUM', 'LOW', 'MIXED', 'UNVERIFIED'))
 );
 
 -- Indexes for performance

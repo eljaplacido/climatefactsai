@@ -57,7 +57,7 @@ function CredibilityGauge({ score, level, decomposedConfidence, size = "md" }: C
 
   const radius = (config.diameter - config.strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const normalizedScore = Math.min(100, Math.max(0, score));
+  const normalizedScore = Math.min(100, Math.max(0, score ?? 0));
   const targetOffset = circumference - (normalizedScore / 100) * circumference;
   const strokeDashoffset = animated ? targetOffset : circumference;
   const color = getScoreColor(normalizedScore);

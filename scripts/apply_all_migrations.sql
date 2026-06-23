@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS url_analyses (
     fact_checks JSONB,
     evidence JSONB,
     reliability_score INTEGER,
-    overall_credibility VARCHAR(20),
+    overall_credibility VARCHAR(50),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     processing_started_at TIMESTAMPTZ,
@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS url_analyses (
     error_message TEXT,
     CONSTRAINT valid_status CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
     CONSTRAINT valid_priority CHECK (priority IN ('normal', 'high')),
-    CONSTRAINT valid_credibility CHECK (overall_credibility IS NULL OR overall_credibility IN ('HIGH', 'MEDIUM', 'LOW'))
+    CONSTRAINT valid_credibility CHECK (overall_credibility IS NULL OR overall_credibility IN ('HIGH', 'MEDIUM', 'LOW', 'MIXED', 'UNVERIFIED'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_url_analyses_user_id ON url_analyses(user_id);
@@ -287,6 +287,27 @@ DELETE FROM fact_checks WHERE claim_id IN
 DELETE FROM claims WHERE article_id = 'e34ad0c5-58c2-4b04-9d0e-d4dc1dcba77a';
 UPDATE articles SET claims_status = 'pending', claims_count = 0, verified_claims_count = 0
   WHERE article_id = 'e34ad0c5-58c2-4b04-9d0e-d4dc1dcba77a';
+
+-- ============================================================================
+-- 015: Widen credibility columns for MIXED/UNVERIFIED support
+-- ============================================================================
+
+ALTER TABLE url_analyses ALTER COLUMN overall_credibility TYPE VARCHAR(50);
+
+DO $$
+BEGIN
+    ALTER TABLE url_analyses DROP CONSTRAINT IF EXISTS valid_credibility;
+EXCEPTION WHEN undefined_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER TABLE url_analyses ADD CONSTRAINT valid_credibility
+        CHECK (overall_credibility IS NULL OR overall_credibility IN ('HIGH', 'MEDIUM', 'LOW', 'MIXED', 'UNVERIFIED'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE articles ALTER COLUMN overall_credibility TYPE VARCHAR(50);
 
 -- ============================================================================
 -- VERIFICATION
