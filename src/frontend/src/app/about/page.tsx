@@ -73,7 +73,7 @@ export default function AboutPage() {
             <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-6 space-y-4">
               <p className="text-blue-900 dark:text-blue-200">
                 Climatefacts.ai combines authoritative primary-source
-                indicators with multi-LLM cross-verification, calibrated
+                indicators with evidence-grounded retrieval, calibrated
                 confidence scoring, and per-claim provenance to deliver a
                 continuously updated picture of climate truth.
               </p>

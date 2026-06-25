@@ -1,10 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import UrlAnalysisForm from '@/components/UrlAnalysisForm'
 
 export default function AdminPage() {
+  const router = useRouter()
+  const { token, loading: authLoading } = useAuth()
   const [articleId, setArticleId] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [result, setResult] = useState<any>(null)
@@ -15,6 +19,15 @@ export default function AdminPage() {
   const [discoverDaysBack, setDiscoverDaysBack] = useState(3)
   const [discoverMaxArticles, setDiscoverMaxArticles] = useState(10)
   const [discoverVerify, setDiscoverVerify] = useState(true)
+
+  // Client guard (audit FE-03): bounce non-authenticated visitors. The backend
+  // additionally enforces admin (require_admin / QuotaService) on every endpoint
+  // this panel calls — that is the real security boundary.
+  useEffect(() => {
+    if (!authLoading && !token) {
+      router.replace('/login?next=/admin')
+    }
+  }, [authLoading, token, router])
 
   const handleVerify = async () => {
     if (!articleId) {
@@ -32,6 +45,7 @@ export default function AdminPage() {
         `${apiUrl}/api/v2/intelligence/verify/${articleId}`,
         {
           method: 'POST',
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
         }
       )
 
@@ -77,7 +91,10 @@ export default function AdminPage() {
         `${apiUrl}/api/v2/intelligence/verify-batch`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({ article_ids: articleIds })
         }
       )

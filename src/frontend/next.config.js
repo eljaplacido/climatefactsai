@@ -25,9 +25,16 @@ const nextConfig = {
       "object-src 'none'",
     ].join('; ');
 
+    // The public embed widget MUST be iframable by third-party sites, so it
+    // gets a permissive frame policy (no X-Frame-Options, frame-ancestors *).
+    // Everything else keeps the strict DENY. (audit FE-01: the global DENY +
+    // frame-ancestors 'none' made /embed/* permanently un-embeddable.)
+    const embedCsp = csp.replace("frame-ancestors 'none'", "frame-ancestors *");
+
     return [
       {
-        source: '/(.*)',
+        // Strict default for the whole app EXCEPT the public embed widget.
+        source: '/((?!embed).*)',
         headers: [
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
@@ -36,6 +43,16 @@ const nextConfig = {
           { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
           { key: 'Content-Security-Policy', value: csp },
+        ],
+      },
+      {
+        // Public embed widget — iframable anywhere.
+        source: '/embed/:path*',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
+          { key: 'Content-Security-Policy', value: embedCsp },
         ],
       },
     ];

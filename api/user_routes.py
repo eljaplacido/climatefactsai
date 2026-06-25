@@ -961,3 +961,106 @@ async def get_dashboard_summary(
             "in_progress": url_summary.get("in_progress") or 0
         }
     }
+
+
+# =============================================================================
+# GDPR — DATA EXPORT + ACCOUNT DELETION
+# =============================================================================
+#
+# The dashboard settings page wires "Export My Data" and "Delete Account" to
+# these endpoints. They previously did not exist — the buttons hit a 404 and
+# showed fake success (audit FE-02). These are the real implementations.
+
+# Personal tables purged on account deletion (best-effort; a table that does
+# not exist in a given environment is skipped). All are keyed by user_id.
+_USER_DATA_TABLES = [
+    "user_preferences", "user_bookmarks", "user_reading_history",
+    "user_search_history", "notifications", "user_usage", "user_sources",
+    "saved_items", "sessions", "api_keys", "url_analyses",
+]
+
+
+@router.get("/export-data")
+async def export_user_data(current_user: dict = Depends(get_current_user)):
+    """GDPR data export — return everything we hold for this user as JSON.
+
+    The settings page downloads the response as a file. Best-effort per table
+    so an environment missing an optional table still yields a usable export.
+    """
+    db = get_postgres()
+    uid = current_user["user_id"]
+
+    export: Dict[str, Any] = {
+        "exported_at": datetime.utcnow().isoformat() + "Z",
+        "account": {
+            "user_id": str(uid),
+            "email": current_user.get("email"),
+            "full_name": current_user.get("full_name"),
+            "subscription_tier": current_user.get("subscription_tier"),
+        },
+    }
+
+    def _safe(name: str, sql: str) -> None:
+        try:
+            export[name] = [dict(r) for r in (db.execute_query(sql, {"uid": uid}) or [])]
+        except Exception as exc:
+            logger.debug(f"export skip {name}: {exc}")
+            export[name] = []
+
+    _safe("preferences", "SELECT * FROM user_preferences WHERE user_id = :uid")
+    _safe("bookmarks", "SELECT * FROM user_bookmarks WHERE user_id = :uid")
+    _safe("reading_history", "SELECT * FROM user_reading_history WHERE user_id = :uid")
+    _safe("search_history", "SELECT * FROM user_search_history WHERE user_id = :uid")
+    _safe("notifications", "SELECT * FROM notifications WHERE user_id = :uid")
+    _safe("activity", "SELECT * FROM user_usage WHERE user_id = :uid")
+    _safe("saved_items", "SELECT * FROM saved_items WHERE user_id = :uid")
+    _safe("url_analyses", "SELECT * FROM url_analyses WHERE user_id = :uid")
+
+    return export
+
+
+@router.delete("/account")
+async def delete_account(current_user: dict = Depends(get_current_user)):
+    """GDPR account deletion (irreversible).
+
+    Erases PII and deactivates the account, and best-effort purges the user's
+    personal rows. Implemented as anonymize-and-deactivate rather than a hard
+    row delete: the user_id is referenced by many tables without a guaranteed
+    ON DELETE CASCADE, so a hard delete could orphan rows or 500 mid-delete.
+    Anonymizing the PII + deactivating makes the account unusable and removes
+    all personal data, which satisfies the right-to-erasure intent safely.
+    """
+    db = get_postgres()
+    uid = current_user["user_id"]
+
+    # 1) Purge personal content (best-effort per table).
+    for table in _USER_DATA_TABLES:
+        try:
+            db.execute_update(f"DELETE FROM {table} WHERE user_id = :uid", {"uid": uid})
+        except Exception as exc:
+            logger.debug(f"account deletion: skip {table}: {exc}")
+
+    # 2) Anonymize + deactivate the user row (PII erasure). This MUST succeed.
+    try:
+        db.execute_update(
+            """
+            UPDATE users SET
+                email = :anon_email,
+                full_name = NULL,
+                avatar_url = NULL,
+                password_hash = 'DELETED',
+                is_active = false,
+                email_verified = false,
+                verification_token = NULL,
+                reset_token = NULL,
+                updated_at = NOW()
+            WHERE user_id = :uid
+            """,
+            {"uid": uid, "anon_email": f"deleted-{uid}@deleted.invalid"},
+        )
+    except Exception as exc:
+        logger.error(f"account deletion failed for {uid}: {exc}")
+        raise HTTPException(status_code=500, detail="Account deletion failed")
+
+    logger.info(f"Account deleted (anonymized) for user {uid}")
+    return {"message": "Account deleted"}
