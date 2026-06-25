@@ -3,6 +3,7 @@ Authentication Routes
 Handles user registration, login, password reset, email verification
 """
 
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -130,6 +131,37 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials"
         )
+
+
+def _admin_emails() -> set:
+    """Lowercased admin allowlist from CLILENS_ADMIN_EMAILS (comma-separated).
+
+    Fail-closed: when the env var is unset the set is empty, so NO user is an
+    admin and every admin-gated route returns 403 until the allowlist is
+    explicitly configured in the deployment environment.
+    """
+    raw = os.getenv("CLILENS_ADMIN_EMAILS", "")
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+def is_admin_user(user: Optional[dict]) -> bool:
+    """True only when the user's email is in the admin allowlist."""
+    if not user:
+        return False
+    email = (user.get("email") or "").strip().lower()
+    return bool(email) and email in _admin_emails()
+
+
+def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
+    """FastAPI dependency: 401s anonymous (via get_current_user) and 403s any
+    authenticated non-admin. Use on pipeline-trigger / ingest / admin-control
+    endpoints that were previously gated only by 'is logged in'."""
+    if not is_admin_user(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
+        )
+    return current_user
 
 
 def get_optional_user(

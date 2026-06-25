@@ -116,6 +116,7 @@ pytest==8.3.3                      # Testing framework
 pytest-asyncio==0.24.0             # Async testing
 pytest-cov==6.0.0                  # Coverage plugin
 pytest-mock==3.14.0                # Mocking plugin
+pytest-xdist==3.6.1                 # Parallel test execution (-n auto / --dist; pytest.ini addopts require it)
 faker==33.0.0                      # Fake data generation
 hypothesis==6.119.0                # Property-based testing
 deepeval>=1.0.0                    # LLM evaluation framework

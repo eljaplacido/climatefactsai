@@ -115,6 +115,18 @@ def _check_feed_url(url: str) -> FeedValidationResponse:
     Attempt to parse the given URL as an RSS/Atom feed via feedparser.
     Returns a FeedValidationResponse describing the result.
     """
+    # SSRF guard before feedparser performs any network fetch — block
+    # private/reserved/link-local IPs, localhost, and cloud-metadata hosts.
+    try:
+        from api.url_analysis_routes import _validate_safe_url
+        _validate_safe_url(url)
+    except ValueError as exc:
+        return FeedValidationResponse(
+            url=url,
+            valid=False,
+            error=f"Unsafe URL rejected: {exc}",
+        )
+
     try:
         import feedparser  # feedparser is already a project dependency
 

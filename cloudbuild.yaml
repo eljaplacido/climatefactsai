@@ -102,7 +102,7 @@ steps:
       - |
         set -e
         pip install --quiet -r requirements.txt
-        pip install --quiet pytest pytest-asyncio pytest-mock httpx ruff mypy
+        pip install --quiet pytest pytest-asyncio pytest-mock pytest-xdist httpx ruff mypy
         echo "=== CI gate: ruff lint (advisory — reports only) ==="
         ruff check api/ src/backend/ --exit-zero
         echo "=== CI gate: mypy type-check (advisory) ==="

@@ -379,7 +379,7 @@ async def save_search(
     receive notifications when new matching articles are published.
     """
     # Check premium feature access
-    if not check_premium_feature(current_user.subscription_tier, "saved_searches"):
+    if not check_premium_feature(current_user.get('subscription_tier'), "saved_searches"):
         raise HTTPException(
             status_code=403,
             detail="Saved searches require Basic, Professional, or Enterprise subscription"
@@ -397,7 +397,7 @@ async def save_search(
             ) VALUES (:user_id, :key, :value, NOW(), NOW())
             """,
             {
-                "user_id": current_user.id,
+                "user_id": current_user['user_id'],
                 "key": f"saved_search_{search_id}",
                 "value": {
                     "id": search_id,
@@ -408,11 +408,11 @@ async def save_search(
             }
         )
 
-        logger.info(f"Search saved: {search_id} by user {current_user.id}")
+        logger.info(f"Search saved: {search_id} by user {current_user['user_id']}")
 
         return SavedSearch(
             id=search_id,
-            user_id=current_user.id,
+            user_id=current_user['user_id'],
             name=request.name,
             query=request.query,
             notify_on_new=request.notify_on_new,
@@ -436,7 +436,7 @@ async def get_saved_searches(
     Returns all saved search configurations for the current user.
     """
     # Check premium feature access
-    if not check_premium_feature(current_user.subscription_tier, "saved_searches"):
+    if not check_premium_feature(current_user.get('subscription_tier'), "saved_searches"):
         raise HTTPException(
             status_code=403,
             detail="Saved searches require Basic, Professional, or Enterprise subscription"
@@ -456,7 +456,7 @@ async def get_saved_searches(
           AND preference_key LIKE 'saved_search_%'
         ORDER BY created_at DESC
         """,
-        {"user_id": current_user.id}
+        {"user_id": current_user['user_id']}
     )
 
     saved_searches = []
@@ -465,7 +465,7 @@ async def get_saved_searches(
         if isinstance(value, dict):
             saved_searches.append(SavedSearch(
                 id=value.get("id", ""),
-                user_id=current_user.id,
+                user_id=current_user['user_id'],
                 name=value.get("name", "Untitled"),
                 query=value.get("query", {}),
                 notify_on_new=value.get("notify_on_new", False),
@@ -494,10 +494,10 @@ async def delete_saved_search(
         DELETE FROM user_preferences
         WHERE user_id = :user_id AND preference_key = :key
         """,
-        {"user_id": current_user.id, "key": f"saved_search_{search_id}"}
+        {"user_id": current_user['user_id'], "key": f"saved_search_{search_id}"}
     )
 
-    logger.info(f"Saved search {search_id} deleted by user {current_user.id}")
+    logger.info(f"Saved search {search_id} deleted by user {current_user['user_id']}")
 
     return {"message": "Saved search deleted successfully"}
 
@@ -626,7 +626,7 @@ async def get_search_history(
         ORDER BY created_at DESC
         LIMIT :limit
         """,
-        {"user_id": current_user.id, "limit": limit}
+        {"user_id": current_user['user_id'], "limit": limit}
     )
 
     history = []

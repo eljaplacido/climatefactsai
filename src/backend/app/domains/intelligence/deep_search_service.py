@@ -152,6 +152,11 @@ class DeepSearchService:
         sentence_grounding: Optional[List[Dict[str, Any]]] = None
         confidence_envelope: Optional[Dict[str, Any]] = None
         low_evidence_refinements: Optional[List[str]] = None
+        # `structured` is only produced by the high-evidence branch below;
+        # initialise it here so the low-evidence path does not raise
+        # UnboundLocalError when the response dict references it (this 500'd
+        # every thin-evidence deep-search query).
+        structured: Optional[Dict[str, Any]] = None
 
         if internal_count + external_count < 3:
             low_eval = await self._synthesize_low_evidence_answer(

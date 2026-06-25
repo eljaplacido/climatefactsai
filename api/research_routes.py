@@ -171,7 +171,7 @@ async def analyze_research_report(
     Accepts one of: URL, DOI, or raw text.
     Returns comprehensive analysis with credibility scoring.
     """
-    if not check_premium_feature(current_user.get("tier"), "url_analysis"):
+    if not check_premium_feature(current_user.get("subscription_tier"), "url_analysis"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -337,7 +337,7 @@ async def weather_enrich_article(
     Enrich an article's credibility score with weather verification.
     Cross-references article claims with actual meteorological data.
     """
-    if not check_premium_feature(current_user.get("tier"), "weather_context"):
+    if not check_premium_feature(current_user.get("subscription_tier"), "weather_context"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={

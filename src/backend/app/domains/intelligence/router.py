@@ -43,27 +43,36 @@ AnalysisEngineDep = Annotated[AnalysisEngine, Depends(get_analysis_engine)]
 async def verify_article(
     article_id: UUID,
     background_tasks: BackgroundTasks,
-    service: VerificationServiceDep = None
+    service: VerificationServiceDep = None,
+    current_user: Optional[dict] = Depends(get_optional_user),
 ):
     """
     Trigger fact-checking verification for an article.
-    
+
     This will:
     1. Extract atomic claims from the article
     2. Retrieve evidence from trusted sources
     3. Adjudicate each claim
     4. Calculate overall article credibility
-    
+
     **Processing time**: 30-60 seconds for typical article
-    
-    **Example:**
-    ```
-    POST /api/v2/intelligence/verify/550e8400-e29b-41d4-a716-446655440000
-    ```
+
+    Gated + metered through QuotaService (insights_extraction) — this runs the
+    full LLM pipeline, so it was previously an unauthenticated cost sink.
     """
-    # Run verification in background
+    from api.quota_service import QuotaService
+
+    user_id = str(current_user["user_id"]) if current_user else None
+    tier = (current_user or {}).get("subscription_tier")
+    QuotaService.check_and_raise(user_id, tier, "insights_extraction")
+
     result = await service.verify_article(article_id)
-    
+
+    try:
+        QuotaService.consume(user_id, "insights_extraction")
+    except Exception:
+        pass
+
     return result
 
 
@@ -204,12 +213,27 @@ async def analyze_text(
 async def run_full_analysis(
     article_id: UUID,
     engine: AnalysisEngineDep = None,
+    current_user: Optional[dict] = Depends(get_optional_user),
 ):
     """
     Run complete analysis pipeline on an article.
 
     Combines verification, reliability scoring, and insight generation.
+    Gated + metered through QuotaService (insights_extraction) — it runs the
+    full multi-LLM pipeline and was previously unauthenticated/unmetered.
     """
+    from api.quota_service import QuotaService
+
+    user_id = str(current_user["user_id"]) if current_user else None
+    tier = (current_user or {}).get("subscription_tier")
+    QuotaService.check_and_raise(user_id, tier, "insights_extraction")
+
     result = await engine.full_analysis(article_id)
+
+    try:
+        QuotaService.consume(user_id, "insights_extraction")
+    except Exception:
+        pass
+
     return result
 

@@ -21,7 +21,7 @@ import uuid
 
 from shared.database import get_postgres
 from shared.logger import setup_logging
-from api.auth_routes import get_current_user
+from api.auth_routes import get_current_user, require_admin
 
 logger = setup_logging("article-ingestion")
 router = APIRouter(prefix="/api/articles", tags=["Article Ingestion"])
@@ -166,19 +166,36 @@ async def process_article_claims_background(article_id: str, article_text: str):
 
 
 @router.post("/ingest", response_model=IngestArticleResponse)
-async def ingest_article(request: IngestArticleRequest, background_tasks: BackgroundTasks):
+async def ingest_article(
+    request: IngestArticleRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(require_admin),
+):
     """
-    Ingest a new article from a URL.
+    Ingest a new article from a URL (admin only).
 
     This endpoint will:
     1. Scrape the article content
     2. Store it in the database
     3. Optionally extract and verify claims (background)
 
+    Admin-gated + SSRF-guarded: it was previously unauthenticated, allowing
+    arbitrary corpus injection, an LLM cost sink, and server-side request
+    forgery against internal/metadata endpoints.
+
     Returns the article ID and processing status.
     """
     db = get_postgres()
     url_str = str(request.url)
+
+    # SSRF guard — reuse the hardened validator (blocks private/reserved/
+    # link-local IPs, localhost, and cloud-metadata hosts, with DNS-rebind
+    # protection) before any outbound fetch.
+    from api.url_analysis_routes import _validate_safe_url
+    try:
+        _validate_safe_url(url_str)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Unsafe URL rejected: {exc}")
 
     # Check if URL already exists
     existing = db.execute_query(

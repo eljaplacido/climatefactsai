@@ -1332,20 +1332,27 @@ class VerificationService:
                 cat_val = claim.claim_category.value if isinstance(claim.claim_category, ClaimCategory) else str(claim.claim_category)
                 claims_by_category[cat_val] = claims_by_category.get(cat_val, 0) + 1
 
-                # Store claim with category
-                claim_text_safe = claim.claim_text.replace("'", "''")
-                context_safe = (claim.claim_context or '').replace("'", "''")
-
+                # Store claim with category. Bound params only — claim_text,
+                # claim_type and claim_context are LLM-generated and MUST NOT be
+                # interpolated into SQL (was a P0 injection surface; the hand-
+                # rolled '' escaping did not cover claim_type/verdict).
                 self.db.execute_update(
-                    f"""
+                    """
                     INSERT INTO claims (
                         claim_id, article_id, claim_text, claim_type, claim_context, claim_category
                     ) VALUES (
-                        '{str(claim_id)}', '{str(article_id)}', '{claim_text_safe}', '{claim.claim_type}', '{context_safe}', '{cat_val}'
+                        :claim_id, :article_id, :claim_text, :claim_type, :claim_context, :claim_category
                     )
                     ON CONFLICT (claim_id) DO NOTHING
                     """,
-                    {}
+                    {
+                        "claim_id": str(claim_id),
+                        "article_id": str(article_id),
+                        "claim_text": claim.claim_text,
+                        "claim_type": str(claim.claim_type),
+                        "claim_context": claim.claim_context or "",
+                        "claim_category": cat_val,
+                    },
                 )
 
                 # Retrieve evidence
@@ -1355,24 +1362,33 @@ class VerificationService:
                 # Adjudicate
                 verdict = await self.adjudicator.adjudicate(claim, evidence)
 
-                # Store fact-check with decomposed confidence and evidence chain
+                # Store fact-check with decomposed confidence and evidence chain.
+                # verdict.verdict + confidence_score are model-derived — bind them.
                 fact_check_id = uuid4()
-                justification_safe = verdict.justification.replace("'", "''")
-                evidence_json = json.dumps([e.dict() for e in verdict.supporting_evidence + verdict.contradicting_evidence]).replace("'", "''")
-                dc_json = json.dumps(verdict.decomposed_confidence.dict() if verdict.decomposed_confidence else {}).replace("'", "''")
-                chain_json = json.dumps([link.dict() for link in verdict.evidence_chain]).replace("'", "''")
+                evidence_json = json.dumps([e.dict() for e in verdict.supporting_evidence + verdict.contradicting_evidence])
+                dc_json = json.dumps(verdict.decomposed_confidence.dict() if verdict.decomposed_confidence else {})
+                chain_json = json.dumps([link.dict() for link in verdict.evidence_chain])
 
                 self.db.execute_update(
-                    f"""
+                    """
                     INSERT INTO fact_checks (
                         fact_check_id, claim_id, verification_status, confidence_score,
                         justification, evidence, decomposed_confidence, evidence_chain, verified_at
                     ) VALUES (
-                        '{str(fact_check_id)}', '{str(claim_id)}', '{verdict.verdict}', {verdict.confidence_score},
-                        '{justification_safe}', '{evidence_json}'::jsonb, '{dc_json}'::jsonb, '{chain_json}'::jsonb, NOW()
+                        :fact_check_id, :claim_id, :status, :confidence,
+                        :justification, CAST(:evidence AS jsonb), CAST(:dc AS jsonb), CAST(:chain AS jsonb), NOW()
                     )
                     """,
-                    {}
+                    {
+                        "fact_check_id": str(fact_check_id),
+                        "claim_id": str(claim_id),
+                        "status": str(verdict.verdict),
+                        "confidence": verdict.confidence_score,
+                        "justification": verdict.justification,
+                        "evidence": evidence_json,
+                        "dc": dc_json,
+                        "chain": chain_json,
+                    },
                 )
 
                 # Track counts and aggregates
@@ -1418,17 +1434,22 @@ class VerificationService:
 
             # Step 5: Update article credibility scores
             reliability_score = int(article_credibility * 100)
-            dc_article_json = json.dumps(article_dc.dict() if article_dc else {}).replace("'", "''")
+            dc_article_json = json.dumps(article_dc.dict() if article_dc else {})
             self.db.execute_update(
-                f"""
+                """
                 UPDATE articles SET
-                    reliability_score = {reliability_score},
-                    overall_credibility = '{credibility_level}',
-                    decomposed_confidence = '{dc_article_json}'::jsonb,
+                    reliability_score = :reliability_score,
+                    overall_credibility = :credibility_level,
+                    decomposed_confidence = CAST(:dc AS jsonb),
                     updated_at = NOW()
-                WHERE article_id = '{str(article_id)}'
+                WHERE article_id = :article_id
                 """,
-                {}
+                {
+                    "reliability_score": reliability_score,
+                    "credibility_level": credibility_level,
+                    "dc": dc_article_json,
+                    "article_id": str(article_id),
+                },
             )
 
             # Step 6: Mark claims extraction as completed (updates claims_count and verified_claims_count)

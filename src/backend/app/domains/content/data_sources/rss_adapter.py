@@ -255,7 +255,10 @@ def _parse_feed(url: str, max_items: int = 20) -> List[Dict[str, Any]]:
             article = {
                 "title": entry.get("title", "").strip(),
                 "url": entry_url,
-                "published_date": entry.get("published", entry.get("updated", "")),
+                # Use None (NULL) — not "" — when a feed entry has no date, so
+                # the empty string is never bound to a timestamptz column (which
+                # silently dropped the whole article on insert).
+                "published_date": (entry.get("published") or entry.get("updated") or None),
                 "summary": rss_summary,
                 # `extracted_text` is what ingestion writes to articles.extracted_text.
                 # Prefer the fetched body; fall back to the cleaned RSS

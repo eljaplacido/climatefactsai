@@ -284,7 +284,7 @@ from api.rate_limiter import RateLimitMiddleware
 app.add_middleware(RateLimitMiddleware)
 
 # Include authentication routes
-from api.auth_routes import router as auth_router, get_optional_user
+from api.auth_routes import router as auth_router, get_optional_user, require_admin
 app.include_router(auth_router)
 
 from api.url_analysis_routes import router as url_analysis_router
@@ -1174,10 +1174,12 @@ async def get_admin_dashboard(db=Depends(get_db), current_user: dict = Depends(g
 
 
 @app.post("/api/admin/trigger-workflow", response_model=TriggerWorkflowResponse)
-async def trigger_workflow(request: TriggerWorkflowRequest, current_user: dict = Depends(get_optional_user)):
-    """Manually trigger the ingestion, verification, and publishing workflow. Requires authentication."""
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required for admin access")
+async def trigger_workflow(request: TriggerWorkflowRequest, current_user: dict = Depends(require_admin)):
+    """Manually trigger the ingestion, verification, and publishing workflow. Admin only.
+
+    Previously gated by 'is logged in' only — any freemium user could fire the
+    full ingest+LLM+video pipeline. Now requires an allowlisted admin.
+    """
     task_id = request.task_id or f"task-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
     logger.info(
         "Triggering Celery workflow",
@@ -1226,10 +1228,8 @@ async def trigger_workflow(request: TriggerWorkflowRequest, current_user: dict =
 
 
 @app.get("/api/admin/workflows", response_model=List[WorkflowStatus])
-async def get_workflows(limit: int = Query(default=10, ge=1, le=50), db=Depends(get_db), current_user: dict = Depends(get_optional_user)):
-    """Return recent workflow executions (deduplicated per task). Requires authentication."""
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required for admin access")
+async def get_workflows(limit: int = Query(default=10, ge=1, le=50), db=Depends(get_db), current_user: dict = Depends(require_admin)):
+    """Return recent workflow executions (deduplicated per task). Admin only."""
     query = """
         WITH latest AS (
             SELECT DISTINCT ON (task_id)
