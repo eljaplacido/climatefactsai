@@ -113,5 +113,21 @@ End-to-end audit of all platform surfaces. Fixed worldwide coverage gaps, stale 
 
 - **`AgenticAssistant.tsx` imported unused `X` icon (2026-04-28)**: minor lint warning. **Fix:** removed import. **Prevention:** run `npm run lint` before merging frontend changes.
 
+### 2026-06-26 — Production-Readiness Audit (10-dimension, 36-agent + adversarial verify)
+
+- **SQL injection via f-string + hand-rolled `''` escaping (TRUST-01).** The verify pipeline interpolated LLM-generated `claim_type`/`verdict` into INSERTs; the manual `.replace("'", "''")` didn't even cover those fields. **Prevention:** ALWAYS bind params (`:name` + dict). Never interpolate model output into SQL; treat `.replace("'","''")` in a query string as a smell to grep for.
+
+- **The auth user dict has NO `.id` and NO `["tier"]`.** `get_current_user` returns `{user_id, email, full_name, subscription_tier, is_active, ...}`. Two prod bugs came from this: `current_user.get("tier")` (None → 403 all paying users) and `current_user.subscription_tier`/`.id` attribute access on a dict (→ 500). **Prevention:** it's a dict — use `["user_id"]` / `.get("subscription_tier")`.
+
+- **CI deploy-gate inherited `-n auto`/`--dist` from `pytest.ini` but pytest-xdist wasn't installed → pytest crashed before any test ran**, so the gate never gated. **Prevention:** a CI `pytest` step must install `pytest-xdist` or pass `-o addopts=` / `--override-ini`. Fixing it makes the gate correctly fail-red on real failures — keep the suite green.
+
+- **CacheAligner: static blocks belong in the system prefix, not the user-prompt tail.** Chat appended the ~2 KB action catalogue AFTER the volatile context, so no prompt-prefix cache could hit. Invariant catalogues → cached static system prompt; only live context in the user message. See `app/domains/intelligence/context_compaction.py`.
+
+- **Fail-closed admin allowlist.** No admin/role concept existed — "admin" endpoints were gated by "is logged in" only. `require_admin` is keyed to `CLILENS_ADMIN_EMAILS`; **unset = nobody is admin = 403.** Must be set in prod.
+
+- **GDPR delete = anonymize-and-deactivate, not hard delete.** `user_id` is referenced by many tables with no guaranteed `ON DELETE CASCADE`, so erase PII + deactivate + best-effort purge personal tables rather than risk orphans / a mid-delete 500.
+
+- **Provenance must report what ACTUALLY ran, not what keys exist.** Deep-search claimed `synthesis_model="anthropic"` whenever a key was present (even on DeepSeek fallback) and a hardcoded ada-002 embedder (real one is bge-m3). Record the model on the success path; report the live embedder.
+
 ---
 > **Note to Agents**: Always append your findings and insights to this file after completing significant refactoring, debugging, or feature implementation.

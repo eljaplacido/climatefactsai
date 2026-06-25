@@ -2,13 +2,18 @@
 
 This document is maintained by the Hermes agent and represents the recursive long-term memory of the project's architecture, conventions, and state.
 
-_Last full sync: 2026-05-05 (chat view-context + mock elimination + GCP cloud project provisioning)_
+_Last full sync: 2026-05-05. Header refreshed 2026-06-26 after the production-readiness audit._
+
+> **Current snapshot (2026-06-26):** see `docs/improvementplans/Production-Readiness-Audit-2026-06-26.md`
+> for the authoritative health scores (composite ≈ 3.0/5), the verified-blocker
+> ledger, and what was fixed. The body of this blueprint below §1 predates that
+> audit — treat the report as canonical where they disagree.
 
 ## 1. Project Overview
 
-**CliLens.AI** — AI-powered climate news verification and intelligence platform.
+**Climatefacts.ai** (formerly CliLens.AI; CISU Regen ownership) — AI-powered climate news verification and intelligence platform.
 
-- Worldwide coverage: 198 countries across 9 regions (Europe, North/Central/Latin America, Africa, Asia, Middle East, Oceania, Central Asia)
+- Worldwide coverage: ~194 UN-member countries across 9 regions (Europe, North/Central/Latin America, Africa, Asia, Middle East, Oceania, Central Asia)
 - Per-country article ingestion + climate + weather data
 - Fact-checking with CARF Cynefin framework + Bayesian credibility
 - Interactive world map with topic density, source coverage, climate-risk and temperature-anomaly layers, and 7-dimension green-transition compare
