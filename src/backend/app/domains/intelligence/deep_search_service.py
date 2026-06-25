@@ -263,8 +263,14 @@ class DeepSearchService:
                 else "internal_corpus(fts+semantic) + perplexity_external"
             ),
             "weather_used": bool(weather_context),
-            "synthesis_model": "anthropic" if self.anthropic_key else ("deepseek" if os.getenv("DEEPSEEK_API_KEY") else "none"),
-            "embedding_model": "openai:text-embedding-ada-002" if os.getenv("OPENAI_API_KEY") else None,
+            # Honest provenance (audit INT-02): report the provider/model that
+            # actually produced the synthesis when known, not key presence.
+            "synthesis_model": (
+                getattr(self, "_last_synthesis_model", None)
+                or ("anthropic" if self.anthropic_key else ("deepseek" if os.getenv("DEEPSEEK_API_KEY") else "none"))
+            ),
+            # The live semantic path embeds with bge-m3 (1024-dim), not ada-002.
+            "embedding_model": "bge-m3",
             "external_provider_configured": bool(self.perplexity_key),
             "sources_consulted": sorted({c.get("source_name") for c in citations if c.get("source_name")}),
             # Hallucination check block (may be None if no sources were available
@@ -1191,6 +1197,14 @@ class DeepSearchService:
         weather_context: Optional[Dict],
     ) -> str:
         """Synthesize a unified answer from all sources using Claude or DeepSeek."""
+        # Tool-output compaction (Headroom): the external Perplexity payload can
+        # be ~1.5K tokens of verbose prose injected verbatim into the synthesis
+        # prompt (the highest-cost path the cost endpoint watches). Cap it first.
+        # `_last_synthesis_model` records which provider actually ran so the
+        # methodology/provenance can report it honestly (audit INT-02).
+        from app.domains.intelligence.context_compaction import compact_text
+        perplexity_answer = compact_text(perplexity_answer or "", 400)
+        self._last_synthesis_model = None
         # Build context from internal articles
         articles_context = ""
         if internal_articles:
@@ -1242,6 +1256,9 @@ class DeepSearchService:
                     messages=[{"role": "user", "content": prompt}],
                 )
                 if message.content:
+                    self._last_synthesis_model = (
+                        f"anthropic:{os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-4-5')}"
+                    )
                     return message.content[0].text.strip()
             except Exception as e:
                 logger.warning(f"Claude synthesis failed: {e}")
@@ -1264,6 +1281,9 @@ class DeepSearchService:
                     ],
                     max_tokens=tmpl.max_tokens or 1500,
                     temperature=tmpl.temperature if tmpl.temperature is not None else 0.2,
+                )
+                self._last_synthesis_model = (
+                    f"deepseek:{os.getenv('DEEPSEEK_MODEL', 'deepseek-chat')}"
                 )
                 return response.choices[0].message.content.strip()
             except Exception as e:

@@ -154,6 +154,16 @@ def llm_chat_with_fallback(
 
     order = _provider_order(provider_pin)
 
+    # Headroom safety net: bound the user-side prompt so a pathological context
+    # (runaway history, huge pasted payload) never blows a provider's context
+    # window or the token bill. Static system prompts are left untouched so the
+    # cacheable prefix stays byte-identical. Never fails the call.
+    try:
+        from app.domains.intelligence.context_compaction import guard_input
+        user_prompt = guard_input(user_prompt)
+    except Exception as _gi_exc:  # pragma: no cover - defensive
+        logger.debug(f"guard_input skipped: {_gi_exc}")
+
     for provider in order:
         try:
             if provider == "local-gx10":

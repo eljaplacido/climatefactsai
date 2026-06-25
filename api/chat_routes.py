@@ -649,7 +649,7 @@ def _build_multi_article_context(db, sources: List[ChatSource]) -> str:
         aid = str(cr["article_id"])
         claims_by_article.setdefault(aid, []).append(cr)
 
-    parts = []
+    items = []
     for r in (rows or []):
         aid = str(r["article_id"])
         text = r.get("text_preview") or r.get("excerpt") or ""
@@ -675,9 +675,23 @@ def _build_multi_article_context(db, sources: List[ChatSource]) -> str:
             err = r.get("claims_error_message") or "Unknown error"
             article_section += f"NOTE: Analysis failed - {err[:200]}\n"
 
-        parts.append(article_section)
+        items.append({"section": article_section, "cred": (cred or "UNKNOWN").upper()})
 
-    return "\n---\n".join(parts)
+    # IntelligentContext budget-fit (Headroom): under a tight token budget keep
+    # the most credible articles first, then restore original order for the
+    # prompt. Bounds the per-turn context cost on claim-heavy questions.
+    from app.domains.intelligence.context_compaction import (
+        fit_to_budget, CHAT_CONTEXT_TOKEN_BUDGET,
+    )
+    _cred_rank = {"HIGH": 3.0, "MEDIUM": 2.0, "LOW": 1.0, "UNKNOWN": 0.5}
+    fit = fit_to_budget(
+        items,
+        CHAT_CONTEXT_TOKEN_BUDGET,
+        render=lambda it: it["section"],
+        score=lambda it: _cred_rank.get(it["cred"], 0.5),
+        separator="\n---\n",
+    )
+    return fit["rendered"] or "No relevant articles found in the database."
 
 
 _METRICS_CACHE: dict = {"value": None, "ts": 0.0}
@@ -1027,6 +1041,79 @@ _CYNEFIN_GUIDANCE = {
 }
 
 
+_CHAT_SYSTEM_PROMPT_CACHE: Optional[str] = None
+
+
+def _chat_system_prompt() -> str:
+    """Static system prompt for the agentic chat (Headroom CacheAligner).
+
+    Built once and cached so the large prefix — identity, capabilities, the
+    generic feature catalogue, and the full action catalogue — is byte-identical
+    on every turn, making it eligible for provider-side prompt/KV-cache reuse.
+    All volatile content (live counts, current view, retrieved articles, history,
+    the question) lives in the USER message instead.
+
+    Audit INT-05: the ~2 KB action block previously sat at the END of the user
+    prompt, after the volatile context — defeating any prefix cache and forcing
+    the whole catalogue to be re-tokenized on every single turn.
+    """
+    global _CHAT_SYSTEM_PROMPT_CACHE
+    if _CHAT_SYSTEM_PROMPT_CACHE is not None:
+        return _CHAT_SYSTEM_PROMPT_CACHE
+
+    base = (
+        "You are Climatefacts.ai's climate intelligence assistant. You help users understand "
+        "climate news, platform features, and analysis results.\n\n"
+        "CAPABILITIES:\n"
+        "- Answer climate questions using the article data provided in the user message\n"
+        "- Explain transparency scores, credibility ratings, and verification processes\n"
+        "- Guide users through platform features (Map, Deep Search, Feed, Sources, Analysis)\n"
+        "- Compare countries' climate coverage and risk profiles\n"
+        "- Explain what different metrics mean (confidence intervals, reliability breakdown)\n\n"
+        "PLATFORM FEATURES you can explain:\n"
+        "- **Climate Map**: Interactive map covering 190+ tracked countries with layers for "
+        "article density, temperature anomaly, climate risk, and source diversity. Filters by date, "
+        "source, category, region.\n"
+        "- **Deep Search**: AI-powered research combining the internal corpus + Perplexity external sources. "
+        "Compare mode for side-by-side topic analysis. Weather context is auto-injected for climate queries.\n"
+        "- **My Feed**: Personalized feed with source type selection (news, weather, research, "
+        "industry, policy, NGO). Configurable update frequency.\n"
+        "- **Transparency Reports**: Full breakdown of article analysis — methodology, reliability, "
+        "confidence intervals, evidence chains, source profiles.\n"
+        "- **URL Analysis**: Submit any URL for AI fact-checking and claim extraction.\n"
+        "- **Sources**: A curated set of registered sources across categories (news, government, research, "
+        "NGO, weather data, industry). Users can suggest new sources via /suggest-source.\n"
+        "- **Green Transition**: Per-country scores across 7 dimensions (renewable energy, cleantech, "
+        "circular economy, resource efficiency, regenerative economy, sustainability, overall transition).\n"
+        "- **Translation**: Interface available in 11+ languages with auto-translation.\n\n"
+        "RESPONSE STYLE: Be concise, use markdown, cite specific articles by name and credibility. "
+        "When explaining features, be practical and give step-by-step guidance. Live platform counts, "
+        "the user's current view, and retrieved articles are supplied in the user message."
+    )
+
+    try:
+        from app.domains.intelligence.skills import render_actions_block_for_prompt
+        base += (
+            "\n\nAFTER your markdown answer, you MAY append a JSON actions block "
+            "suggesting 0-3 genuinely useful next steps for the user. Separate it "
+            "from your answer with a line containing only '---'. Omit the block "
+            "entirely if no action is genuinely helpful.\n"
+            "AVAILABLE ACTIONS (use ONLY these `type` values):\n"
+            f"{render_actions_block_for_prompt()}\n"
+            "Each action is {\"type\": <one above>, \"params\": {..}, \"label\": "
+            "\"short button text\"}. Example:\n"
+            "Your answer text…\n"
+            "---\n"
+            "{\"actions\":[{\"type\":\"open_country\",\"params\":{\"code\":\"DE\"},"
+            "\"label\":\"Open Germany on the map\"}]}"
+        )
+    except Exception as _act_exc:  # pragma: no cover - registry import guard
+        logger.debug(f"actions block unavailable (non-fatal): {_act_exc}")
+
+    _CHAT_SYSTEM_PROMPT_CACHE = base
+    return _CHAT_SYSTEM_PROMPT_CACHE
+
+
 async def _generate_answer(
     question: str, context: str, sources: List[ChatSource], history: List[dict],
     platform_metrics: Optional[dict] = None,
@@ -1058,14 +1145,6 @@ async def _generate_answer(
         metrics = platform_metrics or {}
         country_count = metrics.get("country_count") or 0
         source_count = metrics.get("source_count") or 0
-        country_phrase = (
-            f"{country_count}+ countries" if country_count
-            else "190+ tracked countries"
-        )
-        source_phrase = (
-            f"{source_count} registered sources" if source_count
-            else "a curated set of registered sources"
-        )
 
         view_block = _format_view_context_block(view_context or {})
         view_section = (
@@ -1084,74 +1163,45 @@ async def _generate_answer(
             if cynefin_strategy in _CYNEFIN_GUIDANCE else ""
         )
 
-        system_prompt = (
-            "You are Climatefacts.ai's climate intelligence assistant. You help users understand "
-            "climate news, platform features, and analysis results.\n\n"
-            f"{view_section}"
-            f"{cynefin_section}"
-            "CAPABILITIES:\n"
-            "- Answer climate questions using article data provided below\n"
-            "- Explain transparency scores, credibility ratings, and verification processes\n"
-            "- Guide users through platform features (Map, Deep Search, Feed, Sources, Analysis)\n"
-            "- Compare countries' climate coverage and risk profiles\n"
-            "- Explain what different metrics mean (confidence intervals, reliability breakdown)\n\n"
-            "PLATFORM FEATURES you can explain:\n"
-            f"- **Climate Map**: Interactive map covering {country_phrase} with layers for "
-            "article density, temperature anomaly, climate risk, and source diversity. Filters by date, "
-            "source, category, region.\n"
-            "- **Deep Search**: AI-powered research combining the internal corpus + Perplexity external sources. "
-            "Compare mode for side-by-side topic analysis. Weather context is auto-injected for climate queries.\n"
-            "- **My Feed**: Personalized feed with source type selection (news, weather, research, "
-            "industry, policy, NGO). Configurable update frequency.\n"
-            "- **Transparency Reports**: Full breakdown of article analysis — methodology, reliability, "
-            "confidence intervals, evidence chains, source profiles.\n"
-            "- **URL Analysis**: Submit any URL for AI fact-checking and claim extraction.\n"
-            f"- **Sources**: {source_phrase} across categories (news, government, research, NGO, weather data, industry). "
-            "Users can suggest new sources via /suggest-source.\n"
-            "- **Green Transition**: Per-country scores across 7 dimensions (renewable energy, cleantech, "
-            "circular economy, resource efficiency, regenerative economy, sustainability, overall transition).\n"
-            "- **Translation**: Interface available in 11+ languages with auto-translation.\n\n"
-            "RESPONSE STYLE: Be concise, use markdown, cite specific articles by name and credibility. "
-            "When explaining features, be practical and give step-by-step guidance."
+        # CacheAligner (Headroom, audit INT-05): the heavy, invariant blocks
+        # (identity, capabilities, feature + action catalogues) live in a static
+        # system prefix; everything volatile goes in the user message below, so
+        # the prefix stays cache-eligible turn over turn.
+        from app.domains.intelligence.context_compaction import (
+            compact_text, guard_input, CHAT_CONTEXT_TOKEN_BUDGET,
+        )
+        system_prompt = _chat_system_prompt()
+
+        snapshot_bits = []
+        if country_count:
+            snapshot_bits.append(f"{country_count}+ countries tracked")
+        if source_count:
+            snapshot_bits.append(f"{source_count} registered sources")
+        snapshot = (
+            "PLATFORM SNAPSHOT: " + "; ".join(snapshot_bits) + ".\n\n"
+            if snapshot_bits else ""
         )
 
-        user_prompt = f"""RELEVANT ARTICLES FROM DATABASE:
-{context}
-{history_text}
-USER QUESTION: {question}
+        user_prompt = (
+            f"{snapshot}"
+            f"{view_section}"
+            f"{cynefin_section}"
+            "RELEVANT ARTICLES FROM DATABASE:\n"
+            f"{compact_text(context, CHAT_CONTEXT_TOKEN_BUDGET)}\n"
+            f"{history_text}\n"
+            f"USER QUESTION: {question}\n\n"
+            "Instructions:\n"
+            "- If the user asks about articles/news: answer using the article data above, cite sources by name and credibility.\n"
+            "- If the user asks about platform features: explain clearly with step-by-step guidance.\n"
+            "- If the user asks for analysis help: explain what the scores mean and how to interpret them.\n"
+            "- If the user asks to compare countries: use any country data from articles above.\n"
+            "- If no relevant articles are found, acknowledge this and suggest using Deep Search or adjusting filters.\n"
+            "- Format using markdown with headers, bullet points, and bold for key terms."
+        )
 
-Instructions:
-- If the user asks about articles/news: answer using the article data above, cite sources by name and credibility.
-- If the user asks about platform features: explain clearly with step-by-step guidance.
-- If the user asks for analysis help: explain what the scores mean and how to interpret them.
-- If the user asks to compare countries: use any country data from articles above.
-- If no relevant articles are found, acknowledge this and suggest using Deep Search or adjusting filters.
-- Format using markdown with headers, bullet points, and bold for key terms."""
-
-        # Agentic actions (the "chat that acts" surface): instruct the LLM to
-        # append a JSON actions block so _parse_actions has something to find.
-        # Without this block the chat ALWAYS returned actions:[] — the entire
-        # 22-skill dispatcher + confirm-modal pipeline was wired but idle.
-        # The action list is rendered from the skills registry so it stays in
-        # lockstep with VALID_ACTION_TYPES.
-        try:
-            from app.domains.intelligence.skills import render_actions_block_for_prompt
-            user_prompt += (
-                "\n\nAFTER your markdown answer, you MAY append a JSON actions block "
-                "suggesting 0-3 genuinely useful next steps for the user. Separate it "
-                "from your answer with a line containing only '---'. Omit the block "
-                "entirely if no action is genuinely helpful.\n"
-                "AVAILABLE ACTIONS (use ONLY these `type` values):\n"
-                f"{render_actions_block_for_prompt()}\n"
-                "Each action is {\"type\": <one above>, \"params\": {..}, \"label\": "
-                "\"short button text\"}. Example:\n"
-                "Your answer text…\n"
-                "---\n"
-                "{\"actions\":[{\"type\":\"open_country\",\"params\":{\"code\":\"DE\"},"
-                "\"label\":\"Open Germany on the map\"}]}"
-            )
-        except Exception as _act_exc:  # pragma: no cover - registry import guard
-            logger.debug(f"actions block unavailable (non-fatal): {_act_exc}")
+        # Safety net: never ship a pathologically large user prompt (runaway
+        # history / view payload) to a provider — trim the middle to the ceiling.
+        user_prompt = guard_input(user_prompt)
 
         # Multi-provider fallback chain: tries deepseek -> openai -> anthropic
         # -> local-gx10 until one returns non-empty content. Returns None
@@ -1211,10 +1261,15 @@ Instructions:
                 # Pass None to avoid threading another argument through.
                 detector = HallucinationDetector(db=None)
                 source_texts = []
+                # Ground against the article BODIES that fed the answer, not
+                # just titles — titles alone made the entity/number overlap
+                # check near-useless (audit INT-04). `context` is already
+                # length-bounded by _build_multi_article_context.
+                if context and context.strip() and "No relevant articles" not in context:
+                    source_texts.append(context[:6000])
                 for s in sources[:5]:
-                    chunk = f"{s.title or ''}".strip()
-                    if chunk:
-                        source_texts.append(chunk)
+                    if s.title:
+                        source_texts.append(s.title)
                 if source_texts:
                     hallucination_check = await detector.check(
                         generated_text=answer[:4000],
