@@ -93,8 +93,30 @@ Implemented natively (no `headroom-ai` dependency, no proxy) in
   up the corrected TRUST-03 scoring; new verifications already use it.
 
 ## Top remaining backlog (P2, not blockers)
-INT-01 split-brain LLM routing (chat/deep-search bypass the circuit-breaker
-router) · CNT-3/4/5 ingestion wrong-key attribution + dead ada-002 embed write ·
-SEM-02 dead KG entity-resolution · TEST-004 Playwright never fails the build ·
-DOC-02..07 doc drift + "CliLens" rename · AGSK-01 aspirational agentic infra in
-CLAUDE.md/skills. Full per-finding detail in the audit run transcript.
+**P2/P3 backlog sweep — FIXED** (commits a80bea3, dd2a99a, 5d4d60f, 476cf03,
+e051e26, e3af225): CNT-1/3/4/5/6 (ingestion enrich-arity, wrong-key attribution,
+paid-ada cost leak, HTML clean, source_profiles SQLi+domain bug) · API-06/07/09
+(fail-closed admin secret, chat IDOR, admin discover-news gating) · INT-06/08/09/10
++ TRUST-04 (semantic-fallback telemetry, async cleanup, RAG "related coverage"
+framing, Q&A claim cap, configurable extraction cap) · DEVOPS-02/06 + TEST-004/005
+(migrations-after-tests, CORS launch domain, Playwright exit-code, single pytest
+config) · FE-04/05/07 (dark-mode net, delete 3 dead components, companies error
+UI) · AGSK-01/03/07 + DOC-02/03/07 (CLAUDE.md aspirational banner, skill/doc
+factual fixes). API-08 was refuted on inspection.
+
+**Deliberately deferred** (rationale in commit messages):
+- INT-01 — routing chat through route_chat() would regress the INT-02
+  provider-honesty fix (route_chat returns text only); needs route_chat to carry
+  provenance first.
+- Infra / unverifiable from code: DEVOPS-04/SEM-06 (flip MIGRATIONS_TOLERATE_ERRORS),
+  DEVOPS-05 (GitHub branch protection), DEVOPS-07 (Cloud Run probe), SEM-02/03
+  (entity-resolution worker / hosted query embedder), SEM-04/05 (drop ada column /
+  archive migration dirs — schema migrations).
+- Bulk mechanical hygiene: DOC-04 (archive snapshots), DOC-05 (README rewrite),
+  DOC-06 (CliLens→Climatefacts.ai sweep — blind sed risks mangling "formerly
+  CliLens"), FE-06 (66 NEXT_PUBLIC_API_URL fallbacks — latent), TEST-007 (add
+  saved_items/export/quota tests).
+- Judgment/destructive: AGSK-02/05/06 (delete agentdb skills / add domain agents /
+  trim hooks), CNT-7/8 (P3 concurrency/TOCTOU — current handling adequate).
+
+Full per-finding detail in the audit run transcript.
