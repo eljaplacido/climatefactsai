@@ -566,30 +566,7 @@ def check_premium_feature(user_tier: str, feature: str) -> bool:
     return tier in allowed_tiers
 
 
-def require_premium(feature: str):
-    """
-    Decorator to require premium access for an endpoint
-    """
-    def decorator(func):
-        async def wrapper(*args, **kwargs):
-            # Get current_user from kwargs
-            current_user = kwargs.get("current_user")
-
-            if not current_user:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Authentication required"
-                )
-
-            # Extract tier from user object (handles both dict and database row)
-            user_tier = current_user.get("subscription_tier") if isinstance(current_user, dict) else getattr(current_user, "subscription_tier", "freemium")
-
-            if not check_premium_feature(user_tier, feature):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"This feature requires a premium subscription. Current tier: {user_tier}"
-                )
-
-            return await func(*args, **kwargs)
-        return wrapper
-    return decorator
+# NOTE (audit API-10): the `require_premium` decorator was removed — it was dead
+# (no endpoint referenced it) and added a third premium-check argument convention.
+# Gate premium endpoints explicitly with
+# `check_premium_feature(current_user.get("subscription_tier"), feature)`.

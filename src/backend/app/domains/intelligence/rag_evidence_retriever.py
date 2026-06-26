@@ -62,27 +62,24 @@ class RAGEvidenceRetriever:
                 source_name = item.get("source_name", "Unknown")
                 retrieval_sources = item.get("retrieval_sources", [])
 
-                # Determine if similar article supports or contradicts
-                supports = None
-                if credibility == "HIGH":
-                    supports = True
-                elif credibility == "LOW":
-                    supports = False
-
+                # INT-09: a similar article EXISTING is "related coverage", not
+                # claim-level corroboration — don't map article credibility to
+                # supports/contradicts. supports_claim stays None (neutral);
+                # a claim-vs-claim comparison is the tracked follow-up.
                 strategy_label = ", ".join(retrieval_sources) if retrieval_sources else "hybrid"
 
                 evidence.append(Evidence(
-                    source=f"CliLens Corpus ({source_name})",
+                    source=f"Climatefacts.ai Corpus ({source_name})",
                     source_url="",
                     source_reliability="high" if credibility == "HIGH" else "medium",
                     content_excerpt=(
-                        f"Similar article: \"{title}\". "
-                        f"Credibility: {credibility}. "
+                        f"Related coverage: \"{title}\". "
+                        f"Article credibility: {credibility}. "
                         f"Retrieval: {strategy_label}. "
                         f"Score: {similarity:.4f}"
                     ),
                     relevance_score=round(min(similarity * 2.0, 0.95), 2),
-                    supports_claim=supports,
+                    supports_claim=None,
                     retrieval_method=f"hybrid_rag_{strategy_label}",
                 ))
 
@@ -139,24 +136,19 @@ class RAGEvidenceRetriever:
                 reliability = row.get("reliability_score")
                 credibility = row.get("overall_credibility", "")
 
-                supports = None
-                if credibility == "HIGH" and reliability and reliability >= HIGH:
-                    supports = True
-                elif credibility == "LOW" or (reliability and reliability < MEDIUM):
-                    supports = False
-
+                # INT-09: related coverage, not claim-level corroboration.
                 evidence.append(Evidence(
-                    source=f"CliLens Corpus ({row.get('source_name', 'Unknown')})",
+                    source=f"Climatefacts.ai Corpus ({row.get('source_name', 'Unknown')})",
                     source_url=row.get("url", ""),
                     source_reliability=level_for(reliability).lower() if reliability else "medium",
                     content_excerpt=(
-                        f"Similar verified article: \"{row.get('title', '')}\". "
+                        f"Related coverage: \"{row.get('title', '')}\". "
                         f"Credibility: {credibility}, Reliability: {reliability}/100, "
                         f"Claims: {row.get('verified_claims_count', 0)}/{row.get('claims_count', 0)} verified. "
                         f"Similarity: {similarity:.2f}"
                     ),
                     relevance_score=round(similarity * 0.9, 2),
-                    supports_claim=supports,
+                    supports_claim=None,
                     retrieval_method="rag_pgvector",
                 ))
 
