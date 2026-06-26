@@ -189,8 +189,13 @@ jobs:
           npx next start -p 5400 &
           NEXT_PID=$!
           sleep 8
-          npx playwright test --reporter=line || echo "E2E_STATUS=skipped" > /tmp/e2e_status
+          # TEST-004: propagate Playwright's exit code (the old `|| echo` swallowed
+          # every failure, so the E2E step could never fail the build). Still tear
+          # the server down regardless of outcome.
+          npx playwright test --reporter=line
+          E2E_EXIT=$?
           kill $NEXT_PID 2>/dev/null || true
+          exit $E2E_EXIT
         env:
           NEXT_PUBLIC_API_URL: http://localhost:5400
 

@@ -30,11 +30,15 @@ steps:
   #
   # Applies infrastructure/database/migrations/versions/*.sql to the
   # Cloud SQL instance via cloud-sql-proxy. Idempotent — tracker table
-  # plus heuristic bootstrap means rerunning is safe. Runs FIRST so the
-  # new code is never deployed against an out-of-date schema.
+  # plus heuristic bootstrap means rerunning is safe.
+  #
+  # DEVOPS-02: waits for `run-tests` so the schema is NEVER mutated when the
+  # test gate is red — migrations are the last safe step before build+deploy,
+  # not the first.
   # -------------------------------------------------------------------------
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
     id: "run-migrations"
+    waitFor: ["run-tests"]
     entrypoint: "bash"
     secretEnv: ["DATABASE_URL_RAW"]
     args:
@@ -89,7 +93,7 @@ steps:
   # -------------------------------------------------------------------------
   - name: "python:3.11-slim"
     id: "run-tests"
-    waitFor: ["run-migrations"]
+    waitFor: ["-"]  # DEVOPS-02: run the gate FIRST, before migrations touch prod
     env:
       - "JWT_SECRET_KEY=cloudbuild-ci-key-not-for-prod-min-32chars"
       - "OTEL_SDK_DISABLED=true"

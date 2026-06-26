@@ -41,16 +41,10 @@ exclude = [
   "tests/",
 ]
 
-[tool.pytest.ini_options]
-minversion = "7.0"
-addopts = "-p no:warnings -x --tb=short"
-testpaths = ["tests"]
-timeout = 10
-markers = [
-  "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-  "integration: marks tests as integration tests",
-  "e2e: marks tests as end-to-end tests",
-]
+# TEST-005: pytest config is authoritative in pytest.ini (which takes precedence
+# over pyproject when both exist). The former [tool.pytest.ini_options] block
+# here was DEAD — and carried a `timeout=` that needs pytest-timeout — so it has
+# been removed to avoid the split-brain config.
 
 [tool.coverage.run]
 source = ["api", "src/backend"]

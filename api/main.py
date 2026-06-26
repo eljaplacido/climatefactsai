@@ -224,6 +224,11 @@ _DEFAULT_ORIGINS = ",".join([
     "http://localhost:3000",
     "http://localhost:5173",
     "http://localhost:5300",
+    # DEVOPS-06: prod CORS is driven by the CORS_ORIGINS env var, but include the
+    # real launch domain (climatefacts.ai / www) AND the Cloud Run host as
+    # defensive defaults so the custom domain works the moment DNS cuts over.
+    "https://climatefacts.ai",
+    "https://www.climatefacts.ai",
     "https://climatenews-frontend-srzwxdzmaq-ez.a.run.app",
 ])
 allowed_origins_env = os.getenv("CORS_ORIGINS", _DEFAULT_ORIGINS)
