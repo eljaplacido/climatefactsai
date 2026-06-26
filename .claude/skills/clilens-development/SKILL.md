@@ -26,7 +26,7 @@ working_architecture:
   cloud: "GCP — Cloud Run (api + frontend, europe-west4) + Cloud SQL (postgres) + Secret Manager"
   communication: "HTTP → FastAPI → SQLAlchemy(text) → Cloud SQL"
   scheduling: "Cloud Scheduler crons (cn-*) hit token-gated /api/scheduler + /api/admin endpoints"
-  llm_routing: "llm_chat_with_fallback: local-gx10 -> deepseek -> openai -> anthropic; cost logged to llm_cost_log"
+  llm_routing: "llm_chat_with_fallback default chain is cloud-only deepseek -> openai -> anthropic for chat; local-gx10 goes FIRST only when CLILENS_CHAT_PROVIDER=local-gx10 is set explicitly; cost logged to llm_cost_log"
   on_prem_inference: "ASUS GX10 (Tailscale, ssh gx10) runs Ollama — enrichment (qwen2.5:14b) + embeddings (bge-m3); polls Cloud SQL directly"
   embeddings: "articles.embedding_bge_m3 vector(1024) + HNSW (mig 062), generated on the GX10"
 
@@ -566,7 +566,7 @@ except ValidationError as e:
 ## 📚 Required Reading Before Coding
 
 1. **`docs/CURRENT_STATE.md`** - What exists now (10 min read)
-2. **`New_plan.md`** - Future vision (20 min read)
+2. **`docs/ROADMAP.md`** - Future vision (20 min read)
 3. **This skill file** - Development patterns (5 min read)
 
 **Total: 35 minutes to get context**

@@ -1,5 +1,16 @@
 # Claude Code Configuration - SPARC Development Environment
 
+> ⚠️ **Scope note (audit AGSK-01):** The sections below describing the
+> claude-flow ecosystem — ReasoningBank Core Memory, AgentDB, Agent Booster, the
+> OpenRouter proxy, Flow-Nexus, and the 54-agent / hive-mind tooling — are
+> **aspirational developer-tooling notes, NOT wired into this product.** The
+> shipping app is a Python (FastAPI) + Next.js climate platform; its real agentic
+> layer is the intelligence domain (`src/backend/app/domains/intelligence/`) plus
+> the 22-action `SKILLS_REGISTRY`. Do NOT write application code against
+> ReasoningBank / AgentDB / OpenRouter APIs — they do not exist in this repo. For
+> ground truth see `.claude/skills/clilens-development/SKILL.md` and
+> `docs/CURRENT_STATE.md`.
+
 ## 🚨 CRITICAL: CONCURRENT EXECUTION & FILE MANAGEMENT
 
 **ABSOLUTE RULES**:

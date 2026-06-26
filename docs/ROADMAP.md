@@ -54,7 +54,7 @@
 - Source credibility tier database (27 seed rows, Scimago Q1-Q3)
 
 ## Phase 7: Agentic Platform (DONE)
-- Agentic chat actions protocol (9 action types)
+- Agentic chat actions protocol (22 action types — derived from SKILLS_REGISTRY)
 - chat_actions_log telemetry
 - chatActionDispatcher.ts frontend controller
 - AI transparency badge on all AI surfaces

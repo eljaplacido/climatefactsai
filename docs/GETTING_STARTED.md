@@ -37,18 +37,24 @@ Before you begin, ensure you have the following installed:
 
 You'll need API keys for the following services:
 
-- **Anthropic Claude** (required) - For AI-powered fact-checking
+- **DeepSeek** (required) - Primary LLM for chat, claim extraction, and verification
+  - Get key: https://platform.deepseek.com/
+  - Set `DEEPSEEK_API_KEY`; model `deepseek-chat`
+
+- **Anthropic Claude** (optional) - Secondary verifier / fallback in the chat chain
   - Get key: https://console.anthropic.com/
-  - Model used: Claude 3.5 Sonnet
+  - Set `ANTHROPIC_API_KEY`
 
-- **OpenAI** (required) - For content analysis
+- **OpenAI** (optional) - Fallback chat provider
   - Get key: https://platform.openai.com/
-  - Model used: GPT-4o
+  - Set `OPENAI_API_KEY`
 
-- **Perplexity** (optional) - For enhanced news discovery
+- **Perplexity** (optional) - Enhanced news discovery + deep-search web mode
   - Get key: https://www.perplexity.ai/
 
-**No API keys yet?** You can still demo the UI + pipeline by setting `USE_MOCK_VERIFICATION=true` in `.env` (mock claim extraction + evidence).
+> The platform runs on **real data only** — there is no mock-verification mode.
+> (The old `USE_MOCK_VERIFICATION` flag was removed; it contradicted the
+> no-synthetic-data contract.)
 
 ### System Requirements
 
