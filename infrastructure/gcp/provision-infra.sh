@@ -363,6 +363,32 @@ FRONTEND_DOMAIN="${FRONTEND_DOMAIN:-}"
 
 log "Creating monitoring alert policies..."
 
+# Resolve (or create) an email notification channel so alerts actually PAGE
+# someone. Without this the policies were created with --no-notification-channel
+# and fired into the void (audit DEVOPS-03). Set CLILENS_ALERT_EMAIL to enable.
+ALERT_EMAIL="${CLILENS_ALERT_EMAIL:-}"
+NOTIFICATION_FLAG="--no-notification-channel"
+if [[ -n "${ALERT_EMAIL}" ]]; then
+  CHANNEL_ID="$(gcloud beta monitoring channels list --project="${PROJECT_ID}" \
+    --filter="type='email' AND labels.email_address='${ALERT_EMAIL}'" \
+    --format='value(name)' 2>/dev/null | head -n1)"
+  if [[ -z "${CHANNEL_ID}" ]]; then
+    CHANNEL_ID="$(gcloud beta monitoring channels create --project="${PROJECT_ID}" \
+      --display-name="CliLens Alerts (${ALERT_EMAIL})" \
+      --type=email \
+      --channel-labels=email_address="${ALERT_EMAIL}" \
+      --format='value(name)' 2>/dev/null || true)"
+  fi
+  if [[ -n "${CHANNEL_ID}" ]]; then
+    NOTIFICATION_FLAG="--notification-channels=${CHANNEL_ID}"
+    log "  Alerts will notify ${ALERT_EMAIL} (${CHANNEL_ID})"
+  else
+    log "  WARNING: could not resolve/create a notification channel for ${ALERT_EMAIL}; alerts will be SILENT."
+  fi
+else
+  log "  WARNING: CLILENS_ALERT_EMAIL not set — alert policies will have NO notification channel (silent). Set it and re-run to enable paging."
+fi
+
 # 1. API 5xx error rate alert
 gcloud monitoring policies create --project="${PROJECT_ID}" \
   --display-name="API High 5xx Rate" \
@@ -370,7 +396,7 @@ gcloud monitoring policies create --project="${PROJECT_ID}" \
   --condition-threshold-val-comparison=COMPARISON_GT \
   --condition-threshold-value=0.05 \
   --condition-duration=300s \
-  --no-notification-channel 2>/dev/null || log "  (alert policy may already exist)"
+  ${NOTIFICATION_FLAG} 2>/dev/null || log "  (alert policy may already exist)"
 
 # 2. Cloud SQL CPU utilization alert
 gcloud monitoring policies create --project="${PROJECT_ID}" \
@@ -379,7 +405,7 @@ gcloud monitoring policies create --project="${PROJECT_ID}" \
   --condition-threshold-val-comparison=COMPARISON_GT \
   --condition-threshold-value=0.8 \
   --condition-duration=600s \
-  --no-notification-channel 2>/dev/null || log "  (alert policy may already exist)"
+  ${NOTIFICATION_FLAG} 2>/dev/null || log "  (alert policy may already exist)"
 
 # 3. Uptime check on frontend (skip if FRONTEND_DOMAIN is unset — the frontend
 #    is not deployed yet during first provision).
