@@ -53,6 +53,8 @@ export default function CompaniesPage() {
   const [companies, setCompanies] = useState<CompanyRow[]>([]);
   const [stats, setStats] = useState<CompaniesStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);       // FE-07: distinguish error from empty
+  const [reloadKey, setReloadKey] = useState(0);   // FE-07: manual retry
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<SortMode>("richness");
   const [sbtiOnly, setSbtiOnly] = useState(false);
@@ -61,6 +63,7 @@ export default function CompaniesPage() {
   useEffect(() => {
     (async () => {
       setLoading(true);
+      setError(false);
       try {
         const params = new URLSearchParams({
           limit: "200",
@@ -73,13 +76,15 @@ export default function CompaniesPage() {
           const data = await res.json();
           setCompanies(data.companies || []);
           setStats(data.stats || null);
+        } else {
+          setError(true);  // FE-07: a non-ok response is an error, not "no companies"
         }
       } catch {
-        // degrade
+        setError(true);  // FE-07: network failure — surface it, don't show empty
       }
       setLoading(false);
     })();
-  }, [sort, sbtiOnly, hasClimateData]);
+  }, [sort, sbtiOnly, hasClimateData, reloadKey]);
 
   const filtered = q
     ? companies.filter(
@@ -196,7 +201,17 @@ export default function CompaniesPage() {
           </label>
         </div>
 
-        {loading ? (
+        {error ? (
+          <div className="text-red-700 dark:text-red-300 py-8 text-sm bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-6 text-center space-y-3">
+            <p className="font-medium">Couldn&rsquo;t load companies. The API may be temporarily unavailable.</p>
+            <button
+              onClick={() => setReloadKey((k) => k + 1)}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        ) : loading ? (
           <div className="flex items-center gap-2 text-gray-500 dark:text-slate-400 py-8">
             <Loader2 className="w-5 h-5 animate-spin" /> Loading companies...
           </div>

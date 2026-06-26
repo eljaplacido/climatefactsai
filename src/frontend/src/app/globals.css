@@ -39,6 +39,34 @@ body {
   background-color: rgb(15, 23, 42);  /* slate-900 */
 }
 
+/* FE-04: extend the safety net to the remaining light-panel backgrounds + the
+   common colored chip/island backgrounds, so the ~21 pages that don't yet use
+   explicit dark: variants (companies/*, transparency, settings) stop rendering
+   light-colored islands in dark mode. Pages that DO handle dark use dark:
+   utilities, which win on source order. */
+.dark .bg-gray-100 {
+  background-color: rgb(30, 41, 59);  /* slate-800 */
+}
+
+.dark .bg-gray-200 {
+  background-color: rgb(51, 65, 85);  /* slate-700 */
+}
+
+.dark .bg-blue-50,
+.dark .bg-indigo-50,
+.dark .bg-sky-50,
+.dark .bg-green-50,
+.dark .bg-emerald-50,
+.dark .bg-teal-50,
+.dark .bg-amber-50,
+.dark .bg-yellow-50,
+.dark .bg-red-50,
+.dark .bg-rose-50,
+.dark .bg-purple-50,
+.dark .bg-slate-50 {
+  background-color: rgb(30, 41, 59);  /* slate-800 */
+}
+
 .dark .border-gray-200 {
   border-color: rgb(51, 65, 85);  /* slate-700 */
 }
