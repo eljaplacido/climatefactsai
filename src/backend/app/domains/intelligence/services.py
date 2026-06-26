@@ -1249,10 +1249,12 @@ class VerificationService:
         self.status_manager.set_processing(article_id)
 
         try:
-            # Fetch article
+            # Fetch article (incl. the source-quality inputs the canonical
+            # ReliabilityScorer needs — TRUST-03).
             article_results = self.db.execute_query(
                 """
-                SELECT article_id, extracted_text
+                SELECT article_id, extracted_text, source_name,
+                       source_credibility_score, content_relevance_score
                 FROM articles
                 WHERE article_id = :article_id
                 """,
@@ -1269,7 +1271,11 @@ class VerificationService:
                     error_message="Article not found"
                 )
 
-            article_text = article_results[0]["extracted_text"]
+            article_row = article_results[0]
+            article_text = article_row["extracted_text"]
+            source_name = article_row.get("source_name")
+            source_credibility_score = article_row.get("source_credibility_score")
+            content_relevance_score = article_row.get("content_relevance_score")
 
             # Step 1: Extract claims
             logger.info(f"Extracting claims from article {article_id}")
@@ -1402,19 +1408,41 @@ class VerificationService:
                 else:
                     unverified_count += 1
             
-            # Step 4: Calculate article credibility
+            # Step 4: Calculate article credibility via the canonical
+            # ReliabilityScorer (TRUST-03). The live pipeline previously used a
+            # homegrown claims-only ratio that ignored source credibility and the
+            # 3-axis source scores entirely — so the reliability engine in
+            # shared/reliability_scorer.py + the editorial/factcheck/transparency
+            # axes (density factor, limited-evidence cap) were dead in the
+            # primary verification path. Map the verify vocab onto the scorer: a
+            # 'disputed' verdict -> misleading_claims (caps at MEDIUM + penalty);
+            # there is no separate 'false' bucket in this pipeline.
             avg_confidence = total_confidence / len(claims) if claims else 0.0
 
-            # Weighted credibility (verified claims count more)
-            article_credibility = (
-                (verified_count * 1.0 + unverified_count * 0.3 + disputed_count * 0.0)
-                / len(claims)
-            ) if claims else 0.5
+            editorial_axis = factcheck_axis = transparency_axis = None
+            try:
+                from app.domains.trust.source_tier_service import get_source_3axis_scores
+                axes = get_source_3axis_scores(self.db, source_name or "", None)
+                if axes:
+                    editorial_axis, factcheck_axis, transparency_axis = axes
+            except Exception as _axis_exc:
+                logger.debug(f"3-axis source lookup failed for {article_id}: {_axis_exc}")
 
-            # Determine level via the single source of truth (seq-5):
-            # was 0.75/0.45, now the canonical 0.80/0.50.
-            from shared.credibility_thresholds import level_for_unit
-            credibility_level = level_for_unit(article_credibility).lower()
+            from shared.reliability_scorer import ReliabilityScorer
+            reliability_score, credibility_level = ReliabilityScorer.calculate_reliability_score(
+                source_credibility_score=source_credibility_score,
+                total_claims=len(claims),
+                verified_claims=verified_count,
+                false_claims=0,
+                misleading_claims=disputed_count,
+                content_relevance_score=content_relevance_score,
+                editorial_score=editorial_axis,
+                factcheck_score=factcheck_axis,
+                transparency_score=transparency_axis,
+            )
+            credibility_level = credibility_level.lower()
+            # 0..1 form retained for VerificationResult.article_credibility + logs.
+            article_credibility = reliability_score / 100.0
 
             # Aggregate decomposed confidence across all claims
             article_dc = None
@@ -1432,8 +1460,8 @@ class VerificationService:
                     overall=DecomposedConfidence.compute_overall(**agg_factors)
                 )
 
-            # Step 5: Update article credibility scores
-            reliability_score = int(article_credibility * 100)
+            # Step 5: Update article credibility scores (reliability_score +
+            # credibility_level already computed by ReliabilityScorer above).
             dc_article_json = json.dumps(article_dc.dict() if article_dc else {})
             self.db.execute_update(
                 """
