@@ -110,12 +110,12 @@ class SemanticQueryService:
                 a.content_category, a.overall_credibility, a.reliability_score,
                 a.published_date, a.excerpt,
                 ts_rank(
-                    to_tsvector('english', COALESCE(a.title, '') || ' ' || COALESCE(a.excerpt, '')),
-                    plainto_tsquery('english', :query)
+                    a.search_tsv,
+                    websearch_to_tsquery('simple', :query)
                 ) AS text_rank
             FROM articles a
-            WHERE to_tsvector('english', COALESCE(a.title, '') || ' ' || COALESCE(a.excerpt, ''))
-                  @@ plainto_tsquery('english', :query)
+            WHERE a.search_tsv
+                  @@ websearch_to_tsquery('simple', :query)
               AND {where_clause}
             ORDER BY text_rank DESC
             LIMIT :limit

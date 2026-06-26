@@ -746,8 +746,8 @@ async def list_articles(
     # Optional full-text search against title + excerpt
     if q:
         query += (
-            "\n        AND to_tsvector('english', COALESCE(a.title, '') || ' ' || COALESCE(a.excerpt, '')) "
-            "@@ plainto_tsquery('english', :q)"
+            "\n        AND a.search_tsv "
+            "@@ websearch_to_tsquery('simple', :q)"
         )
         params["q"] = q
 

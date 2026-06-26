@@ -282,8 +282,8 @@ async def run_saved_query(
                    a.published_date, a.content_category
             FROM articles a
             WHERE a.is_synthetic = FALSE
-              AND to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,''))
-                  @@ plainto_tsquery('english', :q)
+              AND a.search_tsv
+                  @@ websearch_to_tsquery('simple', :q)
             {where_extra}
             ORDER BY COALESCE(a.published_date, a.created_at) DESC
             LIMIT :limit""",

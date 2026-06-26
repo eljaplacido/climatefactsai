@@ -230,8 +230,8 @@ class ArticleRepository:
             # title/excerpt are the real columns; the old headline/summary_text
             # refs do not exist in prod and 500'd every ?q= search.
             where_conditions.append(
-                "to_tsvector('english', COALESCE(a.title, '') || ' ' || COALESCE(a.excerpt, '')) "
-                "@@ plainto_tsquery('english', :q_text)"
+                "a.search_tsv "
+                "@@ websearch_to_tsquery('simple', :q_text)"
             )
             params["q_text"] = query
 

@@ -202,12 +202,12 @@ class CrossArticleService:
                 a.published_date,
                 a.excerpt,
                 ts_rank(
-                    to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'') || ' ' || COALESCE(a.extracted_text,'')),
-                    plainto_tsquery('english', :query)
+                    a.search_tsv,
+                    websearch_to_tsquery('simple', :query)
                 ) AS relevance
             FROM articles a
-            WHERE to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'') || ' ' || COALESCE(a.extracted_text,''))
-                  @@ plainto_tsquery('english', :query)
+            WHERE a.search_tsv
+                  @@ websearch_to_tsquery('simple', :query)
             {country_filter}
             ORDER BY relevance DESC
             LIMIT :limit

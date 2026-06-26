@@ -822,15 +822,15 @@ class DeepSearchService:
                            a.content_category, a.overall_credibility, a.reliability_score,
                            a.published_date, a.excerpt,
                            ts_rank(
-                               to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'') || ' ' || COALESCE(a.extracted_text,'')),
-                               {tsq_func}('english', :query)
+                               a.search_tsv,
+                               {tsq_func}('simple', :query)
                            ) AS text_rank
                     FROM articles a
-                    WHERE to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'') || ' ' || COALESCE(a.extracted_text,''))
-                          @@ {tsq_func}('english', :query)
+                    WHERE a.search_tsv
+                          @@ {tsq_func}('simple', :query)
                       AND ts_rank(
-                              to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'') || ' ' || COALESCE(a.extracted_text,'')),
-                              {tsq_func}('english', :query)
+                              a.search_tsv,
+                              {tsq_func}('simple', :query)
                           ) >= :min_rank
                       AND {fts_where}
                     ORDER BY text_rank DESC LIMIT :limit

@@ -106,14 +106,14 @@ async def basic_search(
             a.author,
             a.extracted_text,
             ts_rank(
-                to_tsvector('english', a.title || ' ' || COALESCE(a.excerpt, '')),
-                plainto_tsquery('english', :query)
+                a.search_tsv,
+                websearch_to_tsquery('simple', :query)
             ) as relevance
         FROM articles a
         WHERE a.is_synthetic = FALSE
           AND a.is_off_topic = FALSE
-          AND to_tsvector('english', a.title || ' ' || COALESCE(a.excerpt, ''))
-              @@ plainto_tsquery('english', :query)
+          AND a.search_tsv
+              @@ websearch_to_tsquery('simple', :query)
     """
 
     params = {"query": q, "limit": limit}
@@ -251,14 +251,14 @@ async def semantic_search(
             fts AS (
                 SELECT article_id,
                        ts_rank(
-                           to_tsvector('english', title || ' ' || COALESCE(excerpt, '')),
-                           plainto_tsquery('english', :query)
+                           search_tsv,
+                           websearch_to_tsquery('simple', :query)
                        ) AS fts_score
                 FROM articles
                 WHERE is_synthetic = FALSE
                   AND is_off_topic = FALSE
-                  AND to_tsvector('english', title || ' ' || COALESCE(excerpt, ''))
-                      @@ plainto_tsquery('english', :query)
+                  AND search_tsv
+                      @@ websearch_to_tsquery('simple', :query)
             )
             SELECT
                 a.article_id, a.title, a.url, a.source_name,
@@ -298,14 +298,14 @@ async def semantic_search(
                 a.content_relevance_score, a.reliability_score,
                 a.author, a.extracted_text,
                 ts_rank(
-                    to_tsvector('english', a.title || ' ' || COALESCE(a.excerpt, '')),
-                    plainto_tsquery('english', :query)
+                    a.search_tsv,
+                    websearch_to_tsquery('simple', :query)
                 ) as relevance
             FROM articles a
             WHERE a.is_synthetic = FALSE
               AND a.is_off_topic = FALSE
-              AND to_tsvector('english', a.title || ' ' || COALESCE(a.excerpt, ''))
-                  @@ plainto_tsquery('english', :query)
+              AND a.search_tsv
+                  @@ websearch_to_tsquery('simple', :query)
         """
         params = {"query": request.query, "limit": request.limit}
 

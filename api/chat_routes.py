@@ -555,14 +555,14 @@ def _search_relevant_articles(
     rows = db.execute_query(
         f"""SELECT a.article_id, a.title, a.source_name, a.overall_credibility,
                    ts_rank(
-                       to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'') || ' ' || COALESCE(a.extracted_text,'')),
-                       plainto_tsquery('english', :q)
+                       a.search_tsv,
+                       websearch_to_tsquery('simple', :q)
                    ) AS relevance
             FROM articles a
             WHERE a.is_synthetic = FALSE
               AND a.is_off_topic = FALSE
-              AND to_tsvector('english', COALESCE(a.title,'') || ' ' || COALESCE(a.excerpt,'') || ' ' || COALESCE(a.extracted_text,''))
-                  @@ plainto_tsquery('english', :q)
+              AND a.search_tsv
+                  @@ websearch_to_tsquery('simple', :q)
             {where_extra}
             ORDER BY relevance DESC
             LIMIT :limit""",
