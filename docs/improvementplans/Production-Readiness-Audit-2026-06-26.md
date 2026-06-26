@@ -50,13 +50,13 @@ auth/cost/correctness, not architecture.
 | INT-02 | P1→P2 | deep-search provenance reported model by key-presence + ada-002 | Report actual model + bge-m3 |
 | (found in test) | P1 | deep-search `structured` UnboundLocalError 500 on thin-evidence | Initialize before branch |
 
-### Deferred (tracked follow-ups)
-| ID | Sev | Why deferred |
-|---|---|---|
-| TRUST-03 | P1 | Reliability split-brain — live pipeline bypasses `ReliabilityScorer`; needs formula consolidation + reverify of corpus. Medium risk. |
-| SEM-01 | P1 | Multilingual FTS regression across ~9 files hardcoding `to_tsvector('english', …)`; should switch all to the `search_tsv` generated column. Broad, test-heavy. |
-| TEST-002 | P1 | Stripe webhook (money + signature path) has zero tests — add behavioral coverage before relying on billing. |
-| DEVOPS-03 | P1 | Cloud Monitoring alerts use `--no-notification-channel` and live in a manual script — needs GCP infra (notification channel + pipeline step), not code. |
+### Previously-deferred blockers — now FIXED (commits `0729d39`, `50ff11e`, `4db3e2e`)
+| ID | Sev | Resolution | Residual |
+|---|---|---|---|
+| SEM-01 | P1 | All 8 FTS paths routed through `search_tsv` + `websearch_to_tsquery('simple', …)` | none — recall also widened to body text |
+| TEST-002 | P1 | 6 behavioral webhook tests (sig/payload reject, tier sync, cancel→freemium, payment insert) | none |
+| TRUST-03 | P1 | `verify_article` delegates to `ReliabilityScorer.calculate_reliability_score` (source weight + 3-axis + density + limited-evidence cap); 5 contract tests | **scores shift for NEW verifications; existing rows need a corpus re-verify backfill** |
+| DEVOPS-03 | P1 | `provision-infra.sh` resolves/creates an email channel from `CLILENS_ALERT_EMAIL` and attaches it (loud WARNING if unset) | **must re-run provision-infra.sh with `CLILENS_ALERT_EMAIL` set to actually page** |
 
 ## Headroom application (token / context efficiency)
 
@@ -86,6 +86,11 @@ Implemented natively (no `headroom-ai` dependency, no proxy) in
   test failures (e.g. tests requiring network/keys) — keep the suite green.
 - Optional Headroom tuning: `CLILENS_CHAT_CONTEXT_TOKENS` (default 1100),
   `CLILENS_MAX_LLM_INPUT_TOKENS` (default 14000).
+- **Set `CLILENS_ALERT_EMAIL`** and re-run `infrastructure/gcp/provision-infra.sh`
+  so the 5xx / DB-CPU alert policies actually page someone (DEVOPS-03).
+- **Re-verify the corpus** (a backfill that re-runs verification, or a one-off
+  `ReliabilityScorer.update_article_reliability` sweep) so existing articles pick
+  up the corrected TRUST-03 scoring; new verifications already use it.
 
 ## Top remaining backlog (P2, not blockers)
 INT-01 split-brain LLM routing (chat/deep-search bypass the circuit-breaker
