@@ -220,7 +220,9 @@ class ConversationEngine:
                       fc.justification
                FROM claims c
                LEFT JOIN fact_checks fc ON c.claim_id = fc.claim_id
-               WHERE c.article_id = :id""",
+               WHERE c.article_id = :id
+               ORDER BY fc.confidence_score DESC NULLS LAST
+               LIMIT 8""",
             {"id": str(article_id)},
         )
 

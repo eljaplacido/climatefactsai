@@ -70,6 +70,14 @@ class HybridRAGService:
         """Cosine-distance search on articles.embedding_bge_m3 via pgvector."""
         embedding = await self._generate_query_embedding(query)
         if embedding is None:
+            # INT-06: make the silent semantic->FTS degradation observable. Fires
+            # when the bge-m3 embedder is unreachable (e.g. GX10 off from Cloud
+            # Run); RRF then runs on FTS + graph only, with no vector recall.
+            logger.warning(
+                "Semantic search unavailable (no query embedding) — "
+                "degrading to FTS+graph only for query=%r",
+                (query or "")[:80],
+            )
             return []
 
         where_clauses = [

@@ -39,6 +39,25 @@ from shared.claims_status_manager import ClaimsStatusManager
 logger = get_logger(__name__)
 
 
+# TRUST-04: claim-extraction input cap. The fixed 4000-char truncation
+# structurally limits claim yield on long articles. Env-configurable, and we log
+# when it actually cuts so coverage/yield metrics stay honest.
+_CLAIM_EXTRACT_MAX_CHARS = int(os.getenv("CLILENS_CLAIM_EXTRACT_CHARS", "4000") or 4000)
+
+
+def _truncate_for_extraction(text: str) -> str:
+    text = text or ""
+    if len(text) > _CLAIM_EXTRACT_MAX_CHARS:
+        logger.info(
+            "Claim-extraction input truncated %d->%d chars "
+            "(raise CLILENS_CLAIM_EXTRACT_CHARS for fuller coverage)",
+            len(text), _CLAIM_EXTRACT_MAX_CHARS,
+        )
+        return text[:_CLAIM_EXTRACT_MAX_CHARS]
+    return text
+
+
+
 # Backwards-compatible helpers that delegate to llm_client
 def _get_deepseek_client():
     return get_llm_client()
@@ -205,7 +224,7 @@ class ClaimExtractor:
         prompt = f"""{research_preamble}Analyze the following climate news article and extract atomic, verifiable claims.
 
 ARTICLE TEXT:
-{text[:4000]}
+{_truncate_for_extraction(text)}
 
 INSTRUCTIONS:
 Extract factual claims that are:
@@ -376,7 +395,7 @@ Example output format (return exactly this structure, no markdown, no explanatio
         from .prompts import get_prompt
 
         tmpl = get_prompt("claim_extraction")
-        prompt = tmpl.format(text=text[:4000], max_claims=max_claims)
+        prompt = tmpl.format(text=_truncate_for_extraction(text), max_claims=max_claims)
         max_tokens = tmpl.max_tokens or 2500
         base_temp = tmpl.temperature if tmpl.temperature is not None else 0.1
         logger.info(f"Calling DeepSeek API with model: {self.deepseek_model}")

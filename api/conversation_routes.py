@@ -134,40 +134,16 @@ async def ask_article_question(
         from app.domains.intelligence.conversation_engine import ConversationEngine
         engine = ConversationEngine(db)
 
-        result = None
-        # Run async function
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    result = await loop.run_in_executor(
-                        pool,
-                        lambda: asyncio.run(engine.ask(
-                            article_id=UUID(article_id),
-                            question=request.question,
-                            user_id=engine_user_id,
-                            conversation_context=request.conversation_context,
-                            scope=request.scope,
-                        ))
-                    )
-            else:
-                result = await engine.ask(
-                    article_id=UUID(article_id),
-                    question=request.question,
-                    user_id=engine_user_id,
-                    conversation_context=request.conversation_context,
-                    scope=request.scope,
-                )
-        except RuntimeError:
-            result = asyncio.run(engine.ask(
-                article_id=UUID(article_id),
-                question=request.question,
-                user_id=engine_user_id,
-                conversation_context=request.conversation_context,
-                scope=request.scope,
-            ))
+        # INT-08: the route handler is async and engine.ask is async — just
+        # await it directly. The old event-loop juggling (ThreadPoolExecutor +
+        # nested asyncio.run) was fragile and unnecessary.
+        result = await engine.ask(
+            article_id=UUID(article_id),
+            question=request.question,
+            user_id=engine_user_id,
+            conversation_context=request.conversation_context,
+            scope=request.scope,
+        )
 
         if result is None:
             raise HTTPException(status_code=500, detail="Failed to generate answer")
