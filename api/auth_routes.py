@@ -134,20 +134,25 @@ def get_current_user(
 
 
 def _admin_emails() -> set:
-    """Lowercased admin allowlist from CLILENS_ADMIN_EMAILS (comma-separated).
+    """Lowercased admin allowlist from ADMIN_EMAILS (comma-separated).
 
-    Fail-closed: when the env var is unset the set is empty, so NO user is an
-    admin and every admin-gated route returns 403 until the allowlist is
-    explicitly configured in the deployment environment.
+    This is the SAME var that gates analytics_routes + admin_pipeline_routes, so
+    operators configure one allowlist. Fail-closed: when unset the set is empty,
+    so only enterprise-tier users are admin and every other admin-gated route
+    returns 403 until ADMIN_EMAILS is configured.
     """
-    raw = os.getenv("CLILENS_ADMIN_EMAILS", "")
+    raw = os.getenv("ADMIN_EMAILS", "")
     return {e.strip().lower() for e in raw.split(",") if e.strip()}
 
 
 def is_admin_user(user: Optional[dict]) -> bool:
-    """True only when the user's email is in the admin allowlist."""
+    """Admin = subscription_tier == 'enterprise' OR email in the ADMIN_EMAILS
+    allowlist — matching the convention in analytics_routes / admin_pipeline_routes.
+    """
     if not user:
         return False
+    if str(user.get("subscription_tier", "")).strip().lower() == "enterprise":
+        return True
     email = (user.get("email") or "").strip().lower()
     return bool(email) and email in _admin_emails()
 

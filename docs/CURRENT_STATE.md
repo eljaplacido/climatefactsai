@@ -7,7 +7,7 @@
 
 > **2026-06-26 update (DOC-03):** for the latest production-readiness snapshot —
 > dimension health scores, the verified-blocker ledger, and the required deploy
-> env vars (`CLILENS_ADMIN_EMAILS`, `CLILENS_ALERT_EMAIL`) — see
+> env vars (`ADMIN_EMAILS`, `CLILENS_ALERT_EMAIL`) — see
 > `docs/improvementplans/Production-Readiness-Audit-2026-06-26.md`. Any "Known
 > Issues" / dates lower in this document predate that audit.
 

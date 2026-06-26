@@ -702,30 +702,30 @@ export default function MethodologyPage() {
           </p>
           <div className="grid sm:grid-cols-3 gap-3 text-sm">
             <a
-              href="mailto:methodology@climatefacts.ai?subject=Methodology%20feedback"
+              href="mailto:contact@cisuregen.com?subject=Methodology%20feedback"
               className="block bg-teal-50 dark:bg-teal-900/30 border border-teal-200 dark:border-teal-800 rounded p-3 hover:bg-teal-100 dark:bg-teal-900/40"
             >
               <div className="font-semibold text-teal-900 dark:text-teal-200">Methodology suggestions</div>
               <div className="text-xs text-teal-800 dark:text-teal-300">
-                methodology@climatefacts.ai
+                contact@cisuregen.com
               </div>
             </a>
             <a
-              href="mailto:corrections@climatefacts.ai?subject=Correction%20request"
+              href="mailto:contact@cisuregen.com?subject=Correction%20request"
               className="block bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded p-3 hover:bg-amber-100"
             >
               <div className="font-semibold text-amber-900 dark:text-amber-200">Corrections</div>
               <div className="text-xs text-amber-800 dark:text-amber-300">
-                corrections@climatefacts.ai
+                contact@cisuregen.com
               </div>
             </a>
             <a
-              href="mailto:research@climatefacts.ai?subject=New%20data%20source"
+              href="mailto:contact@cisuregen.com?subject=New%20data%20source"
               className="block bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded p-3 hover:bg-emerald-100"
             >
               <div className="font-semibold text-emerald-900 dark:text-emerald-200">New data sources</div>
               <div className="text-xs text-emerald-800 dark:text-emerald-300">
-                research@climatefacts.ai
+                contact@cisuregen.com
               </div>
             </a>
           </div>

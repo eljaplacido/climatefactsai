@@ -78,9 +78,11 @@ Implemented natively (no `headroom-ai` dependency, no proxy) in
 33 unit tests (module + a CacheAligner-invariant regression guard).
 
 ## Required deploy actions
-- **Set `CLILENS_ADMIN_EMAILS`** (comma-separated). It is **fail-closed**: until
-  set, every admin endpoint (`/api/admin/trigger-workflow`, `/workflows`,
-  `/api/articles/ingest`) returns 403 by design.
+- **Set `ADMIN_EMAILS`** (comma-separated) — the SAME var that already gates
+  analytics/pipeline admin surfaces; `require_admin` was reconciled onto it
+  (admin = enterprise tier OR allowlisted email). Fail-closed: when unset, only
+  enterprise-tier users are admin and `/api/admin/trigger-workflow`,
+  `/workflows`, `/api/articles/ingest`, `/api/admin/discover-news` return 403.
 - `pytest-xdist` is now in `requirements.txt` + the Cloud Build install line —
   the deploy test-gate runs again. NOTE: it now correctly *fails red* on real
   test failures (e.g. tests requiring network/keys) — keep the suite green.

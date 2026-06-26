@@ -35,7 +35,7 @@ export default function CookiesPage() {
         <h1 className="text-3xl font-bold text-gray-900 mb-8">Cookie Policy</h1>
         {err && (
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-            Failed to load the cookie policy: {err}. Please contact support@climatefacts.ai.
+            Failed to load the cookie policy: {err}. Please contact contact@cisuregen.com.
           </div>
         )}
         {!markdown && !err && (

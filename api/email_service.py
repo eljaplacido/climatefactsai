@@ -22,7 +22,7 @@ SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
 
-FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@clilens.ai")
+FROM_EMAIL = os.getenv("FROM_EMAIL", "contact@cisuregen.com")
 FROM_NAME = os.getenv("FROM_NAME", "Climatefacts.ai")
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5300")

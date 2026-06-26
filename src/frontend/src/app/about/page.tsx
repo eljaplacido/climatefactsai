@@ -221,8 +221,8 @@ export default function AboutPage() {
           <section className="text-center text-sm text-gray-600 dark:text-slate-400 border-t pt-6 space-y-1">
             <p>
               Questions, feedback, or methodology suggestions? Reach out at{' '}
-              <a href="mailto:hello@climatefacts.ai" className="text-clilens-primary dark:text-teal-400 underline">
-                hello@climatefacts.ai
+              <a href="mailto:contact@cisuregen.com" className="text-clilens-primary dark:text-teal-400 underline">
+                contact@cisuregen.com
               </a>
             </p>
             <p>

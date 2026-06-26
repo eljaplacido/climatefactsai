@@ -52,7 +52,7 @@ TIER_SUB_CAPS = {
 # with a mailto: contact (https://api.crossref.org/swagger-ui/).
 USER_AGENT = (
     "ClimatefactsResearchFeed/1.0 "
-    "(+https://climatefacts.ai/about/crawler; mailto:noreply@climatefacts.ai)"
+    "(+https://climatefacts.ai/about/crawler; mailto:contact@cisuregen.com)"
 )
 CROSSREF_BASE = "https://api.crossref.org/works"
 DEFAULT_POLL_ROWS = 25

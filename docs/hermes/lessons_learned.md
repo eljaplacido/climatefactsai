@@ -123,7 +123,7 @@ End-to-end audit of all platform surfaces. Fixed worldwide coverage gaps, stale 
 
 - **CacheAligner: static blocks belong in the system prefix, not the user-prompt tail.** Chat appended the ~2 KB action catalogue AFTER the volatile context, so no prompt-prefix cache could hit. Invariant catalogues → cached static system prompt; only live context in the user message. See `app/domains/intelligence/context_compaction.py`.
 
-- **Fail-closed admin allowlist.** No admin/role concept existed — "admin" endpoints were gated by "is logged in" only. `require_admin` is keyed to `CLILENS_ADMIN_EMAILS`; **unset = nobody is admin = 403.** Must be set in prod.
+- **Fail-closed admin allowlist — reuse the EXISTING `ADMIN_EMAILS` var.** "admin" endpoints were gated by "is logged in" only. `require_admin` (auth_routes) was first written against a NEW `CLILENS_ADMIN_EMAILS` var — a split-brain, since analytics_routes / admin_pipeline_routes already gate on `ADMIN_EMAILS` (admin = enterprise tier OR allowlisted email). Reconciled `require_admin` onto `ADMIN_EMAILS` + the enterprise rule. Lesson: grep for an existing convention (`ADMIN_EMAILS`, `is_admin`) before inventing a new env var.
 
 - **GDPR delete = anonymize-and-deactivate, not hard delete.** `user_id` is referenced by many tables with no guaranteed `ON DELETE CASCADE`, so erase PII + deactivate + best-effort purge personal tables rather than risk orphans / a mid-delete 500.
 
