@@ -232,12 +232,21 @@ _DEFAULT_ORIGINS = ",".join([
     "https://climatenews-frontend-srzwxdzmaq-ez.a.run.app",
 ])
 allowed_origins_env = os.getenv("CORS_ORIGINS", _DEFAULT_ORIGINS)
-# Always merge the prod frontend URL in — even if CORS_ORIGINS is set
-# (e.g. to a staging URL), prod must still work.
-_PROD_FRONTEND = "https://climatenews-frontend-srzwxdzmaq-ez.a.run.app"
+# Always merge the canonical prod origins in — even if CORS_ORIGINS is set.
+# 2026-06-26: climatefacts.ai went live via Cloud Run domain mapping but every
+# deploy resets CORS_ORIGINS to just $FRONTEND_URL (cloudbuild.yaml's
+# update-env-vars step + infrastructure/gcp/deploy.sh), so the browser blocked
+# all API calls from the custom domain ("Could not connect to API"). Hard-merge
+# the launch domains + www + the Cloud Run host so a stale/narrow env var can
+# never break prod again, regardless of what the deploy pipeline sets.
+_ALWAYS_ALLOWED_ORIGINS = (
+    "https://climatefacts.ai",
+    "https://www.climatefacts.ai",
+    "https://climatenews-frontend-srzwxdzmaq-ez.a.run.app",
+)
 _origin_set = {
     origin.strip()
-    for origin in (allowed_origins_env + "," + _PROD_FRONTEND).split(",")
+    for origin in (allowed_origins_env + "," + ",".join(_ALWAYS_ALLOWED_ORIGINS)).split(",")
     if origin.strip()
 }
 ALLOWED_ORIGINS = sorted(_origin_set)
