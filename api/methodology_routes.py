@@ -62,7 +62,17 @@ router = APIRouter(prefix="/api/methodology", tags=["Methodology"])
 
 def _verify_admin_secret(secret: Optional[str]) -> None:
     configured = os.getenv("CLILENS_CALIBRATION_ADMIN_SECRET", "")
-    if configured and secret != configured:
+    if not configured:
+        # Fail CLOSED in production: an unset secret must NOT leave admin-write
+        # endpoints open (audit API-06). Dev/test stay open for convenience.
+        env = os.getenv("ENVIRONMENT", os.getenv("CLILENS_ENV", "development")).strip().lower()
+        if env in ("production", "prod"):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Admin-write endpoints are disabled until CLILENS_CALIBRATION_ADMIN_SECRET is configured.",
+            )
+        return
+    if secret != configured:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid or missing admin secret",

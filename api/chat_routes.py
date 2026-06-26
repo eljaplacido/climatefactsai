@@ -347,6 +347,22 @@ async def get_chat_history(
 ):
     """Get message history for a chat session."""
     db = get_postgres()
+
+    # Ownership guard (audit API-07 — IDOR): never return another authenticated
+    # user's session history. Anonymous sessions (user_id NULL) have no owner to
+    # protect and are keyed by an unguessable UUID, so they stay readable.
+    sess = db.execute_query(
+        "SELECT user_id FROM chat_sessions WHERE session_id = :sid LIMIT 1",
+        {"sid": session_id},
+    )
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+    owner_id = sess[0].get("user_id")
+    if owner_id is not None:
+        requester = str(current_user.get("user_id")) if current_user else None
+        if requester != str(owner_id):
+            raise HTTPException(status_code=404, detail="Session not found")
+
     rows = db.execute_query(
         """SELECT message_id, role, content, sources_used, article_ids,
                   confidence, created_at

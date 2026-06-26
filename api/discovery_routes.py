@@ -7,9 +7,10 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 import requests
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from api.auth_routes import require_admin
 from shared.database import get_postgres
 from shared.logger import setup_logging
 
@@ -164,7 +165,11 @@ Find up to {max_articles} most relevant and recent articles."""
 
 
 @router.post("/discover-news", response_model=DiscoverNewsResponse)
-async def discover_news(request_body: DiscoverNewsRequest, request: Request) -> DiscoverNewsResponse:
+async def discover_news(
+    request_body: DiscoverNewsRequest,
+    request: Request,
+    current_user: dict = Depends(require_admin),  # API-09: /api/admin/* must be admin-gated (Perplexity cost vector)
+) -> DiscoverNewsResponse:
     api_key = os.getenv("PERPLEXITY_API_KEY")
     if not api_key:
         raise HTTPException(

@@ -532,38 +532,39 @@ class SourceProfileService:
         # Extract domain from URL
         try:
             parsed = urlparse(url)
-            domain = parsed.netloc.lower().lstrip("www.")
+            netloc = parsed.netloc.lower()
+            # CNT-6: strip the "www." PREFIX, not any leading {w,.} chars —
+            # lstrip("www.") turned "wired.com" into "ired.com".
+            domain = netloc[4:] if netloc.startswith("www.") else netloc
         except Exception:
             domain = source_name.lower().replace(" ", "-")
 
-        safe_name = source_name.replace("'", "''")
-        safe_domain = domain.replace("'", "''")
-
-        # Upsert profile
+        # Upsert profile (bound params — url/source_name/domain must never be
+        # interpolated; the raw {url} was a SQL-injection vector — CNT-6).
         self.db.execute_update(
-            f"""INSERT INTO source_profiles (source_name, source_domain, website_url)
-                VALUES ('{safe_name}', '{safe_domain}', '{url[:2048]}')
+            """INSERT INTO source_profiles (source_name, source_domain, website_url)
+                VALUES (:name, :domain, :url)
                 ON CONFLICT (source_domain) DO UPDATE SET
                     total_articles_analyzed = source_profiles.total_articles_analyzed + 1,
                     last_updated_at = CURRENT_TIMESTAMP""",
-            {},
+            {"name": source_name, "domain": domain, "url": url[:2048]},
         )
 
         # Update rolling average reliability if provided
         if reliability_score is not None:
             self.db.execute_update(
-                f"""UPDATE source_profiles SET
+                """UPDATE source_profiles SET
                         average_reliability_score = COALESCE(
-                            (average_reliability_score * (total_articles_analyzed - 1) + {int(reliability_score)})
+                            (average_reliability_score * (total_articles_analyzed - 1) + :rel)
                             / NULLIF(total_articles_analyzed, 0),
-                            {int(reliability_score)}
+                            :rel
                         ),
                         credibility_score = COALESCE(
-                            (credibility_score * 0.8 + {int(reliability_score)} * 0.2)::int,
-                            {int(reliability_score)}
+                            (credibility_score * 0.8 + :rel * 0.2)::int,
+                            :rel
                         )
-                    WHERE source_domain = '{safe_domain}'""",
-                {},
+                    WHERE source_domain = :domain""",
+                {"rel": int(reliability_score), "domain": domain},
             )
 
         # Auto-sync to source_credibility table

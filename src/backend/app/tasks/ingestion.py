@@ -118,6 +118,7 @@ def _insert_discovered_articles(
     country_code: str,
 ) -> List[str]:
     """Insert discovered articles into the database and return their IDs."""
+    from shared.html_cleaner import clean_article_text  # CNT-5: strip raw HTML
     inserted_ids: List[str] = []
 
     for article in articles:
@@ -176,11 +177,13 @@ def _insert_discovered_articles(
                     "title": title,
                     "url": url,
                     "source_name": article.get("source_name") or article.get("source", "Unknown"),
-                    "excerpt": (article.get("summary") or article.get("excerpt") or "")[:500],
+                    # CNT-5: clean HTML at insert (non-RSS / Perplexity bodies land
+                    # raw otherwise; clean_article_text is idempotent on clean text).
+                    "excerpt": clean_article_text(article.get("summary") or article.get("excerpt") or "")[:500],
                     # Prefer article.extracted_text (set by rss_adapter._fetch_and_extract_article_body
                     # to the real article body). Fall back through content/summary/excerpt/title for
                     # sources that don't go through RSS extraction.
-                    "extracted_text": (
+                    "extracted_text": clean_article_text(
                         article.get("extracted_text")
                         or article.get("content")
                         or article.get("summary")
@@ -217,29 +220,35 @@ def _insert_discovered_articles(
             try:
                 source_svc = SourceProfileService(db)
                 source_svc.upsert_from_article(
-                    source_name=article.get("source", "Unknown"),
+                    # CNT-3: articles carry `source_name`; reading only `source`
+                    # logged every article's source as 'Unknown'.
+                    source_name=article.get("source_name") or article.get("source", "Unknown"),
                     url=url,
                 )
             except Exception as sp_exc:
                 logger.warning("Source profile upsert failed", error=str(sp_exc))
 
-            # Best-effort enrichment + embedding + entity extraction so newly
-            # discovered articles are immediately queryable by chat / deep-search
-            # / similarity. Failures don't block ingestion — the batch_enrich
-            # admin task will retry later.
-            try:
-                import asyncio
-                from app.domains.content.embedding_service import EmbeddingService
-                emb_svc = EmbeddingService(db)
-                asyncio.run(emb_svc.populate_embedding(article_id))
-            except Exception as emb_exc:
-                logger.warning("Post-ingest embedding failed", article_id=article_id, error=str(emb_exc))
-
+            # Best-effort enrichment + entity extraction so newly discovered
+            # articles are immediately queryable by chat / deep-search / similarity.
+            # Failures don't block ingestion — the batch_enrich admin task retries.
+            #
+            # CNT-4: the inline populate_embedding call was REMOVED. It generated a
+            # PAID OpenAI ada-002 (1536-dim) vector and tried to store it into the
+            # 1024-dim embedding_bge_m3 column — a per-article cost leak that also
+            # failed on a dimension mismatch. The GX10 bge-m3 worker owns the live
+            # embeddings.
             try:
                 import asyncio
                 from app.domains.intelligence.entity_extraction_service import EntityExtractionService
                 entity_svc = EntityExtractionService(db)
-                article_text = article.get("summary") or article.get("excerpt") or article.get("content") or ""
+                # CNT-3: feed the real body (extracted_text) to the KG, not just summary.
+                article_text = (
+                    article.get("extracted_text")
+                    or article.get("content")
+                    or article.get("summary")
+                    or article.get("excerpt")
+                    or ""
+                )
                 if article_text.strip() or title.strip():
                     asyncio.run(entity_svc.extract_and_store(
                         article_id=article_id,
@@ -256,7 +265,23 @@ def _insert_discovered_articles(
                 import asyncio
                 from app.domains.content.article_enrichment_service import ArticleEnrichmentService
                 enrich_svc = ArticleEnrichmentService(db)
-                asyncio.run(enrich_svc.enrich_article(article_id))
+                # CNT-1: enrich_article requires title/extracted_text/source_name/
+                # country_code — the bare enrich_article(article_id) call always
+                # raised TypeError, so discovered articles were never enriched inline.
+                asyncio.run(enrich_svc.enrich_article(
+                    article_id=article_id,
+                    title=title,
+                    extracted_text=clean_article_text(
+                        article.get("extracted_text")
+                        or article.get("content")
+                        or article.get("summary")
+                        or article.get("excerpt")
+                        or title
+                    ),
+                    source_name=article.get("source_name") or article.get("source", "Unknown"),
+                    country_code=_normalize_country_code(article.get("country_code", country_code)),
+                    content_category=article.get("content_category"),
+                ))
             except Exception as enrich_exc:
                 logger.warning("Post-ingest enrichment failed", article_id=article_id, error=str(enrich_exc))
         except Exception as exc:
