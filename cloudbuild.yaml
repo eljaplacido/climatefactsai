@@ -56,6 +56,11 @@ steps:
       - "-c"
       - |
         set -e
+        # CI parity: python:3.11-slim ships without git, but the security gate
+        # (TestSecurityMeasures) shells out to `git ls-files` — without git the
+        # test raises FileNotFoundError and fails the build. Install it so the
+        # gate runs the same as the GitHub Actions checkout environment.
+        apt-get update -qq && apt-get install -y -qq --no-install-recommends git
         pip install --quiet -r requirements.txt
         pip install --quiet pytest pytest-asyncio pytest-mock pytest-xdist httpx ruff mypy
         echo "=== CI gate: ruff lint (advisory — reports only) ==="
@@ -127,33 +132,6 @@ steps:
         # re-run on every deploy. Self-contained script uses psycopg2 directly.
         python3 scripts/ingest_ar6_projections.py
         kill $$PROXY_PID || true
-    env:
-      - "JWT_SECRET_KEY=cloudbuild-ci-key-not-for-prod-min-32chars"
-      - "OTEL_SDK_DISABLED=true"
-      - "CLILENS_ENV=test"
-      - "CLILENS_ALLOW_FAKE_SEED=0"
-      - "CLILENS_ALLOW_MOCK_API=0"
-    entrypoint: "bash"
-    args:
-      - "-c"
-      - |
-        set -e
-        pip install --quiet -r requirements.txt
-        pip install --quiet pytest pytest-asyncio pytest-mock pytest-xdist httpx ruff mypy
-        echo "=== CI gate: ruff lint (advisory — reports only) ==="
-        ruff check api/ src/backend/ --exit-zero
-        echo "=== CI gate: mypy type-check (advisory) ==="
-        mypy api/ src/backend/ || echo "mypy: advisory only, see above"
-        echo "=== CI gate: backend tests ==="
-        pytest -p no:warnings -x \
-          tests/api/ \
-          tests/backend/ \
-          tests/unit/ \
-          tests/adversarial/ \
-          tests/e2e/ \
-          tests/evaluation/ \
-          tests/integration/ \
-          tests/scripts/
 
   # -------------------------------------------------------------------------
   # Step 1: Build API image
