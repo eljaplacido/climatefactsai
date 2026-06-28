@@ -68,13 +68,18 @@ steps:
         echo "=== CI gate: mypy type-check (advisory) ==="
         mypy api/ src/backend/ || echo "mypy: advisory only, see above"
         echo "=== CI gate: backend tests ==="
+        # tests/evaluation is intentionally EXCLUDED (pytest.ini also --ignore's
+        # it): those are non-deterministic LLM-quality evals (RAGAS
+        # faithfulness/relevancy + golden-summary keyword checks) that need API
+        # keys + golden data and belong in a separate eval job, not the deploy
+        # gate. Listing the dir explicitly here previously OVERRODE the
+        # pytest.ini --ignore and 500'd the gate on golden-data drift.
         pytest -p no:warnings -x \
           tests/api/ \
           tests/backend/ \
           tests/unit/ \
           tests/adversarial/ \
           tests/e2e/ \
-          tests/evaluation/ \
           tests/integration/ \
           tests/scripts/
 
