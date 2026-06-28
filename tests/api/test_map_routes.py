@@ -118,7 +118,7 @@ def _make_country_db(*, countries: Optional[List[Dict[str, Any]]] = None):
             ]
         if (
             "count(distinct a.article_id) as event_count" in q
-            and "a.created_at >= now() - :interval::interval" in q
+            and "a.created_at >= now() - make_interval(days => :days)" in q
             and "group by a.country_code" in q
         ):
             return [
@@ -245,9 +245,13 @@ def map_db(monkeypatch):
     prior = _shared_db._postgres_client
     _shared_db._postgres_client = db
 
-    from api import map_routes
+    # After the api/map split, the country-detail handler lives in
+    # api/map/routes_country.py and calls its module-local _fetch_*_weather
+    # names, so patch there (the map_routes shim re-export no longer
+    # intercepts the route's call site).
+    from api.map import routes_country
     monkeypatch.setattr(
-        map_routes, "_fetch_current_weather",
+        routes_country, "_fetch_current_weather",
         AsyncMock(return_value={
             "temperature_c": 5.0, "humidity_pct": 70.0,
             "precipitation_mm": 0.0, "wind_speed_kmh": 12.0,
@@ -255,7 +259,7 @@ def map_db(monkeypatch):
         }),
     )
     monkeypatch.setattr(
-        map_routes, "_fetch_historical_weather",
+        routes_country, "_fetch_historical_weather",
         AsyncMock(return_value={"temperature_avg": 4.0, "precipitation_avg": 30.0}),
     )
 
@@ -476,9 +480,9 @@ class TestClimateData:
     def test_degraded_when_open_meteo_unavailable(self, client, monkeypatch, map_db):
         """When Open-Meteo is unreachable: return 200 with empty period slots —
         never fabricate climate numbers."""
-        from api import map_routes
+        from api.map import routes_country
         monkeypatch.setattr(
-            map_routes, "_fetch_historical_weather",
+            routes_country, "_fetch_historical_weather",
             AsyncMock(return_value=None),
         )
 

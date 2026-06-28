@@ -190,15 +190,18 @@ class TestChatViewContext:
         )
         assert resp.status_code == 200, resp.text
 
-        # Inspect the system prompt sent to the LLM
+        # Inspect the prompt sent to the LLM. INT-05 CacheAligner moved the
+        # volatile view-context out of the static system prefix and into the
+        # user message (so the prefix stays cache-eligible), so assert against
+        # the full prompt rather than the system message alone.
         assert fake_llm.calls, "LLM should have been invoked"
         messages = fake_llm.calls[0]["messages"]
-        system_prompt = next(m["content"] for m in messages if m["role"] == "system")
+        full_prompt = "\n".join(m["content"] for m in messages if m.get("content"))
 
         # The article title from the hydrated view must appear
-        assert "Greenland Ice Sheet Loss Accelerates" in system_prompt
+        assert "Greenland Ice Sheet Loss Accelerates" in full_prompt
         # And its credibility tag
-        assert "HIGH" in system_prompt
+        assert "HIGH" in full_prompt
 
     def test_country_in_view_context_promoted_for_retrieval(
         self, client, chat_db, monkeypatch
@@ -213,11 +216,12 @@ class TestChatViewContext:
             },
         )
         assert resp.status_code == 200
-        # The country_stats block from hydration must show in the system prompt
+        # INT-05 CacheAligner moved the volatile view-context out of the static
+        # system prefix into the user message, so assert against the full prompt.
         messages = fake_llm.calls[0]["messages"]
-        system_prompt = next(m["content"] for m in messages if m["role"] == "system")
-        assert "FI" in system_prompt
-        assert "Country focus" in system_prompt or "42 articles" in system_prompt
+        full_prompt = "\n".join(m["content"] for m in messages if m.get("content"))
+        assert "FI" in full_prompt
+        assert "Country focus" in full_prompt or "42 articles" in full_prompt
 
     def test_analysis_id_triggers_url_analysis_lookup(
         self, client, chat_db, monkeypatch
@@ -233,10 +237,11 @@ class TestChatViewContext:
         )
         assert resp.status_code == 200, resp.text
 
-        # The URL analysis context should be in the system prompt
+        # INT-05 CacheAligner moved the view-context into the user message, so
+        # assert against the full prompt rather than the system message alone.
         messages = fake_llm.calls[0]["messages"]
-        system_prompt = next(m["content"] for m in messages if m["role"] == "system")
-        assert "URL analysis open" in system_prompt or "X article" in system_prompt
+        full_prompt = "\n".join(m["content"] for m in messages if m.get("content"))
+        assert "URL analysis open" in full_prompt or "X article" in full_prompt
 
     def test_no_llm_providers_returns_error_payload(
         self, client, chat_db, monkeypatch
@@ -308,12 +313,14 @@ class TestCynefinRouting:
         # The classification must be returned to the client unchanged
         assert data.get("cynefin_classification", {}).get("recommended_strategy") == "rapid_assessment"
 
-        # And — the new behaviour — the guidance text must be in the system prompt
-        system_prompt = next(
-            m["content"] for m in fake_llm.calls[0]["messages"] if m["role"] == "system"
+        # And — the new behaviour — the guidance text must be in the prompt.
+        # INT-05 CacheAligner builds cynefin guidance into the user message, so
+        # assert against the full prompt rather than the system message alone.
+        full_prompt = "\n".join(
+            m["content"] for m in fake_llm.calls[0]["messages"] if m.get("content")
         )
-        assert "rapid assessment" in system_prompt.lower()
-        assert "uncertainty" in system_prompt.lower()
+        assert "rapid assessment" in full_prompt.lower()
+        assert "uncertainty" in full_prompt.lower()
 
     def test_clear_factual_question_injects_direct_lookup_guidance(
         self, client, chat_db, monkeypatch
@@ -330,12 +337,12 @@ class TestCynefinRouting:
         data = resp.json()
         assert data.get("cynefin_classification", {}).get("recommended_strategy") == "direct_lookup"
 
-        system_prompt = next(
-            m["content"] for m in fake_llm.calls[0]["messages"] if m["role"] == "system"
+        full_prompt = "\n".join(
+            m["content"] for m in fake_llm.calls[0]["messages"] if m.get("content")
         )
-        assert "direct lookup" in system_prompt.lower()
+        assert "direct lookup" in full_prompt.lower()
         # Direct-lookup guidance forbids speculation
-        assert "do not speculate" in system_prompt.lower() or "do not pad" in system_prompt.lower()
+        assert "do not speculate" in full_prompt.lower() or "do not pad" in full_prompt.lower()
 
     def test_complex_predictive_question_injects_causal_guidance(
         self, client, chat_db, monkeypatch
@@ -352,11 +359,11 @@ class TestCynefinRouting:
         data = resp.json()
         assert data.get("cynefin_classification", {}).get("recommended_strategy") == "causal_analysis"
 
-        system_prompt = next(
-            m["content"] for m in fake_llm.calls[0]["messages"] if m["role"] == "system"
+        full_prompt = "\n".join(
+            m["content"] for m in fake_llm.calls[0]["messages"] if m.get("content")
         )
-        assert "causal" in system_prompt.lower()
-        assert "counterfactual" in system_prompt.lower()
+        assert "causal" in full_prompt.lower()
+        assert "counterfactual" in full_prompt.lower()
 
     def test_general_mode_skips_cynefin_guidance(
         self, client, chat_db, monkeypatch

@@ -1169,8 +1169,12 @@ class TestFrontendGlobalCoords:
 
     def test_europe_map_component_has_world_atlas(self):
         from pathlib import Path
-        map_component = (Path(REPO_ROOT) / "src" / "frontend" / "src" / "components" / "EuropeMap.tsx").read_text()
-        assert "world-atlas" in map_component, "Map should use world atlas for global coverage"
+        # EuropeMap.tsx was replaced by the modular InteractiveClimateMap.tsx in
+        # the 2026-06 map refactor. Global coverage now loads the self-hosted
+        # world-atlas topojson (countries-110m) via topojson-client, keeping the
+        # same numeric-to-alpha2 country mapping.
+        map_component = (Path(REPO_ROOT) / "src" / "frontend" / "src" / "components" / "map" / "InteractiveClimateMap.tsx").read_text()
+        assert "countries-110m" in map_component, "Map should load the world-atlas topojson for global coverage"
         # Should have numeric-to-alpha2 mapping for global countries
         assert '"840":"US"' in map_component, "Map should resolve US country code"
         assert '"356":"IN"' in map_component, "Map should resolve India country code"

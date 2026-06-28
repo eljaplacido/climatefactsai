@@ -42,12 +42,9 @@ SRC_BACKEND = REPO_ROOT / "src" / "backend"
 # regression that adds another unenforced feature trips the assertion.
 EXPECTED_UNENFORCED: dict[str, str] = {
     # feature_name: justification / planned-slice
-    "url_analysis": (
-        "Currently routed through /api/url-analysis/* which uses a "
-        "different access-control surface (anon-allowed for the freemium "
-        "3-search quota). Either add explicit check_premium_feature OR "
-        "remove from this matrix and document the alternative gate."
-    ),
+    # NOTE: "url_analysis" was removed from this list — it now has an explicit
+    # check_premium_feature(..., "url_analysis") call site (api/research_routes.py),
+    # so it is enforced and must NOT be listed as an unenforced gap.
     "notifications": (
         "No /api/notifications/* surface in the API directory yet. "
         "Remove from the matrix until the feature ships, or stub the "

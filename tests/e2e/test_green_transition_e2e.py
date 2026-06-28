@@ -211,12 +211,14 @@ class TestCompareGreenTransition:
         )
         assert cc.climate_risk == cc.climate_risk_score
 
-    @patch("api.map_routes.get_postgres")
-    @patch("api.map_routes._get_country_names")
+    @patch("api.map.routes_compare.get_postgres")
+    @patch("api.map.routes_compare._get_country_names")
     def test_compare_endpoint_returns_green_scores(self, mock_names, mock_db):
         """compare_countries must compute and return all green-transition scores."""
         import asyncio
-        from api.map_routes import compare_countries
+        # After the api/map split, compare_countries lives in
+        # api/map/routes_compare.py (the map_routes shim doesn't re-export it).
+        from api.map.routes_compare import compare_countries
 
         mock_names.return_value = {"FI": "Finland", "DE": "Germany"}
         fake_db = self._make_fake_db_for_compare()
@@ -337,7 +339,11 @@ class TestGlobalDataSources:
         )
         mod = importlib.util.module_from_spec(spec)
         # Patch psycopg2 so the module-level connect() call doesn't hit a real DB
-        with patch.dict("sys.modules", {"psycopg2": MagicMock(), "psycopg2.extras": MagicMock()}):
+        # seed_full_global.py sys.exit(2)s at import unless CLILENS_ALLOW_FAKE_SEED=1
+        # (a SystemExit, which the bare `except Exception` below does NOT catch).
+        # Opt in so the module body runs far enough to define TOPICS/ALL_COUNTRIES.
+        with patch.dict("sys.modules", {"psycopg2": MagicMock(), "psycopg2.extras": MagicMock()}), \
+             patch.dict("os.environ", {"CLILENS_ALLOW_FAKE_SEED": "1"}):
             try:
                 spec.loader.exec_module(mod)
             except Exception:
@@ -484,7 +490,11 @@ class TestSeedArticleCategories:
             REPO_ROOT / "scripts" / "seed_full_global.py",
         )
         mod = importlib.util.module_from_spec(spec)
-        with patch.dict("sys.modules", {"psycopg2": MagicMock(), "psycopg2.extras": MagicMock()}):
+        # seed_full_global.py sys.exit(2)s at import unless CLILENS_ALLOW_FAKE_SEED=1
+        # (a SystemExit, which the bare `except Exception` below does NOT catch).
+        # Opt in so the module body runs far enough to define TOPICS/ALL_COUNTRIES.
+        with patch.dict("sys.modules", {"psycopg2": MagicMock(), "psycopg2.extras": MagicMock()}), \
+             patch.dict("os.environ", {"CLILENS_ALLOW_FAKE_SEED": "1"}):
             try:
                 spec.loader.exec_module(mod)
             except Exception:
@@ -502,7 +512,11 @@ class TestSeedArticleCategories:
             REPO_ROOT / "scripts" / "seed_full_global.py",
         )
         mod = importlib.util.module_from_spec(spec)
-        with patch.dict("sys.modules", {"psycopg2": MagicMock(), "psycopg2.extras": MagicMock()}):
+        # seed_full_global.py sys.exit(2)s at import unless CLILENS_ALLOW_FAKE_SEED=1
+        # (a SystemExit, which the bare `except Exception` below does NOT catch).
+        # Opt in so the module body runs far enough to define TOPICS/ALL_COUNTRIES.
+        with patch.dict("sys.modules", {"psycopg2": MagicMock(), "psycopg2.extras": MagicMock()}), \
+             patch.dict("os.environ", {"CLILENS_ALLOW_FAKE_SEED": "1"}):
             try:
                 spec.loader.exec_module(mod)
             except Exception:
@@ -519,7 +533,11 @@ class TestSeedArticleCategories:
             REPO_ROOT / "scripts" / "seed_full_global.py",
         )
         mod = importlib.util.module_from_spec(spec)
-        with patch.dict("sys.modules", {"psycopg2": MagicMock(), "psycopg2.extras": MagicMock()}):
+        # seed_full_global.py sys.exit(2)s at import unless CLILENS_ALLOW_FAKE_SEED=1
+        # (a SystemExit, which the bare `except Exception` below does NOT catch).
+        # Opt in so the module body runs far enough to define TOPICS/ALL_COUNTRIES.
+        with patch.dict("sys.modules", {"psycopg2": MagicMock(), "psycopg2.extras": MagicMock()}), \
+             patch.dict("os.environ", {"CLILENS_ALLOW_FAKE_SEED": "1"}):
             try:
                 spec.loader.exec_module(mod)
             except Exception:

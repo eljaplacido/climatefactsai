@@ -506,10 +506,17 @@ class TestFrontendAccessibility:
         assert toast.exists(), "Toast notification component must exist"
 
     def test_site_layout_has_aria_roles(self):
-        site = Path(REPO_ROOT / "src" / "frontend" / "src" / "components" / "SiteLayout.tsx")
-        content = site.read_text(encoding="utf-8")
-        assert "role=" in content, "SiteLayout must have ARIA roles"
-        assert "main" in content.lower(), "Must have main content area"
+        # SiteLayout.tsx was removed in the nav refactor. Landmark roles now
+        # live in GlobalNav.tsx (semantic <header>/<nav> + aria-label) and the
+        # app layout (<main> content region + skip link).
+        nav = Path(REPO_ROOT / "src" / "frontend" / "src" / "components" / "GlobalNav.tsx")
+        layout = Path(REPO_ROOT / "src" / "frontend" / "src" / "app" / "layout.tsx")
+        nav_content = nav.read_text(encoding="utf-8")
+        layout_content = layout.read_text(encoding="utf-8")
+        assert "<nav" in nav_content or "<header" in nav_content, \
+            "Nav must use semantic landmark elements"
+        assert "aria-label" in nav_content, "Nav must have ARIA labels"
+        assert "<main" in layout_content, "Layout must have a <main> content area"
 
     def test_credibility_gauge_has_aria(self):
         gauge = Path(REPO_ROOT / "src" / "frontend" / "src" / "components" / "CredibilityGauge.tsx")
@@ -527,8 +534,10 @@ class TestFrontendVisualization:
         assert "recharts" in content, "Recharts must be installed"
 
     def test_trend_chart_exists(self):
-        chart = Path(REPO_ROOT / "src" / "frontend" / "src" / "components" / "TrendChart.tsx")
-        assert chart.exists(), "TrendChart component must exist"
+        # TrendChart.tsx was replaced by WeatherTrendCard.tsx in the chart
+        # refactor (ForecastChart.tsx has its own test below).
+        chart = Path(REPO_ROOT / "src" / "frontend" / "src" / "components" / "WeatherTrendCard.tsx")
+        assert chart.exists(), "WeatherTrendCard component must exist"
 
     def test_forecast_chart_exists(self):
         chart = Path(REPO_ROOT / "src" / "frontend" / "src" / "components" / "ForecastChart.tsx")

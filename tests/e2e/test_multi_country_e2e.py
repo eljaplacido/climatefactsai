@@ -80,7 +80,8 @@ class TestMultiCountryDispatch:
             assert result["countries_dispatched"] == 2
 
     def test_default_countries_list(self):
-        """Default should be 10 European countries."""
+        """Default country list is now the global 83-country set (see
+        src/backend/app/tasks/ingestion.py — INGESTION_COUNTRIES default)."""
         mock_discover = MagicMock()
         mock_discover.apply_async.return_value = MagicMock(id=str(uuid4()))
 
@@ -93,7 +94,7 @@ class TestMultiCountryDispatch:
 
             result = scheduled_multi_country_ingestion.apply().get(timeout=10)
 
-            assert result["countries_dispatched"] == 20
+            assert result["countries_dispatched"] == 83
 
     def test_country_specific_max_articles(self):
         """Each country dispatch should respect MAX_ARTICLES_PER_COUNTRY."""

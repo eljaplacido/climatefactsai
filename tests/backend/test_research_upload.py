@@ -41,7 +41,10 @@ class TestUploadSizeGuard:
         big = b"x" * (MAX_UPLOAD_BYTES + 1)
         upload = _make_upload(big, "huge.pdf")
         with pytest.raises(HTTPException) as exc:
-            await upload_research_document(file=upload, doi=None, current_user=None)
+            await upload_research_document(
+                file=upload, doi=None,
+                current_user={"subscription_tier": "enterprise", "user_id": "u-1"},
+            )
         assert exc.value.status_code == 413
         assert "exceeds maximum size" in exc.value.detail
 
@@ -51,7 +54,10 @@ class TestUploadSizeGuard:
 
         upload = _make_upload(b"", "empty.pdf")
         with pytest.raises(HTTPException) as exc:
-            await upload_research_document(file=upload, doi=None, current_user=None)
+            await upload_research_document(
+                file=upload, doi=None,
+                current_user={"subscription_tier": "enterprise", "user_id": "u-1"},
+            )
         assert exc.value.status_code == 400
 
 
@@ -69,7 +75,8 @@ class TestUploadExtractionFailure:
         ):
             with pytest.raises(HTTPException) as exc:
                 await upload_research_document(
-                    file=upload, doi=None, current_user=None
+                    file=upload, doi=None,
+                    current_user={"subscription_tier": "enterprise", "user_id": "u-1"},
                 )
         assert exc.value.status_code == 422
         assert "scanned/image-only" in exc.value.detail or "OCR" in exc.value.detail
@@ -85,7 +92,8 @@ class TestUploadExtractionFailure:
         ):
             with pytest.raises(HTTPException) as exc:
                 await upload_research_document(
-                    file=upload, doi=None, current_user=None
+                    file=upload, doi=None,
+                    current_user={"subscription_tier": "enterprise", "user_id": "u-1"},
                 )
         # _extract_text_from_upload already raises HTTPException(422)
         # for unsupported types in real flow. Our route's catch-all
@@ -114,7 +122,7 @@ class TestUploadHappyPath:
             result = await upload_research_document(
                 file=upload,
                 doi="10.1234/example",
-                current_user={"user_id": "u-1"},
+                current_user={"user_id": "u-1", "subscription_tier": "enterprise"},
             )
 
         # Service was called with extracted text + provided doi + user_id.
@@ -133,20 +141,18 @@ class TestUploadHappyPath:
         assert result["claim_count"] == 12
 
     @pytest.mark.asyncio
-    async def test_anonymous_upload_passes_none_user_id(self):
+    async def test_freemium_upload_rejected_403(self):
+        """Anonymous/free upload is no longer allowed. End2End audit §6.5 gated
+        document_ingestion at Standard+, so a freemium-tier user must get a 403
+        before any extraction work. (Anonymous requests never reach the handler
+        at all — HTTPBearer auto_error returns 401 first — so the old
+        "anonymous passes None user_id" premise is obsolete.)"""
+        from fastapi import HTTPException
+
         upload = _make_upload(b"%PDF-1.4 minimal", "anon.pdf")
-        extracted = "x" * 1000
-
-        fake_service = MagicMock()
-        fake_service.analyze_report = AsyncMock(return_value={"summary": "ok"})
-
-        with patch(
-            "api.article_ingestion_routes._extract_text_from_upload",
-            return_value=extracted,
-        ), patch(
-            "app.domains.intelligence.research_report_service.ResearchReportService",
-            return_value=fake_service,
-        ):
-            await upload_research_document(file=upload, doi=None, current_user=None)
-
-        assert fake_service.analyze_report.await_args.kwargs["user_id"] is None
+        with pytest.raises(HTTPException) as exc:
+            await upload_research_document(
+                file=upload, doi=None,
+                current_user={"subscription_tier": "freemium", "user_id": "u-free"},
+            )
+        assert exc.value.status_code == 403

@@ -49,9 +49,9 @@ class TestAnalyzeReportRequestValidation:
         with patch(
             "app.domains.content.corporate.repository.get_company",
             return_value=fake_profile,
-        ), patch("api.company_routes.get_postgres"):
+        ), patch("api.company_routes.get_postgres"), patch("api.company_routes.QuotaService.check_and_raise"):
             with pytest.raises(HTTPException) as exc:
-                await analyze_company_report("ACME", req)
+                await analyze_company_report("ACME", req, current_user={"subscription_tier": "enterprise", "user_id": "u-1"})
         assert exc.value.status_code == 400
         assert "Exactly one" in exc.value.detail
 
@@ -66,9 +66,9 @@ class TestAnalyzeReportRequestValidation:
         with patch(
             "app.domains.content.corporate.repository.get_company",
             return_value=fake_profile,
-        ), patch("api.company_routes.get_postgres"):
+        ), patch("api.company_routes.get_postgres"), patch("api.company_routes.QuotaService.check_and_raise"):
             with pytest.raises(HTTPException) as exc:
-                await analyze_company_report("ACME", req)
+                await analyze_company_report("ACME", req, current_user={"subscription_tier": "enterprise", "user_id": "u-1"})
         assert exc.value.status_code == 400
 
 
@@ -81,9 +81,9 @@ class TestAnalyzeReportUnknownCompany:
         with patch(
             "app.domains.content.corporate.repository.get_company",
             return_value=None,
-        ), patch("api.company_routes.get_postgres"):
+        ), patch("api.company_routes.get_postgres"), patch("api.company_routes.QuotaService.check_and_raise"):
             with pytest.raises(HTTPException) as exc:
-                await analyze_company_report("NOPE", req)
+                await analyze_company_report("NOPE", req, current_user={"subscription_tier": "enterprise", "user_id": "u-1"})
         assert exc.value.status_code == 404
 
 
@@ -96,12 +96,12 @@ class TestAnalyzeReportFetchFailure:
         with patch(
             "app.domains.content.corporate.repository.get_company",
             return_value=fake_profile,
-        ), patch("api.company_routes.get_postgres"), patch(
+        ), patch("api.company_routes.get_postgres"), patch("api.company_routes.QuotaService.check_and_raise"), patch(
             "shared.full_text_fetch.fetch_full_text",
             new=AsyncMock(return_value=None),
         ):
             with pytest.raises(HTTPException) as exc:
-                await analyze_company_report("ACME", req)
+                await analyze_company_report("ACME", req, current_user={"subscription_tier": "enterprise", "user_id": "u-1"})
         assert exc.value.status_code == 422
         assert "report_text" in exc.value.detail  # fallback hint surfaced
 
@@ -136,13 +136,13 @@ class TestAnalyzeReportHappyPath:
         ), patch(
             "app.domains.content.corporate.repository.upsert_company_claim",
             side_effect=lambda db, claim: f"claim-{hash(claim.claim_text) % 9999:04d}",
-        ), patch("api.company_routes.get_postgres"), patch(
+        ), patch("api.company_routes.get_postgres"), patch("api.company_routes.QuotaService.check_and_raise"), patch(
             "app.domains.intelligence.services.ClaimExtractor"
         ) as MockExtractor:
             instance = MockExtractor.return_value
             instance.decompose_claims = AsyncMock(return_value=fake_claims)
 
-            resp = await analyze_company_report("ACME", req)
+            resp = await analyze_company_report("ACME", req, current_user={"subscription_tier": "enterprise", "user_id": "u-1"})
 
         assert isinstance(resp, AnalyzeReportResponse)
         assert resp.company_id == "cmp-uuid-1"
