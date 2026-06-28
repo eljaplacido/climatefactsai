@@ -42,19 +42,29 @@ async function getArticle(id: string): Promise<ArticleDetail | null> {
       ]
     : [process.env.NEXT_PUBLIC_API_URL, "http://localhost:5400"];
 
+  let sawServerError = false;
   for (const base of apiBases) {
     if (!base) continue;
     try {
       const res = await fetch(`${base}/api/v2/articles/${encodeURIComponent(id)}`, {
         next: { revalidate: 10 },
       });
-      if (!res.ok) continue;
-      return (await res.json()) as ArticleDetail;
+      if (res.ok) return (await res.json()) as ArticleDetail;
+      // A 404 is authoritative — the article genuinely doesn't exist.
+      if (res.status === 404) return null;
+      // 5xx / 429 (e.g. an API instance OOM) are transient: don't let them
+      // masquerade as "not found". Remember and surface a retryable error
+      // after exhausting the bases rather than rendering a misleading 404.
+      sawServerError = true;
     } catch {
+      sawServerError = true;
       continue;
     }
   }
 
+  if (sawServerError) {
+    throw new Error(`Article ${id} temporarily unavailable (upstream API error)`);
+  }
   return null;
 }
 
@@ -468,11 +478,26 @@ export default async function ArticlePage({ params }: { params: { id: string } }
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
                           Local Climate Context
                         </span>
-                        {(article as any).enrichment_metadata?.temperature_trend && (
-                          <span className="text-xs text-gray-500">
-                            Trend: {(article as any).enrichment_metadata.temperature_trend}
-                          </span>
-                        )}
+                        {(() => {
+                          // temperature_trend is an object ({direction, total_change_c, ...})
+                          // on enriched articles and a plain string on older ones. Rendering
+                          // the raw object crashed SSR ("Objects are not valid as a React
+                          // child") and 500'd every enriched article. Coerce to a scalar.
+                          const tt = (article as any).enrichment_metadata?.temperature_trend;
+                          const label =
+                            typeof tt === "string"
+                              ? tt
+                              : tt?.direction
+                                ? `${tt.direction}${
+                                    typeof tt.total_change_c === "number"
+                                      ? ` ${tt.total_change_c > 0 ? "+" : ""}${tt.total_change_c}°C`
+                                      : ""
+                                  }`
+                                : null;
+                          return label ? (
+                            <span className="text-xs text-gray-500">Trend: {label}</span>
+                          ) : null;
+                        })()}
                       </div>
                       <p className="text-sm text-teal-800 leading-relaxed">{(article as any).climate_context_summary}</p>
                     </div>

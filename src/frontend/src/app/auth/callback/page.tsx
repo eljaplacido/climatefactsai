@@ -79,7 +79,11 @@ function CallbackHandler() {
         localStorage.setItem("clilens_user", JSON.stringify({
           user_id: tokens.user_id, email: tokens.email, full_name: tokens.full_name, avatar_url: tokens.avatar_url,
         }));
-        router.push(postLoginRedirect);
+        // Full-document navigation (not router.push): AuthProvider only reads
+        // the token from localStorage in its mount effect, which a client-side
+        // push does NOT re-run — so a freshly-authed OAuth user would land back
+        // on /login via ProtectedRoute until a hard reload. assign() reloads.
+        window.location.assign(postLoginRedirect);
       } catch (err: any) { setError(err.message || "Authentication failed"); }
     }
     exchangeCode();

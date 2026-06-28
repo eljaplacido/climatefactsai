@@ -4,7 +4,7 @@ Similarity routes - Find articles similar to a given article using pgvector.
 
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from api.auth_routes import get_optional_user
@@ -47,8 +47,8 @@ async def get_similar_articles(
         )
         return [SimilarArticleResponse(**s) for s in similar]
     except Exception as e:
-        logger.error(f"Similar articles lookup failed for {article_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Could not retrieve similar articles."
-        )
+        # "Similar articles" is a non-critical side panel — degrade to an empty
+        # list rather than 500ing (the UI hides an empty result). Avoids log
+        # noise + a misleading error on every article open.
+        logger.warning(f"Similar articles lookup failed for {article_id}: {e}")
+        return []

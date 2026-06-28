@@ -188,8 +188,12 @@ class QuotaService:
 
         try:
             if quota_key == "saved_articles":
+                # Article saves migrated to the polymorphic saved_items table
+                # (mig 042); legacy user_bookmarks is no longer written, so
+                # counting it always returned 0 and the free-tier cap never
+                # enforced. Count saved_items of type 'article' instead.
                 rows = db.execute_query(
-                    "SELECT COUNT(*) AS n FROM user_bookmarks WHERE user_id = :uid",
+                    "SELECT COUNT(*) AS n FROM saved_items WHERE user_id = :uid AND item_type = 'article'",
                     {"uid": user_id},
                 )
                 return int(rows[0]["n"]) if rows else 0

@@ -320,11 +320,12 @@ class EmbeddingService:
             {"id": article_id},
         )
         if not rows:
-            # Try to generate it first (best-effort — needs the GX10 endpoint;
-            # if unreachable this returns False and we yield no matches).
-            success = await self.populate_bge_m3_embedding(article_id)
-            if not success:
-                return []
+            # No stored vector yet. Do NOT attempt live generation on the read
+            # path — the bge-m3 endpoint (GX10/Ollama) is unreachable from Cloud
+            # Run and raising here 500'd every "similar articles" request.
+            # Embeddings are backfilled offline by the GX10 worker
+            # (batch_populate_bge_m3); yield no matches until then.
+            return []
 
         results = self.db.execute_query(
             """SELECT

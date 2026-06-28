@@ -225,7 +225,7 @@ async def get_news_events_layer(
         return cached
 
     db = get_postgres()
-    interval = f"{int(window_days)} days"
+    days = int(window_days)
     try:
         rows = db.execute_query(
             """
@@ -242,11 +242,11 @@ async def get_news_events_layer(
               AND a.country_code <> ''
               AND a.is_synthetic = FALSE
               AND a.is_off_topic = FALSE
-              AND a.created_at >= NOW() - :interval::interval
+              AND a.created_at >= NOW() - make_interval(days => :days)
             GROUP BY a.country_code
             ORDER BY event_count DESC
             """,
-            {"interval": interval},
+            {"days": days},
         )
     except Exception as exc:
         logger.error(f"News-events layer query failed: {exc}")
