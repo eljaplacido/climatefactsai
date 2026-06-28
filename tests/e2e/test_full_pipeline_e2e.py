@@ -68,6 +68,10 @@ class TestClaimExtractionPipeline:
         with patch("app.domains.intelligence.services._deepseek_chat", return_value=mock_json):
             from app.domains.intelligence.services import ClaimExtractor
             extractor = ClaimExtractor()
+            # CI has no DEEPSEEK_API_KEY, so __init__ leaves deepseek_client=None and
+            # decompose_claims 503s before reaching the mocked _deepseek_chat. Simulate
+            # a configured client so the extraction path (and its mock) is exercised.
+            extractor.deepseek_client = MagicMock()
 
             claims = asyncio.run(extractor.decompose_claims(
                 "Finland temperature rose 2.3C since pre-industrial times. "
@@ -82,11 +86,14 @@ class TestClaimExtractionPipeline:
 
     def test_extract_claims_handles_short_text(self):
         """Should return empty list for text too short."""
-        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}):
-            from app.domains.intelligence.services import ClaimExtractor
-            extractor = ClaimExtractor()
-            claims = asyncio.run(extractor.decompose_claims("Short text."))
-            assert claims == []
+        from app.domains.intelligence.services import ClaimExtractor
+        extractor = ClaimExtractor()
+        # Simulate a configured DeepSeek client (CI has no key) so the short-text
+        # guard is reached instead of the 503 missing-key error. (The old
+        # ANTHROPIC_API_KEY patch was a no-op: the extractor uses DeepSeek.)
+        extractor.deepseek_client = MagicMock()
+        claims = asyncio.run(extractor.decompose_claims("Short text."))
+        assert claims == []
 
 
 class TestEvidenceRetrievalPipeline:

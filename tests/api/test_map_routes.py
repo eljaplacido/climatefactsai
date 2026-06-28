@@ -544,12 +544,12 @@ class TestMapQueryViewContext:
     def test_country_in_view_context_promoted_into_filter(
         self, client, map_db, monkeypatch
     ):
-        from api import map_routes
+        from api.map import routes_query
         monkeypatch.setattr(
-            map_routes, "_llm_parse_query", AsyncMock(return_value={})
+            routes_query, "_llm_parse_query", AsyncMock(return_value={})
         )
         monkeypatch.setattr(
-            map_routes, "_llm_generate_map_answer", AsyncMock(return_value=(None, None, []))
+            routes_query, "_llm_generate_map_answer", AsyncMock(return_value=(None, None, []))
         )
 
         resp = client.post(
@@ -566,12 +566,12 @@ class TestMapQueryViewContext:
     def test_explicit_countries_override_view_context(
         self, client, map_db, monkeypatch
     ):
-        from api import map_routes
+        from api.map import routes_query
         monkeypatch.setattr(
-            map_routes, "_llm_parse_query", AsyncMock(return_value={})
+            routes_query, "_llm_parse_query", AsyncMock(return_value={})
         )
         monkeypatch.setattr(
-            map_routes, "_llm_generate_map_answer", AsyncMock(return_value=(None, None, []))
+            routes_query, "_llm_generate_map_answer", AsyncMock(return_value=(None, None, []))
         )
 
         resp = client.post(
@@ -588,12 +588,12 @@ class TestMapQueryViewContext:
     def test_compare_countries_in_view_context_promoted(
         self, client, map_db, monkeypatch
     ):
-        from api import map_routes
+        from api.map import routes_query
         monkeypatch.setattr(
-            map_routes, "_llm_parse_query", AsyncMock(return_value={})
+            routes_query, "_llm_parse_query", AsyncMock(return_value={})
         )
         monkeypatch.setattr(
-            map_routes, "_llm_generate_map_answer", AsyncMock(return_value=(None, None, []))
+            routes_query, "_llm_generate_map_answer", AsyncMock(return_value=(None, None, []))
         )
 
         resp = client.post(

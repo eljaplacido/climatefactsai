@@ -209,7 +209,11 @@ async def _llm_generate_map_answer(
         from app.domains.intelligence.llm_client import get_llm_client
         client, model = get_llm_client()
         if not client:
-            return None, session_id
+            # No LLM configured/reachable — degrade gracefully. MUST return the
+            # 3-tuple shape the caller unpacks (answer, session_id, actions);
+            # returning a 2-tuple here 500'd every map "ask" query whenever the
+            # LLM was unavailable (and broke CI, which has no keys).
+            return None, session_id, []
 
         # Fetch a handful of matching articles for citation context
         article_rows = db.execute_query(f"""
