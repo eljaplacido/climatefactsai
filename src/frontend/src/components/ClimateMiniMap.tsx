@@ -37,11 +37,10 @@ export default function ClimateMiniMap({
   height = "compact",
   linkToMap,
 }: ClimateMiniMapProps) {
-  if (!countries || countries.length === 0) return null;
-
   const [countryStatsData, setCountryStatsData] = useState<CountryStatEntry[] | null>(null);
 
   useEffect(() => {
+    if (!countries || countries.length === 0) return;
     let cancelled = false;
     const countrySet = new Set(countries);
 
@@ -112,6 +111,10 @@ export default function ClimateMiniMap({
     fetchData();
     return () => { cancelled = true; };
   }, [layer, countries]);
+
+  // Hooks must run unconditionally (react-hooks/rules-of-hooks), so this
+  // guard sits AFTER the hooks rather than at the top of the component.
+  if (!countries || countries.length === 0) return null;
 
   const hClass = height === "compact" ? "h-48" : "h-80";
   const countryStats: CountryStatEntry[] =
