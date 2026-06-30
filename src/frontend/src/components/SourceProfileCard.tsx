@@ -36,6 +36,13 @@ function SourceProfileCard({ profile, compact = false }: SourceProfileCardProps)
   const band = getCredibilityBand(profile.credibility_score);
   const editorial = EDITORIAL_CONFIG[profile.editorial_standards] || EDITORIAL_CONFIG.unknown;
   const factcheck = FACTCHECK_CONFIG[profile.fact_check_record] || FACTCHECK_CONFIG.unknown;
+  // At least one trust factor carries a derived (non-"unknown") label. Those
+  // labels are derived from the platform's own reliability tiering + historical
+  // analysis, NOT an independent third-party audit — disclose that honestly.
+  const hasDerivedAssessment =
+    (profile.editorial_standards && profile.editorial_standards !== "unknown") ||
+    (profile.fact_check_record && profile.fact_check_record !== "unknown") ||
+    (profile.transparency_level && profile.transparency_level !== "unknown");
 
   if (compact) {
     return (
@@ -132,6 +139,16 @@ function SourceProfileCard({ profile, compact = false }: SourceProfileCardProps)
             )}
           </div>
         </div>
+
+        {/* Honesty disclosure: the editorial / fact-check / transparency labels
+            are DERIVED from this platform's reliability tiering + historical
+            analysis — they are not independent third-party audits. */}
+        {hasDerivedAssessment && (
+          <p className="text-[10px] text-gray-400 dark:text-slate-500 leading-relaxed">
+            Editorial, fact-check and transparency ratings are derived from this platform&rsquo;s
+            reliability tiering and historical analysis &mdash; not independent third-party audits.
+          </p>
+        )}
 
         {/* Historical stats */}
         {profile.total_articles_analyzed > 0 && (

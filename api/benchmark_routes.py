@@ -427,7 +427,9 @@ async def evaluate_source(source_name: str):
             f"Source profile data {'is available' if sp else 'is NOT available — scoring uses article-level metrics only'}. "
             f"Confidence is {'HIGH' if total >= 20 and sp else 'MEDIUM' if total >= 5 else 'LOW'} "
             f"({'sufficient' if total >= 20 else 'limited'} sample size). "
-            f"Benchmarked against editorial standards from IPCC, WMO, and Carbon Brief methodology."
+            f"The editorial-standards, fact-check-record and transparency ratings are "
+            f"derived from the platform's own reliability tiering and historical article "
+            f"analysis — they are NOT independent third-party editorial or fact-check audits."
         )
 
         return SourceEvaluationReport(

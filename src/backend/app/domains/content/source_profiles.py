@@ -15,6 +15,100 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
+# Tiers that denote a curated, high-quality source even before any articles
+# have been analysed (institutional science / research bodies — EEA, IPCC, UN
+# climate news, etc.). `reliability_tier` defaults to 'public', which is the
+# neutral case, not a quality signal.
+_HIGH_QUALITY_TIERS = {"scientific", "research"}
+
+
+def derive_source_assessment(
+    *,
+    credibility_score: Optional[float] = None,
+    average_reliability_score: Optional[float] = None,
+    reliability_tier: Optional[str] = None,
+    false_claim_rate: Optional[float] = None,
+    total_articles_analyzed: Optional[int] = None,
+) -> Optional[dict]:
+    """Derive the three string assessment fields from a source's numeric/tier
+    signals.
+
+    ``source_profiles.editorial_standards`` / ``fact_check_record`` /
+    ``transparency_level`` default to ``'unknown'`` and were populated by no
+    code path, so the Sources UI rendered "Not assessed" for every source. The
+    numeric/tier signals (``credibility_score``, ``average_reliability_score``,
+    ``reliability_tier``, ``false_claim_rate``) DO exist on the same row, so we
+    map them to the three labels.
+
+    These labels are a defensible restatement of the platform's OWN reliability
+    tiering and historical article analysis — NOT an independent third-party
+    editorial or fact-check audit. The UI/methodology copy says so explicitly.
+
+    Returns ``None`` when there is genuinely no signal, so callers keep
+    ``'unknown'`` rather than inventing a rating.
+
+    Vocabulary (matches the 005 schema comments + the frontend configs):
+      * editorial_standards : rigorous | moderate | limited | unknown
+      * fact_check_record   : excellent | good | mixed | poor | unknown
+      * transparency_level  : high | moderate | low | unknown
+    """
+    tier = (reliability_tier or "").strip().lower()
+    high_quality_tier = tier in _HIGH_QUALITY_TIERS
+
+    fcr = float(false_claim_rate) if false_claim_rate is not None else 0.0
+    n_articles = int(total_articles_analyzed) if total_articles_analyzed is not None else 0
+
+    # A profile only carries a genuine signal once it has been analysed, has a
+    # curated high-quality tier, or has a recorded false-claim rate. Without
+    # any of those, credibility_score is just the schema default (50) — keep
+    # everything 'unknown' (caller leaves the columns untouched).
+    has_signal = (
+        n_articles > 0
+        or average_reliability_score is not None
+        or high_quality_tier
+        or fcr > 0
+    )
+    if not has_signal:
+        return None
+
+    score = credibility_score if credibility_score is not None else average_reliability_score
+    score = float(score) if score is not None else None
+
+    if high_quality_tier:
+        band = "high"
+    elif score is None:
+        return None
+    elif score >= 75:
+        band = "high"
+    elif score >= 50:
+        band = "moderate"
+    else:
+        band = "low"
+
+    editorial = {"high": "rigorous", "moderate": "moderate", "low": "limited"}[band]
+    transparency = {"high": "high", "moderate": "moderate", "low": "low"}[band]
+
+    # fact_check_record: an elevated false-claim rate dominates; otherwise fall
+    # back to the credibility band. 'excellent' is reserved for a high band with
+    # a genuinely strong score and no elevated false-claim rate. 'poor' only
+    # appears when the recorded false-claim rate is actually high (>=15%) — we
+    # never assert a poor fact-check record purely from low overall credibility.
+    if fcr >= 0.15:
+        fact_check = "poor"
+    elif fcr >= 0.05:
+        fact_check = "mixed"
+    elif band == "high":
+        fact_check = "excellent" if (score is not None and score >= 85) else "good"
+    else:  # moderate or low band, low/zero recorded false-claim rate
+        fact_check = "mixed"
+
+    return {
+        "editorial_standards": editorial,
+        "fact_check_record": fact_check,
+        "transparency_level": transparency,
+    }
+
+
 class SourceProfileService:
     """Service for managing source trust profiles."""
 
@@ -567,10 +661,69 @@ class SourceProfileService:
                 {"rel": int(reliability_score), "domain": domain},
             )
 
+        # Derive the editorial / fact-check / transparency string labels from
+        # the freshly-updated numeric + tier signals so the Sources UI stops
+        # showing "Not assessed" for every source (data-completeness Fix A).
+        self._apply_derived_assessment(domain)
+
         # Auto-sync to source_credibility table
         self._sync_to_credibility(source_name, domain, url)
 
         return self.get_profile_by_domain(domain) or {}
+
+    def _apply_derived_assessment(self, domain: str) -> None:
+        """Populate editorial_standards / fact_check_record / transparency_level
+        from the row's numeric + tier signals (see ``derive_source_assessment``).
+
+        Written by no other code path, those columns otherwise stay 'unknown'
+        forever. The derived values restate the platform's own reliability
+        tiering — they are NOT an independent third-party audit (the UI says
+        so). Fails soft on any schema drift so ingestion is never blocked.
+        """
+        tier_select = (
+            "reliability_tier"
+            if self._supports_reliability_tier()
+            else "NULL AS reliability_tier"
+        )
+        try:
+            rows = self.db.execute_query(
+                f"""SELECT credibility_score, average_reliability_score,
+                           {tier_select}, false_claim_rate, total_articles_analyzed
+                    FROM source_profiles
+                    WHERE source_domain = :domain
+                    LIMIT 1""",
+                {"domain": domain},
+            )
+        except Exception as exc:
+            logger.warning(f"Derived assessment lookup failed for {domain}: {exc}")
+            return
+
+        if not rows:
+            return
+
+        p = rows[0]
+        derived = derive_source_assessment(
+            credibility_score=p.get("credibility_score"),
+            average_reliability_score=p.get("average_reliability_score"),
+            reliability_tier=p.get("reliability_tier"),
+            false_claim_rate=p.get("false_claim_rate"),
+            total_articles_analyzed=p.get("total_articles_analyzed"),
+        )
+        if not derived:
+            return
+
+        try:
+            self.db.execute_update(
+                """UPDATE source_profiles SET
+                       editorial_standards = :editorial_standards,
+                       fact_check_record   = :fact_check_record,
+                       transparency_level  = :transparency_level,
+                       last_updated_at     = CURRENT_TIMESTAMP
+                   WHERE source_domain = :domain""",
+                {**derived, "domain": domain},
+            )
+        except Exception as exc:
+            logger.warning(f"Derived assessment write failed for {domain}: {exc}")
 
     def _sync_to_credibility(self, source_name: str, domain: str, url: str) -> None:
         """Sync source_profiles data into the source_credibility table.

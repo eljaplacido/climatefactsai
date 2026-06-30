@@ -200,10 +200,12 @@ export default function DataSourcesPage() {
               </button>
             </h2>
             <p className="text-gray-600 dark:text-slate-400 mb-4 max-w-3xl">
-              Every source above is graded against the same rubric. We combine four
-              independent signals into the 0&ndash;100 credibility score shown on each
+              Every source above is graded against the same rubric. We combine
+              several signals into the 0&ndash;100 credibility score shown on each
               card: tier classification, editorial standards, historical fact-check
-              performance, and methodology transparency.
+              performance, and methodology transparency. The editorial, fact-check
+              and transparency labels are derived from the platform&rsquo;s own
+              reliability tiering and history &mdash; not independent third-party audits.
             </p>
             <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
               {[
@@ -213,15 +215,15 @@ export default function DataSourcesPage() {
                 },
                 {
                   title: 'Editorial standards',
-                  body: 'Rigorous / moderate / low rating based on the publisher’s public editorial policy, correction policy, and ownership disclosure. Unknown when not yet assessed.',
+                  body: 'Rigorous / moderate / limited rating derived from the platform’s own reliability tiering and the source’s credibility score — not an independent third-party editorial audit. Unknown when there is no signal yet.',
                 },
                 {
                   title: 'Historical fact-check record',
-                  body: 'How the articles we’ve analyzed from this source have scored over time — verified claim rate, dispute rate, and false-claim rate.',
+                  body: 'How the articles we’ve analyzed from this source have scored over time — verified claim rate, dispute rate, and false-claim rate. The label is derived from those platform signals, not an external fact-check certification.',
                 },
                 {
                   title: 'Methodology transparency',
-                  body: 'Whether the source publishes its methodology, links to primary data, and discloses funding. High / moderate / low / unknown.',
+                  body: 'High / moderate / low rating derived from the platform’s reliability tiering and credibility score — not an audit of each publisher’s funding or methodology disclosures. Unknown when there is no signal yet.',
                 },
               ].map((ref) => (
                 <div key={ref.title} className="border border-gray-200 dark:border-slate-700 rounded-lg p-4 bg-white dark:bg-slate-800">
