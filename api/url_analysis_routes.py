@@ -603,6 +603,33 @@ class URLAnalysisStatus(BaseModel):
     error_message: Optional[str] = None
 
 
+class URLAnalysisArticle(BaseModel):
+    """Nested, article-shaped view of a completed URL analysis.
+
+    Contract fix (2026-06-29): the frontend success card in
+    `UrlAnalysisForm.tsx` reads `response.article.*`, so without this nested
+    object the completed card never rendered. A URL analysis IS mirrored into
+    the canonical `articles` table (best-effort, keyed on URL) but that mirror
+    can fail silently and the GET handler reads `url_analyses` directly — so
+    `article_id` is set to the analysis_id and the success card links to
+    `/research/analysis/{analysis_id}`, which always resolves for a completed
+    analysis via `/api/research/analyses/{id}`.
+    """
+    article_id: str
+    title: Optional[str] = None
+    source_name: Optional[str] = None
+    published_date: Optional[datetime] = None
+    overall_credibility: Optional[str] = None
+    # Maps from the flat `reliability_score` column.
+    source_credibility_score: Optional[int] = None
+    claim_count: int = 0
+    verified_claim_count: int = 0
+    excerpt: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    created_at: Optional[datetime] = None
+    provenance: Optional[dict] = None
+
+
 class URLAnalysisDetail(BaseModel):
     """Detailed URL analysis result with claims"""
     analysis_id: str
@@ -641,6 +668,14 @@ class URLAnalysisDetail(BaseModel):
     # these as None and the frontend falls back to `error_message`.
     failure_reason: Optional[str] = None
     failure_detail: Optional[dict] = None
+
+    # Nested article-shaped payload + supplementary fields read by the
+    # UrlAnalysisForm success card (contract fix 2026-06-29). `article` is
+    # populated when status == 'completed'; null otherwise. The flat fields
+    # above are retained for other readers.
+    article: Optional[URLAnalysisArticle] = None
+    decomposed_confidence: Optional[dict] = None
+    insight_summary: Optional[str] = None
 
 
 # =============================================================================
@@ -2291,6 +2326,42 @@ async def get_analysis_result(
         except Exception:
             failure_detail = None
 
+    # Build the nested article-shaped payload the success card reads
+    # (contract fix 2026-06-29). Only when completed; the frontend gates the
+    # success card on `status === 'completed' && article`.
+    _verified_statuses = {
+        "verified", "true", "supported", "accurate", "mostly_true", "correct",
+    }
+    article_obj: Optional[URLAnalysisArticle] = None
+    if result["status"] == "completed":
+        verified_claim_count = sum(
+            1
+            for fc in fact_checks
+            if isinstance(fc, dict)
+            and str(
+                fc.get("verification_status")
+                or fc.get("verdict")
+                or fc.get("status")
+                or ""
+            ).strip().lower()
+            in _verified_statuses
+        )
+        excerpt = (result.get("extracted_text") or "")[:300] or None
+        article_obj = URLAnalysisArticle(
+            article_id=str(result["analysis_id"]),
+            title=result.get("title"),
+            source_name=result.get("source_name") or result.get("source_domain"),
+            published_date=result.get("published_date"),
+            overall_credibility=result.get("overall_credibility"),
+            source_credibility_score=result.get("reliability_score"),
+            claim_count=len(extracted_claims),
+            verified_claim_count=verified_claim_count,
+            excerpt=excerpt,
+            tags=[],
+            created_at=result.get("created_at"),
+            provenance=None,
+        )
+
     return URLAnalysisDetail(
         analysis_id=str(result["analysis_id"]),
         submitted_url=result["submitted_url"],
@@ -2313,6 +2384,9 @@ async def get_analysis_result(
         error_message=result.get("error_message"),
         failure_reason=failure_reason,
         failure_detail=failure_detail,
+        article=article_obj,
+        decomposed_confidence=None,
+        insight_summary=None,
     )
 
 

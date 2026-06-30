@@ -78,9 +78,12 @@ export default function UrlAnalysisForm() {
   }, [jobId, url, setView, clearKey])
 
   useEffect(() => {
+    // The completed `article.article_id` is the analysis_id (the URL flow does
+    // not produce a canonical article the chat can hydrate), so publish it as
+    // analysisId — not articleId — to keep the assistant's context honest.
     if (status === 'completed' && article?.article_id) {
       setView({
-        articleId: article.article_id,
+        analysisId: article.article_id,
         label: `URL analysis result: ${article.title || url}`,
       })
     }
@@ -565,7 +568,7 @@ export default function UrlAnalysisForm() {
 
                   <div className="flex gap-3">
                     <a
-                      href={`/articles/${article.article_id}`}
+                      href={`/research/analysis/${article.article_id}`}
                       className="text-sm text-teal-700 hover:text-teal-800 underline font-medium"
                     >
                       View Full Analysis →

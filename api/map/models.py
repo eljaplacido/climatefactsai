@@ -121,9 +121,9 @@ class CountryDetail(BaseModel):
     source_coverage: List[Dict[str, Any]] = []
     high_severity_claims: int = 0
     disputed_claims_ratio: Optional[float] = None
-    # seq-11 (2026-06-02): the panel's risk card read this but /detail never
-    # returned it (only /compare did), so every country showed 0/10. Now
-    # computed with the same _compute_climate_risk_score as compare + the layer.
+    # Physical climate risk (0-10) from projected warming (IPCC AR6 SSP2-4.5,
+    # 2050) — the SAME source as /compare + the choropleth layer (2026-06-30).
+    # None when no AR6 projection exists (panel renders "no data"/grey).
     climate_risk_score: Optional[float] = None
 
 
@@ -203,9 +203,15 @@ class TemperatureAnomalyItem(BaseModel):
 
 
 class ClimateRiskItem(BaseModel):
-    """Per-country climate risk from article claims."""
+    """Per-country physical climate risk for the map layer.
+
+    `risk_score` is 0-10 derived from projected warming (IPCC AR6 SSP2-4.5,
+    2050) — NOT article volume (2026-06-29). None when no projection exists so
+    the frontend can render a distinct "no data" colour. claim_count /
+    disputed_ratio / top_risks remain as supplementary article-derived signals.
+    """
     country_code: str
-    risk_score: float = 0.0
+    risk_score: Optional[float] = None
     claim_count: int = 0
     disputed_ratio: float = 0.0
     top_risks: List[str] = []

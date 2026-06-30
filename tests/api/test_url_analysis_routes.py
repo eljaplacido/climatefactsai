@@ -472,6 +472,66 @@ class TestAnalyzeUrlGet:
         assert data["status"] == "completed"
         assert data["reliability_score"] == 70
 
+    def test_get_completed_includes_nested_article(self, client):
+        """Contract fix (2026-06-29): a completed GET must carry a nested
+        `article` object so the UrlAnalysisForm success card renders. article_id
+        is the analysis_id (success card links to /research/analysis/{id})."""
+        from uuid import UUID
+        import shared.database as _shared_db
+        from api.url_analysis_routes import _generate_job_token
+
+        analysis_uuid = UUID("99999999-8888-7777-6666-555544443333")
+        now = datetime.utcnow()
+        rows = [{
+            "user_id": "00000000-0000-0000-0000-000000000000",
+            "analysis_id": analysis_uuid,
+            "submitted_url": "https://example.com/solar",
+            "status": "completed",
+            "title": "Solar capacity report",
+            "source_name": "example.com",
+            "source_domain": "example.com",
+            "extracted_text": "Solar capacity grew sharply. " * 40,
+            "language_code": "en",
+            "published_date": None,
+            "reliability_score": 72,
+            "overall_credibility": "MEDIUM",
+            "extracted_claims": [
+                {"claim_text": "Solar grew 35%"},
+                {"claim_text": "Wind doubled"},
+            ],
+            "fact_checks": [
+                {"verification_status": "verified"},
+                {"verification_status": "disputed"},
+            ],
+            "created_at": now,
+            "processing_started_at": now,
+            "completed_at": now,
+            "processing_time_ms": 900,
+            "error_message": None,
+        }]
+
+        prior = _shared_db._postgres_client
+        _shared_db._postgres_client = _smart_url_db(rows_for_get=rows)
+        try:
+            token = _generate_job_token(str(analysis_uuid))
+            resp = client.get(f"/api/analyze-url/{analysis_uuid}?token={token}")
+        finally:
+            _shared_db._postgres_client = prior
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        article = data.get("article")
+        assert article is not None, "completed analysis must include nested article"
+        # article_id is the analysis_id so /research/analysis/{id} resolves.
+        assert article["article_id"] == str(analysis_uuid)
+        assert article["source_credibility_score"] == 72  # ← reliability_score
+        assert article["claim_count"] == 2
+        assert article["verified_claim_count"] == 1  # only the 'verified' one
+        assert article["overall_credibility"] == "MEDIUM"
+        assert article["source_name"] == "example.com"
+        assert article["excerpt"]  # first ~300 chars of extracted_text
+        assert isinstance(article["tags"], list)
+
     def test_get_analysis_404_when_missing(self, client):
         import shared.database as _shared_db
         prior = _shared_db._postgres_client

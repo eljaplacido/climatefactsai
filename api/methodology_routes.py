@@ -827,6 +827,19 @@ async def get_bias_audit() -> Dict[str, Any]:
 # Honesty: axes that cannot be measured return a clear "insufficient_data"
 # status rather than a guessed number.
 
+# Latest external production-readiness audit. Sourced from the real report so
+# the methodology page badge reflects reality (~3.0/5, 2026-06-26) instead of
+# the previously hardcoded, overstated 3.55 (honesty fix 2026-06-29). Update
+# these three fields whenever a new audit lands.
+LAST_AUDIT_DATE = "2026-06-26"
+LAST_AUDIT_SCORE = 3.0
+LAST_AUDIT_LABEL = "Production-Readiness Audit (36-agent, 2026-06-26)"
+LAST_AUDIT_REPORT = (
+    "https://github.com/eljaplacido/climatefactsai/blob/main/"
+    "docs/improvementplans/Production-Readiness-Audit-2026-06-26.md"
+)
+
+
 @router.get("/self-audit")
 async def get_self_audit_score() -> Dict[str, Any]:
     """Live composite methodology self-audit, driven from backend data.
@@ -998,6 +1011,12 @@ async def get_self_audit_score() -> Dict[str, Any]:
         "max": 5.0,
         "axes": axes,
         "computed_at": datetime.now(timezone.utc).isoformat(),
+        # Latest external audit benchmark — rendered as the methodology page's
+        # "Last audited" badge (no longer hardcoded in the frontend).
+        "last_audit_date": LAST_AUDIT_DATE,
+        "last_audit_score": LAST_AUDIT_SCORE,
+        "last_audit_label": LAST_AUDIT_LABEL,
+        "last_audit_report": LAST_AUDIT_REPORT,
         "note": (
             "Live score driven by backend data. Axes with "
             "'insufficient_data' or 'unavailable' status floor at 1.0. "

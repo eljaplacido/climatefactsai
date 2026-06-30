@@ -6,7 +6,7 @@ import httpx, math, asyncio
 
 from .models import (TemperatureAnomalyItem, ClimateRiskItem, CorporateDensityItem,
                      NewsEventItem, WarmingOutlookItem, AdaptationGapItem, NdcStatusItem)
-from .services import (_compute_climate_risk_score, _fetch_current_weather, _fetch_historical_weather)
+from .services import (_fetch_current_weather, _fetch_historical_weather, fetch_warming_risk_map)
 from .cache import _cache_get, _cache_set
 from shared.database import get_postgres
 from shared.logger import setup_logging
@@ -93,10 +93,13 @@ async def get_temperature_anomaly_layer():
 @router.get("/layers/climate-risk", response_model=List[ClimateRiskItem])
 async def get_climate_risk_layer():
     """
-    Per-country climate risk scores computed from article claims.
+    Per-country PHYSICAL climate risk (0-10) from projected warming.
 
-    For each country: counts high-importance claims, computes disputed/unverified
-    ratio, and derives a severity score (0-10).
+    The score is derived from IPCC AR6 SSP2-4.5 warming at 2050
+    (`country_projections`, migration 035) — NOT article volume (2026-06-29).
+    claim_count / disputed_ratio / top_risks are kept as supplementary
+    article-derived context. Countries without a projection get risk_score
+    None so the frontend can render them as "no data" grey.
     """
     cache_key = "layer:climate_risk"
     cached = _cache_get(cache_key, ttl_seconds=21600)
@@ -104,6 +107,9 @@ async def get_climate_risk_layer():
         return cached
 
     db = get_postgres()
+
+    # Physical-risk scores keyed by country (excludes 'XX').
+    warming_risk = fetch_warming_risk_map(db)
 
     try:
         rows = db.execute_query("""
@@ -130,18 +136,15 @@ async def get_climate_risk_layer():
 
     results: List[ClimateRiskItem] = []
     for r in (rows or []):
-        article_count = int(r.get("article_count") or 0)
-        avg_reliability = r.get("avg_reliability")
+        cc = r["country_code"]
+        if cc == "XX":
+            continue
         tc = r["total_claims"] or 0
         disp = r.get("disputed", 0) or 0
         unver = r.get("unverified", 0) or 0
         ratio = round((disp + unver) / tc, 3) if tc > 0 else 0.0
-        score = _compute_climate_risk_score(
-            article_count=article_count,
-            claim_count=tc,
-            risky_claim_count=disp + unver,
-            avg_reliability=avg_reliability,
-        )
+        # Physical risk from projected warming; None → frontend renders grey.
+        score = warming_risk.get(cc)
 
         # Top risk categories
         top_risks: List[str] = []

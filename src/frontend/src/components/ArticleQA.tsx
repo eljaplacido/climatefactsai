@@ -182,24 +182,24 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
     (contentCategory && CATEGORY_QUESTIONS[contentCategory]) || DEFAULT_QUESTIONS;
 
   return (
-    <section className="border border-gray-200 rounded-xl overflow-hidden">
+    <section className="border border-gray-200 dark:border-slate-700 dark:bg-slate-900 rounded-xl overflow-hidden">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between px-5 py-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+        className="w-full flex items-center justify-between px-5 py-4 bg-gray-50 dark:bg-slate-800/60 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
       >
-        <div className="flex items-center gap-2 text-gray-700">
+        <div className="flex items-center gap-2 text-gray-700 dark:text-slate-200">
           <MessageCircle className="h-5 w-5 text-clilens-primary" />
           <span className="font-semibold text-sm">Ask about this article</span>
           {conversations.length > 0 && (
-            <span className="text-xs bg-clilens-primary/10 text-teal-700 px-2 py-0.5 rounded-full">
+            <span className="text-xs bg-clilens-primary/10 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300 px-2 py-0.5 rounded-full">
               {conversations.length}
             </span>
           )}
         </div>
         {isExpanded ? (
-          <ChevronUp className="h-4 w-4 text-gray-400" />
+          <ChevronUp className="h-4 w-4 text-gray-400 dark:text-slate-500" />
         ) : (
-          <ChevronDown className="h-4 w-4 text-gray-400" />
+          <ChevronDown className="h-4 w-4 text-gray-400 dark:text-slate-500" />
         )}
       </button>
 
@@ -238,12 +238,12 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
                   {/* AI answer with markdown rendering */}
                   {entry.answer ? (
                     <div className="flex justify-start">
-                      <div className="max-w-[80%] bg-gray-100 rounded-xl rounded-bl-sm px-4 py-2 text-sm text-gray-800">
-                        <div className="prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2">
+                      <div className="max-w-[80%] bg-gray-100 dark:bg-slate-800 rounded-xl rounded-bl-sm px-4 py-2 text-sm text-gray-800 dark:text-slate-100">
+                        <div className="prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-headings:my-2">
                           <Markdown content={entry.answer} />
                         </div>
                         {entry.confidence > 0 && (
-                          <p className="mt-1 text-[10px] text-gray-400">
+                          <p className="mt-1 text-[10px] text-gray-400 dark:text-slate-500">
                             Confidence: {Math.round(entry.confidence * 100)}%
                           </p>
                         )}
@@ -251,8 +251,8 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
                     </div>
                   ) : (
                     <div className="flex justify-start">
-                      <div className="bg-gray-100 rounded-xl px-4 py-2">
-                        <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                      <div className="bg-gray-100 dark:bg-slate-800 rounded-xl px-4 py-2">
+                        <Loader2 className="h-4 w-4 animate-spin text-gray-400 dark:text-slate-500" />
                       </div>
                     </div>
                   )}
@@ -265,13 +265,13 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
           {/* Suggested questions (initial state) */}
           {conversations.length === 0 && !isLoading && (
             <div className="space-y-2">
-              <p className="text-xs text-gray-500">Suggested questions:</p>
+              <p className="text-xs text-gray-500 dark:text-slate-400">Suggested questions:</p>
               <div className="flex flex-wrap gap-2">
                 {suggestedQuestions.map((sq) => (
                   <button
                     key={sq}
                     onClick={() => handleAsk(sq)}
-                    className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-full transition-colors"
+                    className="text-xs bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-300 px-3 py-1.5 rounded-full transition-colors"
                   >
                     {sq}
                   </button>
@@ -283,13 +283,13 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
           {/* Follow-up suggestions (after an answer) */}
           {followUpSuggestions.length > 0 && !isLoading && (
             <div className="space-y-2">
-              <p className="text-xs text-gray-500">Follow up:</p>
+              <p className="text-xs text-gray-500 dark:text-slate-400">Follow up:</p>
               <div className="flex flex-wrap gap-2">
                 {followUpSuggestions.map((sq) => (
                   <button
                     key={sq}
                     onClick={() => handleAsk(sq)}
-                    className="inline-flex items-center gap-1 text-xs bg-clilens-primary/5 hover:bg-clilens-primary/10 text-teal-700 border border-clilens-primary/20 px-3 py-1.5 rounded-full transition-colors"
+                    className="inline-flex items-center gap-1 text-xs bg-clilens-primary/5 dark:bg-teal-500/10 hover:bg-clilens-primary/10 dark:hover:bg-teal-500/20 text-teal-700 dark:text-teal-300 border border-clilens-primary/20 dark:border-teal-500/30 px-3 py-1.5 rounded-full transition-colors"
                   >
                     <ArrowRight className="h-3 w-3" />
                     {sq}
@@ -304,7 +304,7 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
             <div className="flex gap-2">
               <button
                 onClick={() => handleAsk("Give me a deep dive on the most significant claim")}
-                className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-clilens-primary border border-gray-200 hover:border-clilens-primary/30 px-3 py-1.5 rounded-lg transition-colors"
+                className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-slate-400 hover:text-clilens-primary dark:hover:text-teal-300 border border-gray-200 dark:border-slate-700 hover:border-clilens-primary/30 px-3 py-1.5 rounded-lg transition-colors"
               >
                 <Search className="h-3 w-3" />
                 Deep dive
@@ -312,7 +312,7 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
               {claims && claims.length > 0 && (
                 <button
                   onClick={() => handleAsk("Find similar articles covering these claims")}
-                  className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-clilens-primary border border-gray-200 hover:border-clilens-primary/30 px-3 py-1.5 rounded-lg transition-colors"
+                  className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-slate-400 hover:text-clilens-primary dark:hover:text-teal-300 border border-gray-200 dark:border-slate-700 hover:border-clilens-primary/30 px-3 py-1.5 rounded-lg transition-colors"
                 >
                   <Search className="h-3 w-3" />
                   Find similar articles
@@ -323,7 +323,7 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
 
           {/* Error display */}
           {error && (
-            <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
+            <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-300 bg-red-50 dark:bg-red-950/40 rounded-lg px-3 py-2">
               <AlertCircle className="h-4 w-4 flex-shrink-0" />
               <span>{error}</span>
             </div>
@@ -340,7 +340,7 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
                 placeholder={scope === "article"
                   ? "Ask about this article..."
                   : "Ask with platform research scope..."}
-                className="flex-1 border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-clilens-primary focus:border-transparent outline-none"
+                className="flex-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-clilens-primary focus:border-transparent outline-none"
                 disabled={isLoading}
                 maxLength={500}
               />
@@ -357,13 +357,13 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
               </button>
             </div>
             <div className="flex items-center gap-1 text-xs">
-              <span className="text-gray-400">Context:</span>
+              <span className="text-gray-400 dark:text-slate-500">Context:</span>
               <button
                 onClick={() => setScope("article")}
                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border ${
                   scope === "article"
-                    ? "bg-clilens-primary/10 text-teal-700 border-clilens-primary/30"
-                    : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
+                    ? "bg-clilens-primary/10 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300 border-clilens-primary/30 dark:border-teal-500/40"
+                    : "bg-gray-50 dark:bg-slate-800 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-700 hover:bg-gray-100 dark:hover:bg-slate-700"
                 }`}
               >
                 <FileText className="h-3 w-3" />
@@ -373,8 +373,8 @@ export default function ArticleQA({ articleId, articleTitle, contentCategory, cl
                 onClick={() => setScope("external")}
                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border ${
                   scope === "external"
-                    ? "bg-clilens-primary/10 text-teal-700 border-clilens-primary/30"
-                    : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
+                    ? "bg-clilens-primary/10 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300 border-clilens-primary/30 dark:border-teal-500/40"
+                    : "bg-gray-50 dark:bg-slate-800 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-700 hover:bg-gray-100 dark:hover:bg-slate-700"
                 }`}
               >
                 <Globe className="h-3 w-3" />

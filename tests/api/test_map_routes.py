@@ -203,6 +203,10 @@ def _make_country_db(*, countries: Optional[List[Dict[str, Any]]] = None):
             }]
         if "select count(*) as cnt" in q and "from countries" in q and "enabled = true" in q:
             return [{"cnt": 2}]
+        if "from country_projections" in q and "where scenario" in q:
+            # Warming-risk batch (fetch_warming_risk_map): SSP2-4.5 @ 2050.
+            # 2.8°C → (2.8-1.5)/(5.0-1.5)*10 = 3.7 physical-risk score.
+            return [{"country_code": "FI", "temp_anomaly_c": 2.8}]
         if "from country_projections" in q and "where country_code = :cc" in q:
             if cc != "FI":
                 return []
@@ -343,39 +347,23 @@ class TestCountryStats:
 
 
 class TestClimateRiskLayer:
-    def test_layer_returns_dense_scores_even_without_claims(self, client, map_db):
+    def test_layer_risk_score_derives_from_projected_warming(self, client, map_db):
+        """Physical climate risk = projected warming (SSP2-4.5, 2050), NOT
+        article volume (2026-06-29). FI's 2.8°C projection → 3.7/10 regardless
+        of claim counts. claim_count / disputed_ratio remain as context."""
         from api import map_routes
 
         map_routes._cache.clear()
-        original = map_db.execute_query.side_effect
-
-        def _side_effect(query, params=None):
-            q = " ".join(query.split()).lower()
-            if (
-                "count(distinct a.article_id) as article_count" in q
-                and "count(c.claim_id) as total_claims" in q
-                and "group by a.country_code" in q
-            ):
-                return [{
-                    "country_code": "FI",
-                    "article_count": 9,
-                    "avg_reliability": 82.0,
-                    "total_claims": 0,
-                    "disputed": 0,
-                    "unverified": 0,
-                }]
-            return original(query, params)
-
-        map_db.execute_query.side_effect = _side_effect
 
         resp = client.get("/api/map/layers/climate-risk")
         assert resp.status_code == 200, resp.text
         data = resp.json()
         assert len(data) == 1
         assert data[0]["country_code"] == "FI"
-        assert data[0]["claim_count"] == 0
-        assert data[0]["disputed_ratio"] == 0.0
-        assert data[0]["risk_score"] > 0
+        # (2.8 - 1.5) / (5.0 - 1.5) * 10 = 3.714 → 3.7
+        assert data[0]["risk_score"] == 3.7
+        assert "claim_count" in data[0]
+        assert "disputed_ratio" in data[0]
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,4 @@
 import json
-import math
 import time
 from datetime import datetime, date
 from typing import Any, Dict, List, Optional
@@ -34,35 +33,75 @@ def _country_region(cc: str) -> Optional[str]:
     return None
 
 
-def _reliability_risk_component(avg_reliability: Optional[float]) -> float:
-    """Convert average reliability into a small additive risk component."""
-    if avg_reliability is None:
-        return 1.2
-
-    rel = max(0.0, min(100.0, float(avg_reliability)))
-    return max(0.0, min(3.0, (70.0 - rel) / 10.0))
+# The article-volume `_compute_climate_risk_score` / `_reliability_risk_component`
+# were removed (2026-06-30): physical climate risk now derives from projected
+# warming everywhere (choropleth, /country-stats, /detail, /compare). The
+# duplicate is gone for good — see `warming_to_risk_score` below.
 
 
-def _compute_climate_risk_score(
-    article_count: int,
-    claim_count: int,
-    risky_claim_count: int,
-    avg_reliability: Optional[float],
-) -> float:
-    """Compute a dense 0-10 climate risk score for map coloring."""
-    art = max(int(article_count or 0), 0)
-    claims = max(int(claim_count or 0), 0)
-    risky = max(int(risky_claim_count or 0), 0)
+# ---------------------------------------------------------------------------
+# Physical climate risk (Phase 1) — derived from projected warming, NOT
+# article volume. Uses IPCC AR6 SSP2-4.5 warming at 2050 from
+# `country_projections` (migration 035). This replaces the article-volume
+# proxy as the score that colours the map's "Climate Risk" layer so the layer
+# means hazard, not media coverage.
+# ---------------------------------------------------------------------------
 
-    volume_component = min(4.0, math.log1p(art) * 1.15)
-    claim_component = min(2.5, math.log1p(claims) * 0.9)
-    risky_ratio_component = min(2.5, (risky / claims) * 5.0) if claims > 0 else 0.0
-    reliability_component = _reliability_risk_component(avg_reliability)
+WARMING_RISK_SCENARIO = "SSP2-4.5"
+WARMING_RISK_HORIZON_YEAR = 2050
+# Map a projected warming anomaly (°C) onto a 0-10 hazard band. 1.5°C (Paris
+# floor) → 0; 5.0°C (high-end regional warming) → 10.
+WARMING_RISK_FLOOR_C = 1.5
+WARMING_RISK_CEILING_C = 5.0
 
-    return round(
-        min(10.0, volume_component + claim_component + risky_ratio_component + reliability_component),
-        1,
-    )
+
+def warming_to_risk_score(temp_anomaly_c: Optional[float]) -> Optional[float]:
+    """Convert a projected warming anomaly (°C) into a 0-10 physical-risk score.
+
+    Returns None when no projection is available so callers can render a
+    distinct "no data" colour instead of a misleading low/zero risk.
+    """
+    if temp_anomaly_c is None:
+        return None
+    try:
+        anomaly = float(temp_anomaly_c)
+    except (TypeError, ValueError):
+        return None
+    span = WARMING_RISK_CEILING_C - WARMING_RISK_FLOOR_C
+    score = (anomaly - WARMING_RISK_FLOOR_C) / span * 10.0
+    return round(max(0.0, min(10.0, score)), 1)
+
+
+def fetch_warming_risk_map(
+    db,
+    scenario: str = WARMING_RISK_SCENARIO,
+    horizon_year: int = WARMING_RISK_HORIZON_YEAR,
+) -> Dict[str, Optional[float]]:
+    """Per-country physical climate-risk scores from `country_projections`.
+
+    Reads SSP2-4.5 warming at the given horizon and maps it to 0-10.
+    Excludes the invalid placeholder country code 'XX'. Returns an empty map
+    (callers fall back to None → grey) if the table is unavailable.
+    """
+    out: Dict[str, Optional[float]] = {}
+    try:
+        rows = db.execute_query(
+            """
+            SELECT country_code, temp_anomaly_c
+            FROM country_projections
+            WHERE scenario = :scenario AND horizon_year = :horizon
+            """,
+            {"scenario": scenario, "horizon": horizon_year},
+        )
+    except Exception as exc:
+        logger.warning(f"Warming-risk projection fetch failed: {exc}")
+        return out
+    for r in (rows or []):
+        cc = r.get("country_code")
+        if not cc or cc == "XX":
+            continue
+        out[cc] = warming_to_risk_score(r.get("temp_anomaly_c"))
+    return out
 
 
 # ---------------------------------------------------------------------------

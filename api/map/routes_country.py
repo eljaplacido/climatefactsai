@@ -5,9 +5,8 @@ from fastapi import APIRouter, HTTPException, Query
 
 from .models import (CountryDetail, WeatherInfo, ArticleBrief, TrendPoint,
                      ClimateDataPoint, CountryClimateData, CountryCompanyItem, REGION_COUNTRIES)
-from .services import (_get_country_names, _country_region, _compute_climate_risk_score,
-                       _reliability_risk_component, _fetch_current_weather,
-                       _fetch_historical_weather)
+from .services import (_get_country_names, _country_region, fetch_warming_risk_map,
+                       _fetch_current_weather, _fetch_historical_weather)
 from .cache import _cache_get, _cache_set
 from shared.database import get_postgres
 from shared.logger import setup_logging
@@ -202,14 +201,11 @@ async def get_country_detail(cc: str):
     except Exception:
         pass
 
-    # seq-11: same risk formula as /compare + the choropleth layer so the panel's
-    # risk card matches the map coloring (was always 0/10 — field never returned).
-    climate_risk_score = _compute_climate_risk_score(
-        article_count=total,
-        claim_count=total_claims,
-        risky_claim_count=disputed_count,
-        avg_reliability=avg_cred,
-    )
+    # Physical climate risk = projected warming (IPCC AR6 SSP2-4.5, 2050) —
+    # the SAME source as /compare + the choropleth layer (2026-06-30), so the
+    # panel's risk card matches the map coloring. None when no AR6 projection
+    # exists (panel renders "no data"/grey, not a misleading 0/10).
+    climate_risk_score = fetch_warming_risk_map(db).get(cc)
 
     return CountryDetail(
         country_code=cc,

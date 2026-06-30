@@ -45,17 +45,19 @@ const STEPS: Step[] = [
   {
     title: "Layer 2 — Temperature anomaly",
     body:
-      "Live deviation from the 1991-2020 baseline. Arctic countries warm "
-      + "2-3× faster than the global average — visible immediately on this layer.",
+      "Live deviation from the same month last year — provisional, "
+      + "year-over-year (not a 30-year baseline). Countries with no live "
+      + "reading show as grey. Arctic countries still warm 2-3× faster than "
+      + "the global average, visible immediately here.",
     icon: <Thermometer className="w-6 h-6 text-red-600" />,
     highlightSelector: '[data-testid="map-layer-temperature_anomaly"]',
   },
   {
     title: "Layer 3 — Climate risk score",
     body:
-      "Composite of physical-risk indicators (ND-GAIN, Climate TRACE). "
-      + "Higher = more exposure. The business view uses this for IFRS S2 "
-      + "scenario planning.",
+      "Projected warming by 2050 under IPCC AR6 SSP2-4.5 (middle path). "
+      + "Higher = more physical climate risk — this is hazard, not media "
+      + "coverage. Countries without an AR6 projection show as grey.",
     icon: <AlertTriangle className="w-6 h-6 text-amber-600" />,
     highlightSelector: '[data-testid="map-layer-climate_risk"]',
   },

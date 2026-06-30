@@ -2,7 +2,7 @@
 from typing import List, Optional, Any, Dict
 from fastapi import APIRouter, HTTPException, Query
 from .models import CompareResponse, TimelineEntry, CountryComparison, REGION_COUNTRIES
-from .services import _get_country_names
+from .services import _get_country_names, fetch_warming_risk_map
 from shared.database import get_postgres
 from shared.logger import setup_logging
 
@@ -24,6 +24,10 @@ async def compare_countries(
 
     db = get_postgres()
     country_names = _get_country_names(db)
+    # Physical climate risk = projected warming (IPCC AR6 SSP2-4.5, 2050) —
+    # the SAME source as /detail + the choropleth layer (2026-06-30). Fetched
+    # once for all compared countries. None when no AR6 projection exists.
+    warming_risk = fetch_warming_risk_map(db)
     results: List[CountryComparison] = []
 
     for cc in codes:
@@ -53,22 +57,9 @@ async def compare_countries(
             """, {"cc": cc})
             category_breakdown = {r["content_category"]: r["cnt"] for r in (cat_rows or [])}
 
-            # Climate risk score (normalised 0-10)
-            risk_rows = db.execute_query("""
-                SELECT COUNT(c.claim_id) as total_claims,
-                       COUNT(CASE WHEN fc.verification_status
-                             IN ('FALSE','MISLEADING','LACKS_CONTEXT') THEN 1 END) as disputed
-                FROM claims c
-                JOIN articles a ON a.article_id = c.article_id
-                LEFT JOIN fact_checks fc ON fc.claim_id = c.claim_id
-                WHERE a.country_code = :cc
-            """, {"cc": cc})
-            risk_score = 0.0
-            if risk_rows and risk_rows[0]["total_claims"]:
-                tc = risk_rows[0]["total_claims"]
-                disp = risk_rows[0].get("disputed", 0) or 0
-                # Score: base from claim volume + penalty for disputed ratio
-                risk_score = round(min(10.0, (tc / 5.0) + (disp / max(tc, 1)) * 5), 1)
+            # Physical climate risk (0-10) from projected warming; None when no
+            # AR6 projection exists for this country.
+            risk_score = warming_risk.get(cc)
 
             # Green transition dimension scores (0-10 scale, 2 articles/point)
             def _cat_score(cat: str) -> float:
@@ -137,12 +128,16 @@ async def compare_countries(
         if top.avg_credibility:
             summary += f" with avg credibility {top.avg_credibility}"
         summary += "."
-        highest_risk = max(results, key=lambda r: r.climate_risk_score or 0)
-        if highest_risk.climate_risk_score and highest_risk.climate_risk_score > 0:
-            summary += (
-                f" {highest_risk.country_name} has the highest climate risk score "
-                f"({highest_risk.climate_risk_score}/10)."
-            )
+        # Only narrate physical risk over countries that actually have an AR6
+        # projection — skip the sentence entirely if none are scored.
+        scored = [r for r in results if r.climate_risk_score is not None]
+        if scored:
+            highest_risk = max(scored, key=lambda r: r.climate_risk_score or 0.0)
+            if (highest_risk.climate_risk_score or 0) > 0:
+                summary += (
+                    f" {highest_risk.country_name} has the highest physical climate "
+                    f"risk score ({highest_risk.climate_risk_score}/10)."
+                )
 
     return CompareResponse(
         countries=results,

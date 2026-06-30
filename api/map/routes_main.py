@@ -1,5 +1,4 @@
 """Map routes — country statistics, topic density, source coverage."""
-import math
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -7,6 +6,10 @@ from pydantic import BaseModel
 
 from shared.database import get_postgres
 from shared.logger import setup_logging
+# Physical climate risk derives from projected warming (IPCC AR6 SSP2-4.5,
+# 2050), not article volume. The old volume-based scorer has been removed
+# entirely (2026-06-30); `fetch_warming_risk_map` is the single source.
+from .services import fetch_warming_risk_map
 
 logger = setup_logging("map-api")
 router = APIRouter()
@@ -125,35 +128,8 @@ def _country_region(cc: str) -> Optional[str]:
     return None
 
 
-def _reliability_risk_component(avg_reliability: Optional[float]) -> float:
-    """Convert average reliability into a small additive risk component."""
-    if avg_reliability is None:
-        return 1.2
-
-    rel = max(0.0, min(100.0, float(avg_reliability)))
-    return max(0.0, min(3.0, (70.0 - rel) / 10.0))
-
-
-def _compute_climate_risk_score(
-    article_count: int,
-    claim_count: int,
-    risky_claim_count: int,
-    avg_reliability: Optional[float],
-) -> float:
-    """Compute a dense 0-10 climate risk score for map coloring."""
-    art = max(int(article_count or 0), 0)
-    claims = max(int(claim_count or 0), 0)
-    risky = max(int(risky_claim_count or 0), 0)
-
-    volume_component = min(4.0, math.log1p(art) * 1.15)
-    claim_component = min(2.5, math.log1p(claims) * 0.9)
-    risky_ratio_component = min(2.5, (risky / claims) * 5.0) if claims > 0 else 0.0
-    reliability_component = _reliability_risk_component(avg_reliability)
-
-    return round(
-        min(10.0, volume_component + claim_component + risky_ratio_component + reliability_component),
-        1,
-    )
+# Risk scoring (`fetch_warming_risk_map`) is imported from api/map/services.py
+# — see the import block at the top of this module. No local duplicates.
 
 
 # ---------------------------------------------------------------------------
@@ -242,34 +218,11 @@ async def get_country_stats(
 
         country_names = _get_country_names(db)
 
-        # Batch-fetch climate risk data for all countries (dense scoring, includes
-        # countries with zero extracted claims via article/reliability fallback).
-        risk_map: Dict[str, float] = {}
-        try:
-            risk_rows = db.execute_query("""
-                SELECT a.country_code,
-                       COUNT(DISTINCT a.article_id) as article_count,
-                       AVG(a.reliability_score) as avg_reliability,
-                       COUNT(c.claim_id) as claim_cnt,
-                       COUNT(CASE WHEN fc.verification_status
-                               IN ('FALSE','MISLEADING','LACKS_CONTEXT','DISPUTED','UNVERIFIED')
-                               THEN 1 END) as risky_cnt
-                FROM articles a
-                LEFT JOIN claims c ON c.article_id = a.article_id
-                LEFT JOIN fact_checks fc ON fc.claim_id = c.claim_id
-                WHERE a.country_code IS NOT NULL AND a.is_synthetic = FALSE AND a.is_off_topic = FALSE
-                GROUP BY a.country_code
-            """)
-            for rr in (risk_rows or []):
-                cc_r = rr["country_code"]
-                risk_map[cc_r] = _compute_climate_risk_score(
-                    article_count=int(rr.get("article_count") or 0),
-                    claim_count=int(rr.get("claim_cnt") or 0),
-                    risky_claim_count=int(rr.get("risky_cnt") or 0),
-                    avg_reliability=rr.get("avg_reliability"),
-                )
-        except Exception:
-            pass
+        # Physical climate risk = projected warming (IPCC AR6 SSP2-4.5, 2050),
+        # NOT article volume (2026-06-29). Countries without a projection get
+        # None → the frontend renders them as "no data" grey rather than a
+        # misleading low score. 'XX' is excluded inside fetch_warming_risk_map.
+        warming_risk: Dict[str, Optional[float]] = fetch_warming_risk_map(db)
 
         stats = []
         for row in (rows or []):
@@ -298,12 +251,6 @@ async def get_country_stats(
                 source_count = 1
 
             avg_reliability = row.get("avg_reliability")
-            fallback_risk = _compute_climate_risk_score(
-                article_count=article_count,
-                claim_count=0,
-                risky_claim_count=0,
-                avg_reliability=avg_reliability,
-            )
 
             stats.append(CountryStats(
                 country_code=cc,
@@ -315,7 +262,8 @@ async def get_country_stats(
                 last_updated=str(row["last_updated"]) if row.get("last_updated") else None,
                 avg_credibility_score=round(float(avg_reliability), 1) if avg_reliability is not None else None,
                 region=_country_region(cc),
-                climate_risk_score=risk_map.get(cc, fallback_risk),
+                # None for the ~7 countries without an AR6 projection → grey.
+                climate_risk_score=None if cc == "XX" else warming_risk.get(cc),
             ))
 
         return stats

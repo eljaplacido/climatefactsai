@@ -146,6 +146,11 @@ interface SelfAuditResponse {
   axes: SelfAuditAxis[];
   computed_at?: string;
   note?: string;
+  // Latest external audit benchmark, backend-sourced (honesty fix 2026-06-29).
+  last_audit_date?: string;
+  last_audit_score?: number;
+  last_audit_label?: string;
+  last_audit_report?: string;
 }
 
 async function fetchJson<T>(path: string): Promise<T | null> {
@@ -282,12 +287,33 @@ export default function MethodologyPage() {
               </div>
             </div>
             <div className="bg-white/80 dark:bg-slate-800/80 rounded-lg border border-amber-100 p-4">
-              <div className="text-xs uppercase tracking-wider text-amber-700 dark:text-amber-400 font-semibold mb-2">Last audited (End2End, 2026-06-14)</div>
-              <div className="text-3xl font-bold text-amber-600">3.55<span className="text-lg text-amber-400">/5</span></div>
+              <div className="text-xs uppercase tracking-wider text-amber-700 dark:text-amber-400 font-semibold mb-2">
+                Last external audit{selfAudit?.last_audit_date ? ` (${selfAudit.last_audit_date})` : ""}
+              </div>
+              <div className="text-3xl font-bold text-amber-600">
+                {selfAudit?.last_audit_score != null ? (
+                  <>{selfAudit.last_audit_score}<span className="text-lg text-amber-400">/5</span></>
+                ) : (
+                  <span className="text-2xl text-amber-400">—</span>
+                )}
+              </div>
               <div className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                Original E2E audit benchmark. The live composite (left) now drives from
-                backend data and updates on every page load — it replaces the previously
-                hardcoded 4.78 self-claim and the stale 2026-05-27 audit date.
+                {selfAudit?.last_audit_label || "Latest multi-agent production-readiness audit benchmark."}{" "}
+                The live composite (left) drives from backend data and updates on every
+                page load.
+                {selfAudit?.last_audit_report && (
+                  <>
+                    {" "}
+                    <a
+                      href={selfAudit.last_audit_report}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline hover:text-amber-900 dark:hover:text-amber-200"
+                    >
+                      Read the report <ExternalLink className="inline w-3 h-3" />
+                    </a>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -355,25 +381,25 @@ export default function MethodologyPage() {
           </div>
 
           <div className="text-sm text-gray-600 dark:text-slate-400 bg-white/80 dark:bg-slate-800/80 rounded border border-gray-200 dark:border-slate-700 p-3">
-            <strong className="text-gray-900 dark:text-slate-100">Last audited composite (2026-05-27):</strong> ~3.55/5
-            by the End2End audit, up from 3.05 the day before. That wave closed
-            the three biggest residual gaps: multi-claim extraction yield
-            (prompt v1.1 targets 3-8 instead of "up to N"), spaCy NER entity
-            grounding (now downloaded in the API Dockerfile rather than silently
-            degrading to regex), and external citation credibility (Perplexity
-            URLs annotated with tier). Trust work has continued since — see the
-            "Since the audit" card below — but those gains are not yet reflected
-            in a re-graded score, so the audited figure stands until the next
-            audit. Calibration label volume + ND-GAIN integration + full
-            transition-risk scoring remain the highest-leverage open items — see{" "}
+            <strong className="text-gray-900 dark:text-slate-100">Last audited composite (2026-06-26):</strong> ~3.0/5
+            by the 36-agent Production-Readiness Audit (10 dimensions, adversarial
+            verification of every P0/P1). It graded the platform as a substantial,
+            real system whose blocker set was auth/cost/correctness rather than
+            architecture; that session fixed 13 of 17 verified blockers (SQLi,
+            unauthenticated LLM-cost sinks, ingest SSRF, the CI deploy-gate crash,
+            premium-gate + saved-search 500s, GDPR delete/export). The fix rows
+            below predate this audit and are kept as a per-axis change log;
+            calibration label volume, the reliability-scorer split-brain, and
+            full transition-risk scoring remain the highest-leverage open items —
+            see{" "}
             <a
-              href="https://github.com/eljaplacido/climatefactsai/blob/main/docs/improvementplans/End2End-Audit-Benchmark-2026-05-27.md"
+              href="https://github.com/eljaplacido/climatefactsai/blob/main/docs/improvementplans/Production-Readiness-Audit-2026-06-26.md"
               target="_blank" rel="noreferrer"
               className="text-teal-700 dark:text-teal-400 hover:underline"
             >
-              End2End Audit Benchmark 2026-05-27 <ExternalLink className="inline w-3 h-3" />
+              Production-Readiness Audit 2026-06-26 <ExternalLink className="inline w-3 h-3" />
             </a>{" "}
-            for the file-level evidence per fix.
+            for the file-level evidence per finding.
           </div>
 
           <p className="text-xs text-gray-500 dark:text-slate-400 italic border-t border-teal-200 dark:border-teal-800 pt-3">

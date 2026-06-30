@@ -174,7 +174,10 @@ function getLayerColor(
       return "#99f6e4"; // teal-200
     }
     case "temperature_anomaly": {
-      const anomaly = stat.temperature_anomaly ?? 0;
+      // Null = no data — render slate, NOT 0/"normal" (2026-06-29). Coercing
+      // missing data to 0 painted data-less countries as a calm yellow.
+      const anomaly = stat.temperature_anomaly;
+      if (anomaly == null) return "#334155"; // slate-700 — no data
       if (anomaly > 3) return "#dc2626"; // red-600
       if (anomaly > 2) return "#f97316"; // orange-500
       if (anomaly > 1) return "#facc15"; // yellow-400
@@ -183,14 +186,16 @@ function getLayerColor(
       return "#3b82f6"; // blue-500
     }
     case "climate_risk": {
-      // Backend may provide 0-10 or legacy 0-100 risk values.
-      const rawRisk = stat.climate_risk_score ?? 0;
+      // Physical climate risk = projected warming (IPCC AR6 SSP2-4.5, 2050),
+      // 0-10. Null = no projection → grey (2026-06-29). 5-band hazard scale.
+      const rawRisk = stat.climate_risk_score;
+      if (rawRisk == null) return "#334155"; // slate-700 — no data
       const risk = rawRisk > 10 ? rawRisk / 10 : rawRisk;
-      if (risk >= 7) return "#dc2626";   // red-600 — extreme
-      if (risk >= 5) return "#f97316";   // orange-500 — high
-      if (risk >= 3) return "#facc15";   // yellow-400 — moderate
-      if (risk > 0) return "#86efac";    // green-300 — low
-      return "#334155";                   // slate-700 — no data
+      if (risk >= 8) return "#dc2626";   // red-600 — Severe
+      if (risk >= 6) return "#f97316";   // orange-500 — High
+      if (risk >= 4) return "#facc15";   // yellow-400 — Elevated
+      if (risk >= 2) return "#84cc16";   // lime-500 — Guarded
+      return "#22c55e";                   // green-500 — Low (0-2)
     }
     case "source_diversity": {
       const sources = stat.source_count ?? 0;

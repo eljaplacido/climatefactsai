@@ -844,3 +844,47 @@ class TestHallucinationRatesEndpoint:
             assert isinstance(body["overall"]["mean_risk"], (int, float))
         finally:
             self._restore(prior)
+
+
+# ---------------------------------------------------------------------------
+# /api/methodology/self-audit
+# ---------------------------------------------------------------------------
+
+class TestSelfAudit:
+    """The live composite must carry the latest external-audit benchmark so the
+    methodology page badge renders from the backend, not a hardcoded value
+    (honesty fix 2026-06-29)."""
+
+    def _swap_db(self, fake):
+        import shared.database as _shared_db
+        prior = _shared_db._postgres_client
+        _shared_db._postgres_client = fake
+        return prior
+
+    def _restore(self, prior):
+        import shared.database as _shared_db
+        _shared_db._postgres_client = prior
+
+    def test_payload_includes_last_audit_benchmark(self):
+        class _EmptyDB:
+            def execute_query(self, q, p=None):
+                return []
+
+        prior = self._swap_db(_EmptyDB())
+        try:
+            r = client.get("/api/methodology/self-audit")
+            assert r.status_code == 200, r.text
+            body = r.json()
+            # Live composite is still present and backend-driven.
+            assert "composite" in body
+            assert isinstance(body["axes"], list) and body["axes"]
+            # Last external audit benchmark surfaces honestly (~3.0, 2026-06-26)
+            # — never the previously hardcoded, overstated 3.55.
+            assert body["last_audit_date"] == "2026-06-26"
+            assert body["last_audit_score"] == 3.0
+            assert body["last_audit_score"] != 3.55
+            assert body["last_audit_report"].endswith(
+                "Production-Readiness-Audit-2026-06-26.md"
+            )
+        finally:
+            self._restore(prior)
