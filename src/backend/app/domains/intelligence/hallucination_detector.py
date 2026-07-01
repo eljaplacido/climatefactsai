@@ -29,6 +29,7 @@ class HallucinationDetector:
         generated_text: str,
         source_texts: List[str],
         source_metadata: Optional[List[Dict[str, Any]]] = None,
+        allow_empty_sources: bool = False,
     ) -> Dict[str, Any]:
         """
         Check generated text for hallucinations against source documents.
@@ -37,14 +38,29 @@ class HallucinationDetector:
             generated_text: The AI-generated text to verify.
             source_texts: List of source document texts for grounding.
             source_metadata: Optional metadata for each source.
+            allow_empty_sources: When True, still run the grounding checks even
+                if ``source_texts`` is empty (ML-04). The zero-evidence path is
+                the MOST hallucination-prone, yet the historical default of
+                returning an all-clear ``_empty_result()`` on empty sources meant
+                a confident, citation-free answer was never checked. With this
+                flag set, the text is graded against an EMPTY source set: any
+                specific entity/statistic it asserts is flagged as ungrounded,
+                while an honest "insufficient evidence" answer (no specifics)
+                scores low-risk and empty-flagged. Defaults to ``False`` so
+                every existing caller keeps its prior contract.
 
         Returns:
             Dict with hallucination risk, flagged segments, and scores.
         """
-        if not generated_text or not source_texts:
+        if not generated_text:
+            return self._empty_result()
+        if not source_texts and not allow_empty_sources:
             return self._empty_result()
 
-        # Run all checks
+        # Run all checks (source_texts may be [] when allow_empty_sources=True —
+        # the sub-checks degrade gracefully: entity/statistic overlap against an
+        # empty source set flags every specific claim, and the LLM grounding
+        # sub-check falls back to risk=0.5 when no key/response is available).
         entity_result = self._check_entity_overlap(generated_text, source_texts)
         statistic_result = self._check_statistics(generated_text, source_texts)
         llm_result = await self._llm_grounding_check(generated_text, source_texts)

@@ -130,25 +130,36 @@ _DEEP_SEARCH_SYNTHESIS_SYSTEM = (
 )
 
 
-# Phase 0 day 3 (2026-05-23, §3.3 fix). The standard synthesis prompt
-# assumes there's evidence to ground on; on low-evidence queries it would
-# either refuse ("no data available") OR hallucinate a confident answer.
-# Both fail the EU AI Act Art. 50 transparency requirement and our own
-# truth-machine framing. This prompt instead:
-#   - GENERATES an answer from general knowledge anyway (so users get
-#     something useful even when our corpus is thin)
+# Phase 0 day 3 (2026-05-23, §3.3 fix); reworked v2.0 (ML-04, 2026-07-01).
+# The standard synthesis prompt assumes there's evidence to ground on; on
+# low-evidence queries it would either refuse ("no data available") OR
+# hallucinate a confident answer. Both fail the EU AI Act Art. 50 transparency
+# requirement and our own truth-machine framing.
+#
+# v1.0 over-corrected: it told the model to "GENERATE an answer from general
+# knowledge anyway", which produced confident, citation-free factual prose
+# ("sea level rose ~21-24 cm since 1900") on zero-evidence queries — a
+# hallucination the platform then surfaced with citations:0 and an empty
+# sources list (audit ML-04). v2.0 forbids asserting specific facts/numbers
+# when evidence is thin. Instead it:
+#   - LEADS with an explicit statement that the verified corpus + external
+#     search returned insufficient evidence
+#   - GROUNDS statements only in the retrieved sources shown (when any exist),
+#     with explicit attribution
+#   - FRAMES any general background as un-verified context (LOW/NONE grounding),
+#     never as an established finding
 #   - TAGS each sentence with HIGH/MEDIUM/LOW/NONE retrieval-grounding
 #   - WRAPS the answer in an explicit `confidence: low` envelope
-#   - SUGGESTS three refined queries the user can re-run
+#   - SUGGESTS refined queries the user can re-run
 #
 # Returns JSON, not markdown, so the caller can reliably parse the
 # sentence-grounding map and surface per-sentence pills in the UI.
 _DEEP_SEARCH_LOW_EVIDENCE_TEMPLATE = """\
-You are answering a climate research question but the verified corpus and
+You are answering a climate research question, but the verified corpus and the
 external research layer returned very thin evidence ({internal_count} internal
-articles, {external_count} external sources). Generate a calibrated answer
-anyway — DO NOT refuse — but stamp every sentence with how grounded it is in
-the retrieved evidence vs. your general training knowledge.
+articles, {external_count} external sources). This is a transparency-critical
+path: an honest "we could not find enough evidence" is REQUIRED, and inventing
+facts to fill the gap is a serious failure.
 
 USER QUERY: "{query}"
 
@@ -160,9 +171,23 @@ EXTERNAL RESEARCH (may be empty):
 {weather_section}
 ---
 
+HONESTY RULES (follow all of them):
+1. Do NOT state specific facts, numbers, dates, percentages, or statistics as
+   established findings. With this little retrieved evidence, asserting a figure
+   (e.g. "sea level rose 21 cm") would be a hallucination. If you have no
+   grounded number, do not produce one.
+2. OPEN by telling the user plainly that our verified corpus and external
+   search returned insufficient evidence to answer this question confidently.
+3. You MAY ground statements ONLY in the retrieved sources shown above, and
+   only when they are actually present — attribute them explicitly by name.
+4. If you add general background, frame it explicitly as widely-known context
+   that our evidence base did NOT verify for this query, and tag it LOW or
+   NONE. Never present un-retrieved knowledge as if it were grounded.
+5. Close with concrete next steps and refined queries.
+
 Return ONLY a valid JSON object with this exact shape:
 {{
-  "answer_markdown": "Your full markdown answer here, written for a curious general reader.",
+  "answer_markdown": "Markdown answer. Lead with the evidence gap; do NOT assert specific figures as fact.",
   "sentence_grounding": [
     {{"text": "First sentence of your answer.", "level": "HIGH|MEDIUM|LOW|NONE", "reason": "one short phrase"}},
     {{"text": "Second sentence...", "level": "...", "reason": "..."}}
@@ -173,20 +198,25 @@ Return ONLY a valid JSON object with this exact shape:
 }}
 
 Grounding-level rubric:
-- HIGH: the sentence restates a fact from the retrieved sources above
-- MEDIUM: the sentence reflects well-established consensus the model knows but the retrieval did not surface
-- LOW: the sentence is a reasonable inference but not directly verifiable from retrieval or strong general knowledge
-- NONE: the sentence is speculative, opinion, or framing — not a verifiable claim
+- HIGH: the sentence restates a fact taken directly from the retrieved sources above (attribute it).
+- MEDIUM: the sentence describes the platform's own state — the evidence gap itself (e.g. "our corpus returned no matching articles").
+- LOW: general background the model knows but retrieval did NOT verify — must be framed as unverified.
+- NONE: framing, caveats, or next-step guidance — not a verifiable factual claim.
 
-Make sentence_grounding entries cover every sentence in answer_markdown. Use 3-7 refined queries that would plausibly return strong evidence. Keep the answer under 250 words.
+Every sentence in answer_markdown MUST have a sentence_grounding entry. Use 3-7
+refined queries that would plausibly return strong evidence. Keep the answer
+under 200 words.
 """
 
 _DEEP_SEARCH_LOW_EVIDENCE_SYSTEM = (
-    "You are CliLens.AI's research assistant working under the platform's "
-    "transparency protocol. When evidence is thin, you provide a calibrated "
-    "low-confidence answer with per-sentence grounding tags rather than "
-    "refusing or hallucinating. Return STRICT JSON only — no prose, no "
-    "code fences, no commentary outside the JSON object."
+    "You are CliLens.AI's research assistant operating under a strict "
+    "transparency protocol for low-evidence queries. When the verified corpus "
+    "and external search return little or no evidence, you MUST say so plainly "
+    "and MUST NOT assert specific facts, numbers, or statistics as established "
+    "findings — doing so is a hallucination. Ground claims only in the retrieved "
+    "sources provided; frame any general background as explicitly unverified. "
+    "Return STRICT JSON only — no prose, no code fences, no commentary outside "
+    "the JSON object."
 )
 
 
@@ -331,26 +361,33 @@ PROMPTS: Dict[str, PromptTemplate] = {
     ),
     "deep_search_synthesis_low_evidence": PromptTemplate(
         name="deep_search_synthesis_low_evidence",
-        version="v1.0",
+        version="v2.0",
         template=_DEEP_SEARCH_LOW_EVIDENCE_TEMPLATE,
         system=_DEEP_SEARCH_LOW_EVIDENCE_SYSTEM,
         max_tokens=1200,
         temperature=0.2,
         description=(
             "Routed to instead of `deep_search_synthesis` when retrieval "
-            "returns < 3 total sources. Generates an answer despite the "
-            "evidence gap but tags every sentence with HIGH/MEDIUM/LOW/NONE "
-            "grounding so the UI can render per-sentence calibration pills. "
-            "Returns strict JSON with answer_markdown + sentence_grounding[] "
-            "+ suggested_refinements[]."
+            "returns < 3 total sources. Leads with an explicit insufficient-"
+            "evidence statement and MUST NOT assert specific facts/numbers as "
+            "grounded findings; any general background is tagged LOW/NONE as "
+            "unverified. Tags every sentence with HIGH/MEDIUM/LOW/NONE grounding "
+            "so the UI can render per-sentence calibration pills. Returns strict "
+            "JSON with answer_markdown + sentence_grounding[] + "
+            "suggested_refinements[]."
         ),
         rationale=(
-            "v1.0 added 2026-05-23 (Phase 0 day 3, §3.3 fix). Previously "
-            "the standard synthesis prompt was reused on weak-evidence "
-            "queries — producing either refusal copy ('no data available') "
-            "or hallucinated confidence with no per-sentence calibration. "
-            "Both fail EU AI Act Art. 50 transparency. The sentence-level "
-            "rubric is what makes 'honest answer despite gap' possible."
+            "v2.0 (2026-07-01, ML-04): v1.0 told the model to 'generate an "
+            "answer from general knowledge anyway', which produced confident, "
+            "citation-free factual prose on zero-evidence queries (e.g. 'sea "
+            "level rose ~21-24 cm since 1900' with citations:0) — a hallucination "
+            "the platform then surfaced as if grounded. v2.0 forbids asserting "
+            "specific facts/numbers when evidence is thin: it must lead with the "
+            "evidence gap, ground only in retrieved sources, and frame any "
+            "general background as explicitly unverified (LOW/NONE). Output "
+            "shape is unchanged so downstream parsing/rendering is unaffected. "
+            "v1.0 (2026-05-23, Phase 0 day 3 §3.3) first introduced the "
+            "sentence-level grounding rubric."
         ),
     ),
     "cynefin_classifier": PromptTemplate(

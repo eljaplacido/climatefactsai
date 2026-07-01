@@ -42,6 +42,119 @@ def _parse_jsonb(value) -> Any:
         return None
 
 
+# Provenance extraction_method slugs that correspond to the claim-extraction
+# pipeline step (see app.domains.intelligence.provenance).
+_EXTRACTION_METHODS = {
+    "article_ingestion_enrichment",
+    "url_analysis_claim_extraction",
+    "claim_extraction",
+}
+
+
+def _prov_step_description(row: Dict[str, Any]) -> str:
+    """Compact human-readable description of one provenance row's prompt +
+    retrieval provenance, e.g. "prompt 'claim_extraction' v1.2; fingerprint
+    ab12…; retrieval: none". Empty string if nothing recorded."""
+    parts: List[str] = []
+    pn = row.get("prompt_name")
+    if pn:
+        pv = row.get("prompt_version")
+        parts.append(f"prompt '{pn}'" + (f" {pv}" if pv else ""))
+    fp = row.get("prompt_fingerprint")
+    if fp:
+        parts.append(f"fingerprint {fp}")
+    rs = row.get("retrieval_strategy")
+    if rs:
+        parts.append(f"retrieval: {rs}")
+    return "; ".join(parts)
+
+
+def _build_methodology_from_provenance(
+    article_id: str,
+    prov_rows: List[Dict[str, Any]],
+    adjudicated_count: int,
+) -> Dict[str, Any]:
+    """Assemble the transparency methodology block from REAL provenance (ML-05).
+
+    The previous implementation hard-coded, for EVERY article: model
+    "Claude 3.5 Sonnet / DeepSeek", a fixed 5-source evidence list, and a
+    "Bayesian posterior with source prior" — none of which reflected reality
+    (real enrichment model is e.g. qwen2.5:7b-instruct/local-gx10; a 0-claim
+    article consulted none of those sources; the score is a weighted sum, not a
+    posterior). This version only describes pipeline steps that genuinely ran
+    for THIS article and marks the rest "not run for this article".
+    """
+    from shared.reliability_scorer import ReliabilityScorer as _RS
+
+    # Most-recent extraction provenance row for this article, if any.
+    extraction_row: Optional[Dict[str, Any]] = None
+    for r in prov_rows:
+        if (r.get("extraction_method") or "") in _EXTRACTION_METHODS:
+            extraction_row = r
+            break
+
+    methodology: Dict[str, Any] = {}
+
+    if extraction_row is not None:
+        desc = _prov_step_description(extraction_row)
+        methodology["claim_extraction"] = {
+            "method": "LLM atomic claim extraction",
+            "model": extraction_row.get("model_name") or "not recorded",
+            "description": (
+                "Claims were extracted from this article by the enrichment "
+                "pipeline. " + (desc + "." if desc else "")
+            ).strip(),
+        }
+    else:
+        methodology["claim_extraction"] = {
+            "method": "Not run for this article",
+            "description": (
+                "No claim-extraction provenance was recorded for this article. "
+                f"See the raw audit trail at /api/methodology/audit-trail/article/{article_id}."
+            ),
+        }
+
+    # Reliability scoring — the REAL computation behind the headline score. The
+    # previous stub mislabelled it a "Bayesian posterior with source prior"; it
+    # is in fact a deterministic weighted sum. Weights are imported so this can
+    # never drift from the live scorer.
+    methodology["reliability_scoring"] = {
+        "method": "Deterministic weighted sum",
+        "description": (
+            "The headline reliability score is a deterministic weighted sum of "
+            "three normalised (0-1) factors: source_credibility×{s:.2f} + "
+            "verified_claims×{c:.2f} + content_relevance×{r:.2f}. Full "
+            "disclosure at /api/methodology/credibility-scales."
+        ).format(
+            s=_RS.WEIGHT_SOURCE_CREDIBILITY,
+            c=_RS.WEIGHT_VERIFIED_CLAIMS,
+            r=_RS.WEIGHT_CONTENT_RELEVANCE,
+        ),
+    }
+
+    # Verdict adjudication — only claim it ran if claims were actually checked.
+    if adjudicated_count > 0:
+        methodology["verdict_adjudication"] = {
+            "method": "Per-claim evidence adjudication",
+            "description": (
+                f"{adjudicated_count} claim(s) from this article were checked "
+                "against retrieved evidence, producing per-claim verdicts and "
+                "confidence scores (see the Evidence Chains section)."
+            ),
+        }
+    else:
+        methodology["verdict_adjudication"] = {
+            "method": "Not run for this article",
+            "description": (
+                "No claims from this article have been fact-checked, so no "
+                "verdict adjudication ran. Nothing is asserted here that the "
+                "pipeline did not actually compute."
+            ),
+        }
+
+    return methodology
+
+
 @router.get("/{article_id}/transparency", response_model=TransparencyResponse)
 async def get_article_transparency(
     article_id: str,
@@ -57,6 +170,7 @@ async def get_article_transparency(
     article_rows = db.execute_query(
         """SELECT a.article_id, a.title, a.source_name, a.reliability_score,
                   a.overall_credibility, a.content_relevance_score,
+                  a.source_credibility_score, a.claims_count,
                   a.decomposed_confidence AS article_decomposed_confidence,
                   a.source_profile_id,
                   COALESCE(sc.overall_score, 0) as source_score,
@@ -74,24 +188,49 @@ async def get_article_transparency(
 
     art = article_rows[0]
 
-    # --- 1. Methodology (Record<string, MethodologyStep>) ---
-    methodology = {
-        "claim_extraction": {
-            "method": "LLM-based atomic decomposition",
-            "model": "Claude 3.5 Sonnet / DeepSeek",
-            "description": "Articles are decomposed into atomic, verifiable claims using structured prompting with claim categorisation (scientific, statistical, policy, anecdotal, predictive).",
-        },
-        "evidence_retrieval": {
-            "method": "Multi-source evidence aggregation",
-            "sources": ["Google Fact Check", "Climate Watch", "NASA GISS", "Open-Meteo", "Perplexity"],
-            "description": "Each claim is cross-referenced against multiple authoritative climate data sources to gather supporting and contradicting evidence.",
-        },
-        "verdict_adjudication": {
-            "method": "Bayesian posterior with source prior",
-            "model": "Claude 3.5 Sonnet / DeepSeek",
-            "description": "Evidence is weighed against claims using LLM reasoning with Guardian-lite policy checks, producing decomposed confidence scores and final verdicts.",
-        },
-    }
+    # --- 0. Real provenance + verdict counts (feed methodology + breakdown) ---
+    # (ML-05) Read the article's ACTUAL claim_provenance rows so the methodology
+    # reflects the model/prompt/retrieval that really ran, not a hard-coded stub.
+    try:
+        prov_rows = db.execute_query(
+            """SELECT extraction_method, model_name, prompt_name, prompt_version,
+                      prompt_fingerprint, retrieval_strategy, created_at
+               FROM claim_provenance
+               WHERE article_id = :aid
+               ORDER BY created_at DESC""",
+            {"aid": article_id},
+        ) or []
+    except Exception as exc:
+        logger.warning(f"claim_provenance lookup failed for {article_id}: {exc}")
+        prov_rows = []
+
+    # Verdict / fact-check counts. These also feed the reconciled reliability
+    # breakdown below so the displayed factors match the headline score.
+    try:
+        fc_rows = db.execute_query(
+            """SELECT
+                   COUNT(*) FILTER (WHERE fc.verification_status = 'VERIFIED') AS verified_count,
+                   COUNT(*) FILTER (WHERE fc.verification_status = 'FALSE') AS false_count,
+                   COUNT(*) FILTER (WHERE fc.verification_status = 'MISLEADING') AS misleading_count,
+                   COUNT(fc.claim_id) AS adjudicated_count
+               FROM claims c
+               LEFT JOIN fact_checks fc ON fc.claim_id = c.claim_id
+               WHERE c.article_id = :aid""",
+            {"aid": article_id},
+        ) or []
+    except Exception as exc:
+        logger.warning(f"fact_check aggregate failed for {article_id}: {exc}")
+        fc_rows = []
+    fc = fc_rows[0] if fc_rows else {}
+    verified_count = int(fc.get("verified_count") or 0)
+    false_count = int(fc.get("false_count") or 0)
+    misleading_count = int(fc.get("misleading_count") or 0)
+    adjudicated_count = int(fc.get("adjudicated_count") or 0)
+
+    # --- 1. Methodology (Record<string, MethodologyStep>) — from real provenance ---
+    methodology = _build_methodology_from_provenance(
+        article_id, prov_rows, adjudicated_count
+    )
 
     # --- 2. Claims with evidence chains ---
     claim_rows = db.execute_query(
@@ -160,49 +299,65 @@ async def get_article_transparency(
                 "overall": sum(d.get("overall", 0) for d in all_dc) / n,
             }
 
-    # --- 4. Reliability breakdown (from decomposed confidence factors) ---
-    reliability_breakdown = {}
-    if article_dc and isinstance(article_dc, dict):
-        factor_config = [
-            ("model_confidence", "AI Model Confidence", 0.20),
-            ("source_quality", "Source Quality", 0.30),
-            ("evidence_breadth", "Evidence Breadth", 0.20),
-            ("cross_reference_score", "Cross-Reference Score", 0.15),
-            ("temporal_relevance", "Temporal Relevance", 0.15),
-        ]
-        for key, label, weight in factor_config:
-            score = article_dc.get(key, 0)
-            reliability_breakdown[key] = {
-                "label": label,
-                "score": score,
-                "weight": weight,
-                "weighted_score": round(score * weight, 4),
-            }
-    else:
-        # Fallback: build from source credibility scores
-        source_score = art.get("source_score", 0) / 100.0
-        factual_score = art.get("factual_score", 0) / 100.0
-        transparency_val = art.get("transparency_score", 0) / 100.0
-        reliability_breakdown = {
-            "source_credibility": {
-                "label": "Source Credibility",
-                "score": source_score,
-                "weight": 0.40,
-                "weighted_score": round(source_score * 0.40, 4),
-            },
-            "factual_reporting": {
-                "label": "Factual Reporting",
-                "score": factual_score,
-                "weight": 0.35,
-                "weighted_score": round(factual_score * 0.35, 4),
-            },
-            "transparency": {
-                "label": "Transparency",
-                "score": transparency_val,
-                "weight": 0.25,
-                "weighted_score": round(transparency_val * 0.25, 4),
-            },
+    # --- 4. Reliability breakdown — reconciled with the headline score (ML-05/06) ---
+    # Built from the SAME components + weights that produce the article's
+    # reliability_score (source .50 / claims .30 / relevance .20) via the shared
+    # ReliabilityScorer.compute_components. The three weighted_scores sum to
+    # reliability_score/100, so the breakdown reconciles with the headline number
+    # and the documented formula — unlike the previous block, which displayed
+    # CARF factors (model_confidence / cross_reference / temporal_relevance) that
+    # matched neither the headline nor the formula and invented a 5th factor.
+    from shared.reliability_scorer import ReliabilityScorer
+
+    def _to_int(v) -> Optional[int]:
+        try:
+            return int(round(float(v)))
+        except (TypeError, ValueError):
+            return None
+
+    src_cred = _to_int(art.get("source_credibility_score"))
+    if src_cred is None and art.get("source_score"):
+        # Fall back to the joined source_credibility.overall_score (0-100).
+        src_cred = _to_int(art.get("source_score"))
+
+    rel_input = art.get("content_relevance_score")
+    try:
+        rel_input = float(rel_input) if rel_input is not None else None
+    except (TypeError, ValueError):
+        rel_input = None
+
+    # Best-effort 3-axis source scores (mirrors update_article_reliability) so the
+    # source component matches the stored headline as closely as possible.
+    editorial_axis = factcheck_axis = transparency_axis = None
+    try:
+        from app.domains.trust.source_tier_service import get_source_3axis_scores
+        axes = get_source_3axis_scores(db, art.get("source_name") or "", None)
+        if axes:
+            editorial_axis, factcheck_axis, transparency_axis = axes
+    except Exception as exc:
+        logger.debug(f"3-axis lookup failed for transparency {article_id}: {exc}")
+
+    _components = ReliabilityScorer.compute_components(
+        source_credibility_score=src_cred,
+        total_claims=int(art.get("claims_count") or 0),
+        verified_claims=verified_count,
+        false_claims=false_count,
+        misleading_claims=misleading_count,
+        content_relevance_score=rel_input,
+        editorial_score=editorial_axis,
+        factcheck_score=factcheck_axis,
+        transparency_score=transparency_axis,
+    )
+    reliability_breakdown = {
+        key: {
+            "label": comp["label"],
+            "score": comp["score"],
+            "weight": comp["weight"],
+            "weighted_score": comp["weighted_score"],
         }
+        for key, comp in _components.items()
+        if key != "raw_total"
+    }
 
     # --- 5. Source profile ---
     source_profile = {

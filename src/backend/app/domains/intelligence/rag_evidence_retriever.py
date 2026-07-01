@@ -66,7 +66,10 @@ class RAGEvidenceRetriever:
                 # claim-level corroboration — don't map article credibility to
                 # supports/contradicts. supports_claim stays None (neutral);
                 # a claim-vs-claim comparison is the tracked follow-up.
-                strategy_label = ", ".join(retrieval_sources) if retrieval_sources else "hybrid"
+                # Label from the ACTUAL contributing layers (semantic/fts/graph),
+                # never a hardcoded "hybrid" — semantic only appears here when the
+                # vector layer genuinely contributed (ML-02 honesty).
+                strategy_label = ", ".join(retrieval_sources) if retrieval_sources else "unknown"
 
                 evidence.append(Evidence(
                     source=f"Climatefacts.ai Corpus ({source_name})",

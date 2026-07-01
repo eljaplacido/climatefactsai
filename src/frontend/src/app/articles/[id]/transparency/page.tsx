@@ -983,13 +983,24 @@ export default function TransparencyPage() {
           )}
       </div>
 
-      {/* Footer disclaimer */}
-      <div className="mt-10 pt-4 border-t border-gray-100 mb-8">
+      {/* Footer disclaimer + raw audit trail link */}
+      <div className="mt-10 pt-4 border-t border-gray-100 mb-8 space-y-3">
         <p className="text-xs text-gray-400">
           This transparency report is auto-generated to provide full traceability of the AI analysis
-          pipeline. All source links point to the original evidence used during verification.
+          pipeline. The methodology above reflects the model, prompt, and retrieval that actually ran
+          for this article; steps with no recorded provenance are marked &ldquo;not run for this article&rdquo;.
           Metrics marked as &ldquo;not available&rdquo; are either pending analysis or do not have sufficient data for this article.
         </p>
+        <a
+          href={`${API_BASE}/api/methodology/audit-trail/article/${encodeURIComponent(articleId)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-clilens-primary hover:underline"
+        >
+          <GitBranch className="h-3.5 w-3.5" />
+          View raw provenance audit trail
+          <ExternalLink className="h-3 w-3" />
+        </a>
       </div>
     </div>
   );

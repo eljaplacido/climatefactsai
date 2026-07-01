@@ -106,6 +106,113 @@ class ReliabilityScorer:
     SOURCE_AXES_WEIGHT   = 0.4       # weight of mean(editorial, factcheck, transparency)
 
     @classmethod
+    def compute_components(
+        cls,
+        source_credibility_score: Optional[int] = None,
+        total_claims: int = 0,
+        verified_claims: int = 0,
+        false_claims: int = 0,
+        misleading_claims: int = 0,
+        content_relevance_score: Optional[float] = None,
+        editorial_score: Optional[int] = None,
+        factcheck_score: Optional[int] = None,
+        transparency_score: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Compute the three reliability components behind the headline score.
+
+        Single source of truth shared by `calculate_reliability_score` (which
+        just rounds `raw_total`) and the per-article transparency endpoint
+        (ML-05/06). Because both read the SAME components + weights, the
+        displayed reliability breakdown reconciles with the headline number and
+        with the documented source .50 / claims .30 / relevance .20 formula —
+        instead of the previous transparency breakdown that invented CARF-style
+        factors (model_confidence / cross_reference / temporal_relevance)
+        matching neither the headline nor the formula.
+
+        Each component reports:
+          * ``score``          — normalised 0.0-1.0 factor score
+          * ``weight``         — its formula weight (the three sum to 1.0)
+          * ``weighted_score`` — score × weight (0.0-1.0); the three
+                                 weighted_scores sum to ``raw_total`` / 100
+          * ``points``         — its 0-100-scale contribution to ``raw_total``
+
+        ``raw_total`` is the un-rounded 0-100 reliability score; the headline is
+        ``int(round(raw_total))`` clamped to [0, 100].
+        """
+        # 1. Source Credibility Component (50%) — blended with 3-axis source
+        #    scoring when available (identical math to the headline path).
+        legacy = (
+            cls._normalize_score(source_credibility_score)
+            if source_credibility_score is not None
+            else 50.0
+        )
+        axes = [s for s in (editorial_score, factcheck_score, transparency_score) if s is not None]
+        if axes:
+            axes_mean = sum(cls._normalize_score(s) for s in axes) / len(axes)
+            blended_source = (
+                cls.SOURCE_LEGACY_WEIGHT * legacy
+                + cls.SOURCE_AXES_WEIGHT * axes_mean
+            )
+        else:
+            blended_source = legacy
+        source_norm = blended_source / 100.0
+        source_component = blended_source * cls.WEIGHT_SOURCE_CREDIBILITY
+
+        # 2. Verified Claims Ratio Component (30%)
+        if total_claims > 0:
+            verified_ratio = verified_claims / total_claims
+            false_ratio = false_claims / total_claims
+            misleading_ratio = misleading_claims / total_claims
+            claims_score = (
+                verified_ratio * 100.0
+                - false_ratio * 100.0
+                - misleading_ratio * 50.0
+            )
+            claims_score = max(0.0, min(100.0, claims_score))
+            density_factor = min(1.0, total_claims / float(cls.CLAIMS_FOR_FULL_CREDIT))
+            claims_component = claims_score * cls.WEIGHT_VERIFIED_CLAIMS * density_factor
+            claims_norm = (claims_score / 100.0) * density_factor
+        else:
+            claims_component = 0.0
+            claims_norm = 0.0
+
+        # 3. Content Relevance Component (20%)
+        if content_relevance_score is not None:
+            relevance_score = content_relevance_score * 100.0
+            relevance_component = relevance_score * cls.WEIGHT_CONTENT_RELEVANCE
+            relevance_norm = max(0.0, min(1.0, float(content_relevance_score)))
+        else:
+            relevance_component = 60.0 * cls.WEIGHT_CONTENT_RELEVANCE
+            relevance_norm = 0.60
+
+        raw_total = source_component + claims_component + relevance_component
+
+        return {
+            "source_credibility": {
+                "label": "Source Credibility",
+                "score": round(source_norm, 4),
+                "weight": cls.WEIGHT_SOURCE_CREDIBILITY,
+                "weighted_score": round(source_norm * cls.WEIGHT_SOURCE_CREDIBILITY, 4),
+                "points": round(source_component, 4),
+            },
+            "verified_claims": {
+                "label": "Verified Claims",
+                "score": round(claims_norm, 4),
+                "weight": cls.WEIGHT_VERIFIED_CLAIMS,
+                "weighted_score": round(claims_norm * cls.WEIGHT_VERIFIED_CLAIMS, 4),
+                "points": round(claims_component, 4),
+            },
+            "content_relevance": {
+                "label": "Content Relevance",
+                "score": round(relevance_norm, 4),
+                "weight": cls.WEIGHT_CONTENT_RELEVANCE,
+                "weighted_score": round(relevance_norm * cls.WEIGHT_CONTENT_RELEVANCE, 4),
+                "points": round(relevance_component, 4),
+            },
+            "raw_total": raw_total,
+        }
+
+    @classmethod
     def calculate_reliability_score(
         cls,
         source_credibility_score: Optional[int] = None,
@@ -133,80 +240,24 @@ class ReliabilityScorer:
             Tuple of (reliability_score: int, credibility_level: str)
         """
 
-        # 1. Source Credibility Component (50%) — blended with 3-axis
-        #    source scoring when available.
-        legacy = (
-            cls._normalize_score(source_credibility_score)
-            if source_credibility_score is not None
-            else 50.0
+        # Components (source 50% / verified-claims 30% / relevance 20%) are
+        # computed by the shared `compute_components` helper so the headline
+        # score and the transparency breakdown can never drift (ML-05/06).
+        # See that method for the density-factor and no-claims-credit rationale.
+        components = cls.compute_components(
+            source_credibility_score=source_credibility_score,
+            total_claims=total_claims,
+            verified_claims=verified_claims,
+            false_claims=false_claims,
+            misleading_claims=misleading_claims,
+            content_relevance_score=content_relevance_score,
+            editorial_score=editorial_score,
+            factcheck_score=factcheck_score,
+            transparency_score=transparency_score,
         )
-        axes = [s for s in (editorial_score, factcheck_score, transparency_score) if s is not None]
-        if axes:
-            axes_mean = sum(cls._normalize_score(s) for s in axes) / len(axes)
-            blended_source = (
-                cls.SOURCE_LEGACY_WEIGHT * legacy
-                + cls.SOURCE_AXES_WEIGHT * axes_mean
-            )
-        else:
-            blended_source = legacy
-        source_component = blended_source * cls.WEIGHT_SOURCE_CREDIBILITY
 
-        # 2. Verified Claims Ratio Component (30%)
-        if total_claims > 0:
-            # Calculate verified ratio
-            verified_ratio = verified_claims / total_claims
-
-            # Penalize for false/misleading claims
-            false_ratio = false_claims / total_claims
-            misleading_ratio = misleading_claims / total_claims
-
-            # Weighted claims score
-            claims_score = (
-                verified_ratio * 100.0 -
-                false_ratio * 100.0 -
-                misleading_ratio * 50.0  # Misleading is less severe than false
-            )
-
-            # Clamp to 0-100
-            claims_score = max(0.0, min(100.0, claims_score))
-
-            # Slice 4 — claim-density factor. With CLAIMS_FOR_FULL_CREDIT=6:
-            #   1 claim  -> 0.17  (article gets ~17% of the claims weight)
-            #   3 claims -> 0.50
-            #   6+ claims -> 1.00 (full claims weight)
-            # An article with 1/1 verified used to add 30 raw points to
-            # the headline number; it now adds ~5. Combined with the
-            # HIGH-cap in _determine_credibility_level it produces an
-            # honest "Limited evidence — Medium credibility" label
-            # instead of the misleading "90% credibility, 1 claim".
-            density_factor = min(1.0, total_claims / float(cls.CLAIMS_FOR_FULL_CREDIT))
-            claims_component = claims_score * cls.WEIGHT_VERIFIED_CLAIMS * density_factor
-        else:
-            # No claims extracted/verified = no evidence assessed. The old
-            # neutral 60 (= 18 pts of the 30-pt claims weight) lifted EVERY
-            # empty-evidence article above the MEDIUM line, so a LOW verdict
-            # was unreachable and a top source could even reach HIGH despite
-            # zero evidence (2026-06-09 Data-Layer audit — "verdict
-            # meaningfulness"). Award no verification credit: source +
-            # relevance alone now drive the score, so a weak source
-            # legitimately falls to LOW and an unverified article structurally
-            # cannot exceed MEDIUM (max 50 + 20 = 70). The 0.50 MEDIUM
-            # threshold is deliberately left untouched.
-            claims_component = 0.0
-
-        # 3. Content Relevance Component (20%)
-        if content_relevance_score is not None:
-            # Convert 0.0-1.0 to 0-100
-            relevance_score = content_relevance_score * 100.0
-            relevance_component = relevance_score * cls.WEIGHT_CONTENT_RELEVANCE
-        else:
-            # Default to neutral
-            relevance_component = 60.0 * cls.WEIGHT_CONTENT_RELEVANCE
-
-        # Calculate final reliability score
-        reliability_score = int(round(
-            source_component + claims_component + relevance_component
-        ))
+        # Calculate final reliability score (round the un-clamped total, then clamp)
+        reliability_score = int(round(components["raw_total"]))
 
         # Ensure score is in valid range
         reliability_score = max(0, min(100, reliability_score))

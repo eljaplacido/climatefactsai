@@ -206,27 +206,36 @@ class DeepSearchService:
         # statistic-verification checks run locally; the LLM-grounding
         # sub-check degrades to risk=0.5 gracefully when no LLM key is set.
         hallucination_check: Optional[Dict[str, Any]] = None
-        if include_hallucination_check:
+        if include_hallucination_check and synthesis:
             try:
-                if synthesis:
-                    source_texts: List[str] = []
-                    for art in internal_results or []:
-                        chunk = (
-                            f"{art.get('title', '')}\n{art.get('excerpt') or ''}".strip()
-                        )
-                        if chunk:
-                            source_texts.append(chunk)
-                    external_answer = perplexity_results.get("answer") if isinstance(perplexity_results, dict) else ""
-                    if external_answer:
-                        source_texts.append(external_answer)
+                source_texts: List[str] = []
+                for art in internal_results or []:
+                    chunk = (
+                        f"{art.get('title', '')}\n{art.get('excerpt') or ''}".strip()
+                    )
+                    if chunk:
+                        source_texts.append(chunk)
+                external_answer = perplexity_results.get("answer") if isinstance(perplexity_results, dict) else ""
+                if external_answer:
+                    source_texts.append(external_answer)
 
-                    if source_texts:
-                        from app.domains.intelligence.hallucination_detector import (
-                            HallucinationDetector,
-                        )
+                # ML-04: run the grounding check EVEN WHEN there are no source
+                # texts. The old `if source_texts:` guard skipped the check on
+                # exactly the zero/low-evidence path — the most hallucination-
+                # prone one — so a confident, citation-free answer went out
+                # ungraded (hallucination_check=null). `allow_empty_sources=True`
+                # grades the answer against an empty source set: an honest
+                # "insufficient evidence" answer (no specifics) scores low-risk,
+                # while any asserted number/entity is flagged. The real result
+                # (never null on this path) is surfaced in methodology below.
+                from app.domains.intelligence.hallucination_detector import (
+                    HallucinationDetector,
+                )
 
-                        detector = HallucinationDetector(self.db)
-                        hallucination_check = await detector.check(synthesis, source_texts)
+                detector = HallucinationDetector(self.db)
+                hallucination_check = await detector.check(
+                    synthesis, source_texts, allow_empty_sources=True
+                )
             except Exception as exc:
                 logger.warning(f"Hallucination check failed; continuing without it: {exc}")
                 hallucination_check = None
@@ -252,15 +261,66 @@ class DeepSearchService:
         except Exception as exc:
             logger.debug(f"Prompt registry lookup failed (non-fatal): {exc}")
 
+        # ML-04 fix #3 — record a per-layer status so the methodology can
+        # DISTINGUISH "the provider/search failed" from "the search ran and
+        # found no matching evidence". Reporting only hits=0 conflated the two
+        # (a caller couldn't tell an errored external call from a clean miss).
+        internal_layer_status = "error" if internal_error else "ok"
+        if platform_only:
+            external_layer_status = "skipped_platform_only"
+        elif not self.perplexity_key:
+            external_layer_status = "skipped_unconfigured"
+        elif external_error:
+            external_layer_status = "error"
+        else:
+            external_layer_status = "ok"
+
+        # ML-02 honesty: derive the ACTUAL internal retrieval mode from the rows
+        # that came back, not a hardcoded "fts+semantic". `_search_internal_corpus`
+        # tags each row with its `retrieval_layer`; the vector layer only produces
+        # rows when the bge-m3 query embedding succeeded AND returned matches this
+        # request. In prod the GX10 embedder is unreachable, so retrieval degrades
+        # to FTS — and the methodology must say FTS, not claim semantic/bge-m3 ran.
+        semantic_contributed = any(
+            isinstance(r, dict) and r.get("retrieval_layer") == "semantic"
+            for r in (internal_results or [])
+        )
+        if semantic_contributed:
+            internal_retrieval_mode = "semantic"
+            internal_desc = "internal_corpus(semantic)"
+        elif internal_count > 0:
+            internal_retrieval_mode = "fts"
+            internal_desc = "internal_corpus(fts)"
+        else:
+            internal_retrieval_mode = "none"
+            internal_desc = "internal_corpus(no_hits)"
+
         methodology = {
             "queries_run": [
-                {"layer": "internal_corpus", "scope": {"country": country, "category": category}, "hits": internal_count},
-                {"layer": "perplexity_external", "skipped": not bool(self.perplexity_key), "hits": external_count},
+                {
+                    "layer": "internal_corpus",
+                    "scope": {"country": country, "category": category},
+                    "hits": internal_count,
+                    # "ok" = ran and returned `hits`; "error" = the retrieval
+                    # call raised (hits=0 does NOT mean a clean zero result).
+                    "status": internal_layer_status,
+                    # "semantic" | "fts" | "none" — the layer that actually
+                    # produced the hits this request (ML-02 honesty).
+                    "retrieval_mode": internal_retrieval_mode,
+                },
+                {
+                    "layer": "perplexity_external",
+                    "skipped": external_layer_status.startswith("skipped"),
+                    "hits": external_count,
+                    # "ok" | "error" | "skipped_unconfigured" | "skipped_platform_only".
+                    # A 0-hit "error" is an outage, not evidence of absence.
+                    "status": external_layer_status,
+                },
             ],
             "retrieval_strategy": (
-                "internal_corpus(fts+semantic) + perplexity_external + weather_context"
+                f"{internal_desc} + perplexity_external + weather_context"
                 if weather_context
-                else "internal_corpus(fts+semantic) + perplexity_external"
+                else f"{internal_desc} + perplexity_external"
             ),
             "weather_used": bool(weather_context),
             # Honest provenance (audit INT-02): report the provider/model that
@@ -269,12 +329,19 @@ class DeepSearchService:
                 getattr(self, "_last_synthesis_model", None)
                 or ("anthropic" if self.anthropic_key else ("deepseek" if os.getenv("DEEPSEEK_API_KEY") else "none"))
             ),
-            # The live semantic path embeds with bge-m3 (1024-dim), not ada-002.
-            "embedding_model": "bge-m3",
+            # ML-02 honesty: only name the embedding model when the vector layer
+            # ACTUALLY contributed rows this request. Otherwise retrieval was
+            # full-text only — reporting "bge-m3" would assert a model/method that
+            # did not run. `semantic_retrieval_used` makes the signal explicit.
+            "embedding_model": ("bge-m3" if semantic_contributed else None),
+            "semantic_retrieval_used": semantic_contributed,
             "external_provider_configured": bool(self.perplexity_key),
             "sources_consulted": sorted({c.get("source_name") for c in citations if c.get("source_name")}),
-            # Hallucination check block (may be None if no sources were available
-            # or the detector errored — clients should treat absence as "not run").
+            # Hallucination grounding verdict. ML-04: now runs on the
+            # zero/low-evidence path too (allow_empty_sources), so it is
+            # populated whenever a synthesis was produced. None only when the
+            # check was disabled (include_hallucination_check=False) or the
+            # detector raised — clients treat absence as "not run".
             "hallucination_check": hallucination_check,
             # Phase 4 wave 1: versioned prompt fingerprints used during this answer.
             "prompts_used": prompts_used,
@@ -793,6 +860,11 @@ class DeepSearchService:
                         "published_date": str(r["published_date"]) if r.get("published_date") else None,
                         "excerpt": r.get("excerpt"),
                         "relevance_score": round(float(r.get("similarity", 0)), 4),
+                        # ML-02 honesty: tag the layer that actually produced this
+                        # row so the methodology can only assert semantic/bge-m3
+                        # when the vector layer genuinely contributed (the bge-m3
+                        # embedder is unreachable in prod, so this is usually FTS).
+                        "retrieval_layer": "semantic",
                     })
             except Exception as e:
                 logger.error(f"Internal corpus search failed: {e}")
@@ -848,6 +920,9 @@ class DeepSearchService:
                             "published_date": str(r["published_date"]) if r.get("published_date") else None,
                             "excerpt": r.get("excerpt"),
                             "relevance_score": round(float(r.get("text_rank", 0)), 4),
+                            # ML-02 honesty: FTS produced this row (semantic
+                            # returned nothing or the embedder was unavailable).
+                            "retrieval_layer": "fts",
                         })
                 except Exception as e:
                     logger.warning(f"FTS search ({tsq_func}) failed: {e}")

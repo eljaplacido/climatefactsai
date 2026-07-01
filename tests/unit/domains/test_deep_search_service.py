@@ -510,3 +510,154 @@ async def test_compare_strong_evidence_emits_no_guidance():
     # Structured comparative did NOT get a low_confidence tag
     assert "low_confidence" not in result["comparative_analysis_structured"] or \
         result["comparative_analysis_structured"].get("low_confidence") is not True
+
+
+# ---------------------------------------------------------------------------
+# ML-04 (2026-07-01) — zero-evidence deep-search must be honest, and the
+# hallucination grounding check MUST run on the empty-source path (it used to
+# be skipped there by an `if source_texts:` guard — the most hallucination-
+# prone path went out unchecked with hallucination_check=null).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_zero_evidence_search_is_honest_and_grounding_check_runs(monkeypatch):
+    """A zero-evidence query (0 internal, 0 external, no LLM configured) must:
+      * surface an explicit insufficient-evidence signal in the answer,
+      * NOT emit a confident fabricated factual claim, and
+      * carry a NON-NULL hallucination_check in methodology (proving the
+        grounding check ran even though there were no source texts)."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "")
+
+    # Keep the LLM grounding sub-check hermetic + offline.
+    from app.domains.intelligence import llm_client
+    monkeypatch.setattr(llm_client, "llm_chat", lambda **kwargs: "", raising=False)
+
+    service = DeepSearchService(_FakeDB())
+    service._search_internal_corpus = AsyncMock(return_value=[])
+    service._search_perplexity = AsyncMock(return_value={"answer": "", "citations": []})
+    service._suggest_scope_refinements = AsyncMock(return_value=["refine 1", "refine 2"])
+
+    result = await service.search("obscure query with no corpus coverage", country="TV")
+
+    answer = (result["answer"] or "").lower()
+    # Insufficient-evidence signal present.
+    assert (
+        "do not currently have verified evidence" in answer
+        or "insufficient" in answer
+        or "could not find" in answer
+    )
+    # No confident numeric/unit fabrication (the live bug surfaced "~21-24 cm").
+    assert " cm" not in answer and "°c" not in answer
+
+    # The grounding check RAN on the empty-source path: real, non-null verdict.
+    hcheck = result["methodology"]["hallucination_check"]
+    assert hcheck is not None
+    assert "hallucination_risk" in hcheck
+
+    # Methodology distinguishes an unconfigured/failed layer from a clean miss.
+    layers = {q["layer"]: q for q in result["methodology"]["queries_run"]}
+    assert layers["perplexity_external"]["status"] in {
+        "skipped_unconfigured", "skipped_platform_only", "error", "ok"
+    }
+
+
+@pytest.mark.asyncio
+async def test_detector_allow_empty_sources_flags_fabricated_statistic(monkeypatch):
+    """With allow_empty_sources=True the grounding check runs against an EMPTY
+    source set: a fabricated statistic is flagged and the verdict is real —
+    not the all-clear _empty_result the default (guarded) path returns."""
+    from unittest.mock import MagicMock
+
+    from app.domains.intelligence import llm_client
+    from app.domains.intelligence.hallucination_detector import HallucinationDetector
+
+    monkeypatch.setattr(llm_client, "llm_chat", lambda **kwargs: "", raising=False)
+
+    det = HallucinationDetector(db=MagicMock())
+
+    # Default preserves the historical all-clear contract on empty sources.
+    default_out = await det.check("Sea level rose 21 cm since 1900.", [])
+    assert default_out["hallucination_risk"] == 0.0
+    assert default_out["checks_performed"] == []
+
+    # Opt-in: the fabricated statistic is graded against the empty source set.
+    out = await det.check(
+        "Sea level rose 21 cm since 1900.", [], allow_empty_sources=True
+    )
+    assert out["checks_performed"]  # non-empty: checks actually ran
+    assert out["statistic_accuracy"] < 1.0  # "21" not found in (empty) sources
+    assert out["flagged_segments"]  # the unsupported statistic was flagged
+
+
+# ---------------------------------------------------------------------------
+# ML-02 (2026-07-01) — methodology honesty. The bge-m3 query embedder is
+# unreachable in prod (GX10 tunnel down), so the vector layer usually
+# contributes nothing. The methodology must NOT hardcode "bge-m3"/"fts+semantic"
+# — it may only claim semantic ran when the vector layer actually produced rows.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_methodology_reports_fts_only_when_semantic_absent(monkeypatch):
+    """Internal corpus returns FTS-layer rows (embedding unavailable / semantic
+    empty): methodology reports FTS-only, embedding_model is null, and it does
+    NOT claim bge-m3/semantic ran."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "")
+
+    service = DeepSearchService(_FakeDB())
+    service._search_internal_corpus = AsyncMock(return_value=[
+        {
+            "article_id": f"a{i}", "title": f"T{i}", "source_name": "Nature",
+            "excerpt": "renewable capacity grew", "retrieval_layer": "fts",
+            "relevance_score": 0.5,
+        }
+        for i in range(3)
+    ])
+    service._search_perplexity = AsyncMock(return_value={"answer": "", "citations": []})
+    service._synthesize_answer = AsyncMock(return_value="synthesis text")
+
+    result = await service.search(
+        "renewable energy", country="DE",
+        include_hallucination_check=False, include_refinements=False,
+    )
+    m = result["methodology"]
+    assert m["semantic_retrieval_used"] is False
+    assert m["embedding_model"] is None
+    assert "semantic" not in m["retrieval_strategy"]
+    assert "fts" in m["retrieval_strategy"]
+    internal_q = next(q for q in m["queries_run"] if q["layer"] == "internal_corpus")
+    assert internal_q.get("retrieval_mode") == "fts"
+
+
+@pytest.mark.asyncio
+async def test_methodology_reports_bge_m3_only_when_semantic_contributed(monkeypatch):
+    """When the vector layer genuinely produced rows, the methodology may name
+    bge-m3 / semantic — the honest positive case."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "")
+
+    service = DeepSearchService(_FakeDB())
+    service._search_internal_corpus = AsyncMock(return_value=[
+        {
+            "article_id": f"a{i}", "title": f"T{i}", "source_name": "Nature",
+            "excerpt": "renewable capacity grew", "retrieval_layer": "semantic",
+            "relevance_score": 0.82,
+        }
+        for i in range(3)
+    ])
+    service._search_perplexity = AsyncMock(return_value={"answer": "", "citations": []})
+    service._synthesize_answer = AsyncMock(return_value="synthesis text")
+
+    result = await service.search(
+        "renewable energy", country="DE",
+        include_hallucination_check=False, include_refinements=False,
+    )
+    m = result["methodology"]
+    assert m["semantic_retrieval_used"] is True
+    assert m["embedding_model"] == "bge-m3"
+    assert "semantic" in m["retrieval_strategy"]
+    internal_q = next(q for q in m["queries_run"] if q["layer"] == "internal_corpus")
+    assert internal_q.get("retrieval_mode") == "semantic"
