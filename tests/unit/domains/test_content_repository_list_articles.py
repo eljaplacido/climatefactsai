@@ -54,16 +54,20 @@ class TestListArticlesSearch:
         repo.list_articles(query="climate")
         sql, params = _captured_sql_and_params(db)
         assert ":q_text" in sql
-        # SEM-01: multilingual FTS uses the precomputed language-aware search_tsv
-        # column + websearch_to_tsquery('simple', …), not hardcoded English.
+        # ML-01: FTS matches on the precomputed search_tsv column via
+        # websearch_to_tsquery('english', …). The stored tsvector (migration
+        # 072) and the query MUST share the 'english' config — 'simple' on the
+        # query side matched 0 rows platform-wide. The query still must NOT
+        # compute to_tsvector() at request time (the search_tsv column already
+        # holds it) and must bind the user value rather than interpolate it.
         assert "search_tsv" in sql
-        assert "websearch_to_tsquery('simple'" in sql
-        assert "to_tsvector('english'" not in sql
+        assert "websearch_to_tsquery('english'" in sql
+        assert "to_tsvector(" not in sql  # never recompute the vector at query time
         # The non-existent columns that 500'd prod must not appear.
         assert "headline" not in sql
         assert "summary_text" not in sql
         # Value is bound, never interpolated as a literal.
-        assert "websearch_to_tsquery('simple', 'climate')" not in sql
+        assert "websearch_to_tsquery('english', 'climate')" not in sql
         assert params.get("q_text") == "climate"
 
     def test_legacy_path_also_has_no_missing_columns(self):

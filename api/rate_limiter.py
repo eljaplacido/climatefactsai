@@ -405,28 +405,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 client_ip = request.client.host if request.client else "unknown"
                 self._check_ip_rate_limit(client_ip, "search", max_per_day=5)
 
-        # For URL analysis — allow all users with rate limiting
-        elif request.url.path.startswith("/api/analyze-url") and request.method == "POST":
-            if user:
-                user_id = str(user.get("user_id"))
-                subscription_tier = user.get("subscription_tier", "freemium")
-                try:
-                    allowed, current, limit = UsageTracker.check_limit(
-                        user_id, subscription_tier, "url_analysis", "month"
-                    )
-                    if not allowed:
-                        raise HTTPException(
-                            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                            detail=f"Monthly URL analysis limit exceeded ({current}/{limit})."
-                        )
-                except HTTPException:
-                    raise
-                except Exception:
-                    pass
-            else:
-                # IP-based rate limiting for unauthenticated users
-                client_ip = request.client.host if request.client else "unknown"
-                self._check_ip_rate_limit(client_ip, "url_analysis", max_per_day=1)
+        # URL analysis quota is enforced solely by QuotaService in
+        # url_analysis_routes.py (freemium = 1/mo, etc.). The legacy middleware
+        # gate here double-gated free/anon users to 0 while GET /api/quota
+        # advertised url_analysis as available (limit 1) — a documented-vs-
+        # enforced entitlement mismatch. Removed so there is ONE source of
+        # truth for the url_analysis entitlement. (ML-08)
 
         # For corporate claim verification — Phase 8 (2026-05-24).
         # The /analyze endpoint writes a row to company_claims on every call.

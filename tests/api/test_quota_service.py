@@ -27,6 +27,7 @@ from api.quota_service import (
     QUOTA_LABELS,
     QUOTA_LIMITS_BY_TIER,
     QuotaService,
+    _normalize_tier,
 )
 
 
@@ -282,3 +283,125 @@ class TestSummary:
         for r in rows:
             assert r["limit"] == 0
             assert r["allowed"] is False
+
+
+# ---------------------------------------------------------------------------
+# ML-16 — tier-alias normalization
+# ---------------------------------------------------------------------------
+# The Stripe webhook writes tier='pro' (its price reverse-map's first match),
+# which is NOT a QUOTA_LIMITS_BY_TIER key. Without the alias, _normalize_tier
+# fell through to 'anonymous' (all-zero quotas) and every gated action 429'd
+# for a paying Professional customer.
+
+
+class TestTierAliasNormalization:
+    def test_pro_alias_maps_to_professional(self):
+        assert _normalize_tier("pro") == "professional"
+
+    def test_pro_alias_is_case_and_whitespace_insensitive(self):
+        assert _normalize_tier("  PRO ") == "professional"
+
+    def test_prof_alias_maps_to_professional(self):
+        assert _normalize_tier("prof") == "professional"
+
+    def test_free_alias_maps_to_freemium(self):
+        assert _normalize_tier("free") == "freemium"
+
+    def test_canonical_tiers_pass_through_unchanged(self):
+        for t in ("anonymous", "freemium", "basic", "professional", "enterprise"):
+            assert _normalize_tier(t) == t
+
+    def test_unknown_tier_still_falls_through_to_anonymous(self):
+        # Privilege safety must survive the alias table.
+        assert _normalize_tier("enterprise-pro-platinum") == "anonymous"
+
+    def test_professional_paying_customer_gets_nonzero_quota(self):
+        """A tier='pro' JWT/webkook claim must resolve to professional quotas,
+        NOT anonymous-zero — otherwise a paying customer is 429'd everywhere."""
+        db = MagicMock()
+        db.execute_query.return_value = [{"n": 0}]
+        with patch("api.quota_service.get_postgres", return_value=db):
+            result = QuotaService.check(
+                user_id="u-pro", tier="pro", quota_key="url_analysis"
+            )
+        assert result.tier == "professional"
+        assert result.limit == QUOTA_LIMITS_BY_TIER["professional"]["url_analysis"]
+        assert result.limit > 0
+        assert result.allowed is True
+
+
+# ---------------------------------------------------------------------------
+# ML-08 — url_analysis is gated ONLY by QuotaService, not the legacy middleware
+# ---------------------------------------------------------------------------
+# The freemium TIER_LIMITS in rate_limiter still carries
+# url_analyses_per_month=0. The middleware used to gate url_analysis on that,
+# double-gating free users to 0 while GET /api/quota advertised url_analysis as
+# available (limit 1). The middleware branch was removed so QuotaService is the
+# single source of truth for the url_analysis entitlement.
+
+
+def _make_request(path: str, method: str, user):
+    """Minimal stand-in exposing only what RateLimitMiddleware._dispatch reads."""
+
+    class _URL:
+        def __init__(self, p):
+            self.path = p
+
+    class _Client:
+        host = "203.0.113.7"
+
+    class _State:
+        pass
+
+    class _Req:
+        def __init__(self):
+            self.url = _URL(path)
+            self.method = method
+            self.headers = {}
+            self.client = _Client()
+            self.state = _State()
+            self.state.user = user
+
+    return _Req()
+
+
+class TestUrlAnalysisMiddlewareGate:
+    @pytest.mark.asyncio
+    async def test_freemium_url_analysis_passes_through_middleware(self):
+        """A freemium user hitting /api/analyze-url must NOT be 429'd by the
+        rate-limit middleware — no branch may gate url_analysis to 0."""
+        from api.rate_limiter import RateLimitMiddleware
+
+        mw = RateLimitMiddleware(app=None)
+
+        sentinel = object()
+        calls = {"n": 0}
+
+        async def call_next(_request):
+            calls["n"] += 1
+            return sentinel
+
+        request = _make_request(
+            "/api/analyze-url",
+            "POST",
+            user={
+                "user_id": "11111111-1111-1111-1111-111111111111",
+                "subscription_tier": "freemium",
+            },
+        )
+        result = await mw._dispatch(request, call_next)
+
+        assert result is sentinel  # request reached the route, not short-circuited
+        assert calls["n"] == 1     # middleware did not block with a 429
+
+    def test_quota_service_governs_freemium_url_analysis(self):
+        """Corroborates ML-08: freemium url_analysis is a positive QuotaService
+        allowance (1/mo), not the zeroed middleware limit."""
+        db = MagicMock()
+        db.execute_query.return_value = [{"n": 0}]
+        with patch("api.quota_service.get_postgres", return_value=db):
+            result = QuotaService.check(
+                user_id="u-1", tier="freemium", quota_key="url_analysis"
+            )
+        assert result.limit == 1
+        assert result.allowed is True

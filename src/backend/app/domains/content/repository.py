@@ -231,7 +231,7 @@ class ArticleRepository:
             # refs do not exist in prod and 500'd every ?q= search.
             where_conditions.append(
                 "a.search_tsv "
-                "@@ websearch_to_tsquery('simple', :q_text)"
+                "@@ websearch_to_tsquery('english', :q_text)"
             )
             params["q_text"] = query
 

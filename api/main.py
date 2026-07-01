@@ -761,7 +761,7 @@ async def list_articles(
     if q:
         query += (
             "\n        AND a.search_tsv "
-            "@@ websearch_to_tsquery('simple', :q)"
+            "@@ websearch_to_tsquery('english', :q)"
         )
         params["q"] = q
 

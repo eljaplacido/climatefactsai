@@ -283,7 +283,7 @@ async def run_saved_query(
             FROM articles a
             WHERE a.is_synthetic = FALSE
               AND a.search_tsv
-                  @@ websearch_to_tsquery('simple', :q)
+                  @@ websearch_to_tsquery('english', :q)
             {where_extra}
             ORDER BY COALESCE(a.published_date, a.created_at) DESC
             LIMIT :limit""",

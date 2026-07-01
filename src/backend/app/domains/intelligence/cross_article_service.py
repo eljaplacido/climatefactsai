@@ -203,11 +203,11 @@ class CrossArticleService:
                 a.excerpt,
                 ts_rank(
                     a.search_tsv,
-                    websearch_to_tsquery('simple', :query)
+                    websearch_to_tsquery('english', :query)
                 ) AS relevance
             FROM articles a
             WHERE a.search_tsv
-                  @@ websearch_to_tsquery('simple', :query)
+                  @@ websearch_to_tsquery('english', :query)
             {country_filter}
             ORDER BY relevance DESC
             LIMIT :limit

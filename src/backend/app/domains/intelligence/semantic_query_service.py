@@ -111,11 +111,11 @@ class SemanticQueryService:
                 a.published_date, a.excerpt,
                 ts_rank(
                     a.search_tsv,
-                    websearch_to_tsquery('simple', :query)
+                    websearch_to_tsquery('english', :query)
                 ) AS text_rank
             FROM articles a
             WHERE a.search_tsv
-                  @@ websearch_to_tsquery('simple', :query)
+                  @@ websearch_to_tsquery('english', :query)
               AND {where_clause}
             ORDER BY text_rank DESC
             LIMIT :limit

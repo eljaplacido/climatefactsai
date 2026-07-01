@@ -173,15 +173,17 @@ async def query_map(
         params["date_to"] = effective_date_to
 
     # If natural language query, add full-text search.
-    # D3 (migration 018): query the language-aware generated tsvector column
-    # instead of computing to_tsvector('english', …) at query time. websearch
-    # handles AND/OR/quoted phrases the way users expect from Google-style
-    # search bars. 'simple' on the query side gives cross-language token
-    # match; per-locale stemming is a future enhancement when the API gains
-    # an explicit `lang` parameter.
+    # ML-01 (migration 072): query the search_tsv generated tsvector column
+    # with a FIXED 'english' config on BOTH sides. Migration 072 rebuilt
+    # search_tsv with to_tsvector('english', …), so the query side must also
+    # use 'english' or nothing matches. websearch handles AND/OR/quoted phrases
+    # the way users expect from Google-style search bars. The corpus is
+    # English-dominant; the language_code column is mislabelled 'fi' on ~all
+    # rows (see ML-20 for the attribution fix) — pinning 'english' here
+    # decouples FTS from that bug.
     if request.query:
         conditions.append(
-            "a.search_tsv @@ websearch_to_tsquery('simple', :q)"
+            "a.search_tsv @@ websearch_to_tsquery('english', :q)"
         )
         params["q"] = request.query
 

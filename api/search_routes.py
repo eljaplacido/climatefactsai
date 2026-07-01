@@ -107,13 +107,13 @@ async def basic_search(
             a.extracted_text,
             ts_rank(
                 a.search_tsv,
-                websearch_to_tsquery('simple', :query)
+                websearch_to_tsquery('english', :query)
             ) as relevance
         FROM articles a
         WHERE a.is_synthetic = FALSE
           AND a.is_off_topic = FALSE
           AND a.search_tsv
-              @@ websearch_to_tsquery('simple', :query)
+              @@ websearch_to_tsquery('english', :query)
     """
 
     params = {"query": q, "limit": limit}
@@ -252,13 +252,13 @@ async def semantic_search(
                 SELECT article_id,
                        ts_rank(
                            search_tsv,
-                           websearch_to_tsquery('simple', :query)
+                           websearch_to_tsquery('english', :query)
                        ) AS fts_score
                 FROM articles
                 WHERE is_synthetic = FALSE
                   AND is_off_topic = FALSE
                   AND search_tsv
-                      @@ websearch_to_tsquery('simple', :query)
+                      @@ websearch_to_tsquery('english', :query)
             )
             SELECT
                 a.article_id, a.title, a.url, a.source_name,
@@ -299,13 +299,13 @@ async def semantic_search(
                 a.author, a.extracted_text,
                 ts_rank(
                     a.search_tsv,
-                    websearch_to_tsquery('simple', :query)
+                    websearch_to_tsquery('english', :query)
                 ) as relevance
             FROM articles a
             WHERE a.is_synthetic = FALSE
               AND a.is_off_topic = FALSE
               AND a.search_tsv
-                  @@ websearch_to_tsquery('simple', :query)
+                  @@ websearch_to_tsquery('english', :query)
         """
         params = {"query": request.query, "limit": request.limit}
 

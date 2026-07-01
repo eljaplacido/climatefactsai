@@ -157,6 +157,17 @@ def _next_month_start_utc() -> datetime:
     return now.replace(month=now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
+# Slug aliases the ladder must accept. The Stripe webhook writes tier='pro'
+# (its price reverse-map's first match), which is NOT a QUOTA_LIMITS_BY_TIER
+# key — so without this a paying Professional customer normalized to
+# 'anonymous' (all-zero quotas) and every gated action 429'd. (ML-16)
+_TIER_ALIASES: dict[str, str] = {
+    "pro": "professional",
+    "prof": "professional",
+    "free": "freemium",
+}
+
+
 def _normalize_tier(tier: Optional[str]) -> str:
     """Coerce arbitrary tier strings to one of the ladder keys.
 
@@ -167,6 +178,7 @@ def _normalize_tier(tier: Optional[str]) -> str:
     if not tier:
         return "anonymous"
     t = tier.lower().strip()
+    t = _TIER_ALIASES.get(t, t)
     if t in QUOTA_LIMITS_BY_TIER:
         return t
     return "anonymous"

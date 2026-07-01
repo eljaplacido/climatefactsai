@@ -572,13 +572,13 @@ def _search_relevant_articles(
         f"""SELECT a.article_id, a.title, a.source_name, a.overall_credibility,
                    ts_rank(
                        a.search_tsv,
-                       websearch_to_tsquery('simple', :q)
+                       websearch_to_tsquery('english', :q)
                    ) AS relevance
             FROM articles a
             WHERE a.is_synthetic = FALSE
               AND a.is_off_topic = FALSE
               AND a.search_tsv
-                  @@ websearch_to_tsquery('simple', :q)
+                  @@ websearch_to_tsquery('english', :q)
             {where_extra}
             ORDER BY relevance DESC
             LIMIT :limit""",
@@ -892,7 +892,7 @@ def _hydrate_view_context(db, view_context: Optional[dict]) -> dict:
                           COUNT(*) FILTER (WHERE overall_credibility = 'HIGH') AS high_cred,
                           COUNT(DISTINCT source_name) AS source_count
                    FROM articles
-                   WHERE search_tsv @@ websearch_to_tsquery('simple', :q)
+                   WHERE search_tsv @@ websearch_to_tsquery('english', :q)
                      AND is_synthetic = FALSE AND is_off_topic = FALSE""",
                 {"q": hydrated["deep_search_query"]},
             )

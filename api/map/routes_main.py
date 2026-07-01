@@ -191,13 +191,14 @@ async def get_country_stats(
             conditions.append("to_char(a.published_date, 'YYYY-MM') = :month")
             params["month"] = month
         if keyword:
-            # D3 (migration 018): query the language-aware generated tsvector
-            # column. Using 'simple' for the query gives cross-language token
-            # match so Finnish/German/French/Spanish articles are findable
-            # alongside English ones — pre-fix they were invisible to keyword
-            # search because the tsvector side was hardcoded to 'english'.
+            # ML-01 (migration 072): query the search_tsv generated tsvector
+            # column with a FIXED 'english' config on BOTH sides. Migration 072
+            # rebuilt search_tsv with to_tsvector('english', …); the query side
+            # must match that config or 0 rows come back. The corpus is
+            # English-dominant despite language_code being mislabelled 'fi' on
+            # ~all rows (see ML-20 for the attribution fix).
             conditions.append(
-                "a.search_tsv @@ websearch_to_tsquery('simple', :keyword)"
+                "a.search_tsv @@ websearch_to_tsquery('english', :keyword)"
             )
             params["keyword"] = keyword
 
