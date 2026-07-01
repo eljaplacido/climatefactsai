@@ -159,6 +159,52 @@ def _insert_discovered_articles(
             except Exception as gate_exc:  # pragma: no cover - never block ingest on gate error
                 logger.warning("F1 relevance gate errored; allowing article", error=str(gate_exc))
 
+        # ML-03 — ingestion QUALITY gate. Reject consent-wall / interstitial /
+        # thin bodies and unresolved redirector URLs BEFORE the insert, so no
+        # LLM enrichment / embedding / claim-verification spend is ever wasted
+        # on Google cookie-consent walls. Rejects are routed to the auditable
+        # article_ingest_quarantine table (mig 073), never silently dropped.
+        # ON by default; INGEST_QUALITY_GATE=false disables for controlled
+        # backfills. Runs on the SAME cleaned body that would be stored.
+        if os.getenv("INGEST_QUALITY_GATE", "true").strip().lower() != "false":
+            try:
+                from app.domains.content.ingest_quality_gate import (
+                    check_article_quality,
+                    quarantine_article,
+                )
+                gate_body = clean_article_text(
+                    article.get("extracted_text")
+                    or article.get("content")
+                    or article.get("summary")
+                    or article.get("excerpt")
+                    or ""
+                )
+                gate = check_article_quality(
+                    title=title,
+                    url=url,
+                    body=gate_body,
+                    source_name=article.get("source_name") or article.get("source"),
+                )
+                if not gate.ok:
+                    quarantine_article(
+                        db,
+                        url=url,
+                        title=title,
+                        source_name=article.get("source_name") or article.get("source"),
+                        reason=gate.reason,
+                        category=gate.category,
+                        raw_input=article,
+                    )
+                    logger.info(
+                        "ML-03 quality gate rejected article",
+                        url=url,
+                        category=gate.category,
+                        reason=gate.reason,
+                    )
+                    continue
+            except Exception as q_exc:  # pragma: no cover - never block on gate error
+                logger.warning("ML-03 quality gate errored; allowing article", error=str(q_exc))
+
         try:
             db.execute_update(
                 """

@@ -12,9 +12,12 @@ RSS <summary> stubs. Fetches are bounded by RSS_FETCH_TIMEOUT seconds and
 fail-soft to the RSS summary when extraction errors out.
 """
 
+import base64
+import binascii
 import os
 import re
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 import feedparser
 import httpx
@@ -115,12 +118,99 @@ def _fetch_and_extract_article_body(url: str) -> Optional[str]:
         html = resp.text
         if len(html) > RSS_FETCH_MAX_BYTES:
             html = html[:RSS_FETCH_MAX_BYTES]
-        return _extract_article_body_html(html, url)
+        body = _extract_article_body_html(html, url)
+        # ML-03 defence-in-depth: never return a cookie-consent / interstitial
+        # wall as if it were the article body (belt-and-suspenders behind the
+        # redirector resolver — a publisher page can itself be consent-gated).
+        if body:
+            from app.domains.content.ingest_quality_gate import is_consent_wall
+            if is_consent_wall(body):
+                logger.debug(f"RSS body fetch returned a consent wall, dropping: {url}")
+                return None
+        return body
     except httpx.TimeoutException:
         logger.debug(f"RSS body fetch timeout: {url}")
     except Exception as exc:
         logger.debug(f"RSS body fetch failed for {url}: {exc}")
     return None
+
+
+# ---------------------------------------------------------------------------
+# ML-03 — Google-News redirector handling.
+#
+# The Google-News RSS feeds (news.google.com/rss/search?…) hand out entry links
+# that are `news.google.com/rss/articles/<opaque>` REDIRECTORS. Fetching one
+# returns HTTP 200 whose body is Google's cookie-consent interstitial, NOT the
+# article — that is exactly how 1,433 consent-wall bodies reached production.
+#
+# We resolve the redirector to the canonical publisher URL when the (legacy)
+# encoding embeds it, and fetch THAT. When resolution is impossible (Google's
+# post-2024 `AU_yqL…` opaque IDs carry no embedded URL and the article page is
+# gated behind the consent wall), we DO NOT fetch the redirector — the body is
+# left empty so the caller falls back to the RSS summary and the downstream
+# ingestion quality gate quarantines it, rather than storing the consent page.
+# ---------------------------------------------------------------------------
+
+def _is_google_news_redirector(url: str) -> bool:
+    """True when `url` is a Google-News article redirector link."""
+    if not url:
+        return False
+    try:
+        p = urlparse(url)
+    except Exception:
+        return False
+    host = (p.netloc or "").lower()
+    if host != "news.google.com" and not host.endswith(".news.google.com"):
+        return False
+    path = (p.path or "").lower()
+    return "/rss/articles/" in path or path.startswith("/articles/") or "/read/" in path
+
+
+def resolve_google_news_url(url: str) -> Optional[str]:
+    """Best-effort: resolve a Google-News redirector to the publisher URL.
+
+    Handles the LEGACY encoding where the article segment base64-decodes to a
+    protobuf that embeds the real `https://publisher/…` URL. Returns that URL.
+
+    Returns None for the post-2024 opaque `AU_yqL…` IDs (no embedded URL — those
+    require an undocumented, consent-gated `batchexecute` call that reliably
+    returns the consent wall here), and for any decode/parse failure. A None
+    result means "don't fetch the redirector" — the gate then quarantines it.
+    """
+    if not _is_google_news_redirector(url):
+        return url  # already canonical / not a Google redirector
+    m = re.search(r"/(?:rss/)?articles/([^?/]+)", url)
+    if not m:
+        return None
+    seg = m.group(1)
+    try:
+        padded = seg + "=" * (-len(seg) % 4)
+        raw = base64.urlsafe_b64decode(padded)
+    except (binascii.Error, ValueError):
+        return None
+    # Legacy protobuf: `\x08\x13` prefix, then field-4 `\x22` <varint-len> <URL>.
+    # We read the length-delimited first field exactly (a greedy regex would
+    # over-capture the `\x32` field separator, which is the printable byte '2').
+    # The opaque post-2024 `AU_yqL…` IDs put a non-URL token in that field, so
+    # this naturally returns None for them.
+    data = raw[2:] if raw[:2] == b"\x08\x13" else raw
+    if data[:1] != b"\x22":
+        return None
+    idx, length, shift = 1, 0, 0
+    while idx < len(data):
+        byte = data[idx]
+        idx += 1
+        length |= (byte & 0x7F) << shift
+        if not (byte & 0x80):
+            break
+        shift += 7
+    candidate = data[idx: idx + length].decode("latin-1", "replace")
+    if candidate.startswith(("http://", "https://")):
+        host = (urlparse(candidate).netloc or "").lower()
+        if host and "google.com" not in host and "gstatic.com" not in host:
+            return candidate
+    return None
+
 
 # Default RSS feed URLs
 CARBON_BRIEF_RSS = "https://www.carbonbrief.org/feed/"
@@ -231,6 +321,23 @@ def _parse_feed(url: str, max_items: int = 20) -> List[Dict[str, Any]]:
         bodies_failed = 0
         for entry in feed.entries[:max_items]:
             entry_url = entry.get("link", "").strip()
+
+            # ML-03 — resolve Google-News redirector links to the canonical
+            # publisher URL and fetch THAT. When resolution is impossible we do
+            # NOT fetch the redirector (it returns the cookie-consent wall):
+            # fetch_url is cleared so the body falls back to the RSS summary and
+            # the downstream ingestion quality gate quarantines the row instead
+            # of storing an interstitial as if it were the article.
+            canonical_url = entry_url
+            fetch_url: Optional[str] = entry_url
+            if entry_url and _is_google_news_redirector(entry_url):
+                resolved = resolve_google_news_url(entry_url)
+                if resolved and not _is_google_news_redirector(resolved):
+                    canonical_url = resolved
+                    fetch_url = resolved
+                else:
+                    fetch_url = None
+
             # End2End audit (2026-05-27, Task D) — strip HTML from the
             # RSS summary before storing. Publishers like Premium Times
             # Nigeria embed `<img>` + `<p>` + "The post ... appeared first
@@ -244,8 +351,8 @@ def _parse_feed(url: str, max_items: int = 20) -> List[Dict[str, Any]]:
             # the RSS summary so a publisher that blocks scrapers still
             # surfaces something to the user.
             body_text = None
-            if RSS_FETCH_FULL_TEXT and entry_url:
-                body_text = _fetch_and_extract_article_body(entry_url)
+            if RSS_FETCH_FULL_TEXT and fetch_url:
+                body_text = _fetch_and_extract_article_body(fetch_url)
                 if body_text:
                     body_text = clean_article_text(body_text)
                     bodies_fetched += 1
@@ -254,7 +361,7 @@ def _parse_feed(url: str, max_items: int = 20) -> List[Dict[str, Any]]:
 
             article = {
                 "title": entry.get("title", "").strip(),
-                "url": entry_url,
+                "url": canonical_url,
                 # Use None (NULL) — not "" — when a feed entry has no date, so
                 # the empty string is never bound to a timestamptz column (which
                 # silently dropped the whole article on insert).
