@@ -226,9 +226,15 @@ steps:
       # emails here. Owner email so require_analytics_admin doesn't 403 the
       # operator out of their own /api/analytics/* dashboard. Additive flag.
       - "--update-env-vars=ADMIN_EMAILS=eljailari.suhonen@gmail.com"
-      - "--memory=1Gi"
+      # ML-17 (2026-07-02): the API OOM'd on 1Gi and 503'd under load because a
+      # single async event loop cannot serve containerConcurrency=80. Bumped to
+      # 2Gi + concurrency 12 + startup-cpu-boost so one worker handles a sane
+      # request fan-in and cold starts don't stall on CPU throttling. Cloud Run
+      # scales horizontally by INSTANCE, not by in-container worker.
+      - "--memory=2Gi"
       - "--cpu=1"
-      - "--concurrency=80"
+      - "--concurrency=12"
+      - "--cpu-boost"
       - "--max-instances=5"
       # Phase 8 (2026-05-24) — keep 1 instance warm so FastAPI
       # BackgroundTasks (corporate adapter sync) actually complete instead

@@ -47,8 +47,15 @@ httpx==0.27.2                      # Async HTTP client
 spacy==3.8.2                       # NLP library for entity recognition
 textacy==0.13.0                    # Advanced text processing
 nltk==3.9.1                        # Natural Language Toolkit
-transformers==4.46.3               # Hugging Face transformers (for embeddings)
-sentence-transformers==3.3.1       # Sentence embeddings
+# ML-17 (2026-07-02): removed from the runtime image. Verified via repo-wide
+# grep that NOTHING in api/ or src/backend imports transformers /
+# sentence-transformers / torch — embeddings are generated over HTTP by the
+# GX10 (bge-m3 via Ollama, see EmbeddingService.generate_bge_m3_embedding), not
+# a local model. These two pinned deps pull in torch (~2GB) transitively and
+# only bloated the image / cold-start; they never contributed to runtime RSS.
+# Re-add both if a local transformer/sentence-transformer path is ever needed.
+# transformers==4.46.3               # Hugging Face transformers (for embeddings)
+# sentence-transformers==3.3.1       # Sentence embeddings
 
 # Readability & Text Analysis
 textstat==0.7.4                    # Readability metrics (Flesch-Kincaid)

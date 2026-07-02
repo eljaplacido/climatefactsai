@@ -1,5 +1,5 @@
 """Map routes — natural-language query and LLM-powered map interaction."""
-import json, time
+import json, re, time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -15,6 +15,38 @@ from api.auth_routes import get_optional_user
 
 logger = setup_logging("map-api")
 router = APIRouter()
+
+# ML-15: stopwords dropped when building the relaxed OR-of-terms fallback query
+# so short connectives don't dominate an OR match.
+_TSQUERY_STOPWORDS = {
+    "the", "and", "for", "with", "about", "from", "into", "over", "that",
+    "this", "these", "those", "what", "which", "where", "when", "how", "are",
+    "was", "were", "has", "have", "had", "you", "your",
+}
+
+
+def _or_tsquery_terms(query: Optional[str], topic: Optional[str] = None) -> str:
+    """Build a safe OR ``to_tsquery`` string (``a | b | c``) from free text.
+
+    Only alphanumeric tokens (regex-extracted) survive, so the result is always
+    valid ``to_tsquery`` input — there is no injection surface even though the
+    string is bound as a parameter. Stopwords and <3-char tokens are dropped.
+    Returns ``""`` when nothing usable remains, so callers can skip the fallback.
+
+    OR semantics are the whole point: ``websearch_to_tsquery`` ANDs every term,
+    so a multi-word natural-language question ("Drought in East Africa") required
+    every word to co-occur and matched nothing. ORing the terms retrieves the
+    broad corpus the way /country-stats?keyword= already does.
+    """
+    text = f"{query or ''} {topic or ''}".lower()
+    seen: set = set()
+    terms: List[str] = []
+    for tok in re.findall(r"[a-z0-9]+", text):
+        if len(tok) < 3 or tok in _TSQUERY_STOPWORDS or tok in seen:
+            continue
+        seen.add(tok)
+        terms.append(tok)
+    return " | ".join(terms)
 
 
 @router.post("/query", response_model=MapQueryResponse)
@@ -126,24 +158,40 @@ async def query_map(
     effective_date_from = parsed_filters.get("date_from")
     effective_date_to = parsed_filters.get("date_to")
 
-    conditions = ["a.country_code IS NOT NULL", "a.is_synthetic = FALSE", "a.is_off_topic = FALSE"]
     params: Dict[str, Any] = {"limit": request.limit}
 
-    # Apply structured filters
+    # Base + geographic filters are shared by BOTH the primary pass and the
+    # relaxed fallback below. The "structured content" filters (topic/category)
+    # and the strict full-query FTS are applied ONLY in the primary pass — the
+    # fallback drops them so a topic query can never return a misleading 0.
+    base_conditions = [
+        "a.country_code IS NOT NULL",
+        "a.is_synthetic = FALSE",
+        "a.is_off_topic = FALSE",
+    ]
+    geo_conditions: List[str] = []
     if effective_countries:
-        conditions.append("a.country_code = ANY(:countries)")
+        geo_conditions.append("a.country_code = ANY(:countries)")
         params["countries"] = [c.upper() for c in effective_countries]
     if effective_region and effective_region in REGION_COUNTRIES:
-        conditions.append("a.country_code = ANY(:region_codes)")
+        geo_conditions.append("a.country_code = ANY(:region_codes)")
         params["region_codes"] = REGION_COUNTRIES[effective_region]
     if effective_sources:
-        conditions.append("a.source_name = ANY(:sources)")
+        geo_conditions.append("a.source_name = ANY(:sources)")
         params["sources"] = effective_sources
     if request.reliability_min is not None:
-        conditions.append("COALESCE(a.reliability_score, 0) >= :rel_min")
+        geo_conditions.append("COALESCE(a.reliability_score, 0) >= :rel_min")
         params["rel_min"] = request.reliability_min
+    if effective_date_from:
+        geo_conditions.append("a.created_at >= :date_from")
+        params["date_from"] = effective_date_from
+    if effective_date_to:
+        geo_conditions.append("a.created_at <= :date_to")
+        params["date_to"] = effective_date_to
+
+    content_conditions: List[str] = []
     if effective_categories:
-        conditions.append("a.content_category = ANY(:cats)")
+        content_conditions.append("a.content_category = ANY(:cats)")
         params["cats"] = [c.lower() for c in effective_categories]
     if effective_topic:
         # LLM may emit topics as "renewable energy" (with space), but seed
@@ -160,17 +208,17 @@ async def query_map(
             topic_lower.replace("_", " "),
             topic_lower.replace("-", " "),
         })
-        conditions.append(
+        # ML-15: make the topic filter ADDITIVE. The tags column is empty
+        # platform-wide (ML-35), so ANDing `a.tags && …` matched nothing and
+        # zeroed out every topic query. OR the topic into content_category AND a
+        # full-text match on the topic term so a topic filter can actually match.
+        content_conditions.append(
             "(a.tags && CAST(:topic_variants AS text[]) "
-            "OR a.content_category = ANY(:topic_variants))"
+            "OR a.content_category = ANY(:topic_variants) "
+            "OR a.search_tsv @@ websearch_to_tsquery('english', :topic_fts))"
         )
         params["topic_variants"] = topic_variants
-    if effective_date_from:
-        conditions.append("a.created_at >= :date_from")
-        params["date_from"] = effective_date_from
-    if effective_date_to:
-        conditions.append("a.created_at <= :date_to")
-        params["date_to"] = effective_date_to
+        params["topic_fts"] = topic_lower
 
     # If natural language query, add full-text search.
     # ML-01 (migration 072): query the search_tsv generated tsvector column
@@ -181,31 +229,56 @@ async def query_map(
     # English-dominant; the language_code column is mislabelled 'fi' on ~all
     # rows (see ML-20 for the attribution fix) — pinning 'english' here
     # decouples FTS from that bug.
+    query_conditions: List[str] = []
     if request.query:
-        conditions.append(
-            "a.search_tsv @@ websearch_to_tsquery('english', :q)"
-        )
+        query_conditions.append("a.search_tsv @@ websearch_to_tsquery('english', :q)")
         params["q"] = request.query
 
-    where = " AND ".join(conditions)
+    where = " AND ".join(
+        base_conditions + geo_conditions + content_conditions + query_conditions
+    )
 
-    try:
-        # Get matching article count
-        count_rows = db.execute_query(
-            f"SELECT COUNT(*) as total FROM articles a WHERE {where}", params
+    def _run(where_clause: str):
+        """Run the count + per-country breakdown for one WHERE clause."""
+        cnt = db.execute_query(
+            f"SELECT COUNT(*) as total FROM articles a WHERE {where_clause}", params
         )
-        total = count_rows[0]["total"] if count_rows else 0
-
-        # Get per-country breakdown
-        rows = db.execute_query(f"""
+        tot = cnt[0]["total"] if cnt else 0
+        brk = db.execute_query(f"""
             SELECT a.country_code, COUNT(*) as article_count,
                    AVG(a.reliability_score) as avg_reliability,
                    MAX(a.created_at) as last_updated
-            FROM articles a WHERE {where}
+            FROM articles a WHERE {where_clause}
             GROUP BY a.country_code
             ORDER BY article_count DESC
             LIMIT :limit
         """, params)
+        return tot, (brk or [])
+
+    fallback_used = False
+
+    try:
+        total, rows = _run(where)
+
+        # ML-15: when the structured filters zero out (topic/category against the
+        # empty tags column, or an over-strict multi-term FTS AND), fall back to a
+        # relaxed OR-of-terms retrieval across the whole corpus — the same broad
+        # match /country-stats?keyword= uses — instead of returning a misleading
+        # 0. We surface this honestly in the answer + filters_applied below.
+        if total == 0 and request.query:
+            or_terms = _or_tsquery_terms(request.query, effective_topic)
+            if or_terms:
+                params["q_or"] = or_terms
+                relaxed_where = " AND ".join(
+                    base_conditions
+                    + geo_conditions
+                    + ["a.search_tsv @@ to_tsquery('english', :q_or)"]
+                )
+                r_total, r_rows = _run(relaxed_where)
+                if r_total > 0:
+                    total, rows = r_total, r_rows
+                    where = relaxed_where  # citations below reuse the same rows
+                    fallback_used = True
 
         country_names = _get_country_names(db)
 
@@ -240,6 +313,15 @@ async def query_map(
         elif answer is None and request.query and not highlights:
             answer = f"No articles found matching: \"{request.query}\". Try broadening your search."
 
+        # ML-15: be honest when the exact structured match found nothing and we
+        # broadened to a keyword search across the corpus, so the count is not
+        # silently over-claimed as an exact match.
+        if fallback_used and answer:
+            answer = (
+                "_No exact match for the specific topic/filters, so this is a "
+                "broader keyword search across the corpus._\n\n" + answer
+            )
+
         filters_applied = {k: v for k, v in {
             "query": request.query,
             "countries": effective_countries or None,
@@ -249,6 +331,7 @@ async def query_map(
             "categories": effective_categories or None,
             "topic": effective_topic,
             "llm_parsed": parsed_filters or None,
+            "fallback": "broadened_corpus_search" if fallback_used else None,
         }.items() if v}
 
         return MapQueryResponse(

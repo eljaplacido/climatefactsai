@@ -1107,6 +1107,25 @@ def _chat_system_prompt() -> str:
         "the user's current view, and retrieved articles are supplied in the user message."
     )
 
+    # ML-07: methodology-honesty guardrail. The heavy generic feature catalogue
+    # above says nothing about HOW each score/layer is derived, so the model used
+    # to confabulate (e.g. describing the map's Climate Risk layer as a
+    # hazard/vulnerability/adaptive-capacity/GDP composite). The always-current,
+    # per-score/per-layer basis is injected into the VOLATILE user message as a
+    # METHODOLOGY DIGEST; this static instruction tells the model to trust ONLY
+    # that digest and never invent factors.
+    base += (
+        "\n\nMETHODOLOGY HONESTY (critical): When a user asks how a score, rating, "
+        "credibility tier, or map layer is calculated, state ONLY the documented "
+        "basis given in the METHODOLOGY DIGEST supplied in the user message. NEVER "
+        "invent or guess contributing factors. Concretely, the map's Climate Risk "
+        "layer is purely IPCC AR6 SSP2-4.5 projected 2050 warming scaled to 0-10 — "
+        "it is NOT a hazard/exposure/vulnerability/sensitivity/adaptive-capacity "
+        "composite and does NOT use GDP, disaster records, or article volume. If "
+        "the digest does not document the basis, say so plainly and offer the "
+        "open_methodology_section action instead of fabricating a methodology."
+    )
+
     try:
         from app.domains.intelligence.skills import render_actions_block_for_prompt
         base += (
@@ -1128,6 +1147,142 @@ def _chat_system_prompt() -> str:
 
     _CHAT_SYSTEM_PROMPT_CACHE = base
     return _CHAT_SYSTEM_PROMPT_CACHE
+
+
+_METHODOLOGY_DIGEST_CACHE: Optional[str] = None
+
+
+def _methodology_digest() -> str:
+    """Machine-generated, always-current methodology digest (audit ML-07).
+
+    Per-map-layer and per-score basis, sourced from the AUTHORITATIVE backend
+    constants (the warming-risk math in ``api.map.services`` and the canonical
+    credibility thresholds) so it can never drift from the live scoring code.
+
+    This is injected into the VOLATILE user block — never the cached system
+    prefix — so it stays current turn-over-turn while the cache-eligible system
+    prefix stays byte-frozen (Headroom CacheAligner, INT-05). It gives the model
+    the ONE documented basis for each score/layer so it stops confabulating
+    (e.g. describing Climate Risk as a hazard/vulnerability/GDP composite).
+    """
+    global _METHODOLOGY_DIGEST_CACHE
+    if _METHODOLOGY_DIGEST_CACHE is not None:
+        return _METHODOLOGY_DIGEST_CACHE
+
+    # Climate Risk basis — sourced from the live warming-risk constants so the
+    # exact scenario/horizon/scaling can never disagree with the choropleth.
+    try:
+        from api.map.services import (
+            WARMING_RISK_SCENARIO,
+            WARMING_RISK_HORIZON_YEAR,
+            WARMING_RISK_FLOOR_C,
+            WARMING_RISK_CEILING_C,
+        )
+        climate_risk = (
+            f"projected physical warming ONLY — IPCC AR6 {WARMING_RISK_SCENARIO} at "
+            f"{WARMING_RISK_HORIZON_YEAR}, linearly scaled {WARMING_RISK_FLOOR_C}°C→0 "
+            f"and {WARMING_RISK_CEILING_C}°C→10. It is NOT a hazard/exposure/"
+            f"vulnerability/sensitivity/adaptive-capacity composite, NOT GDP, NOT disaster "
+            f"records, NOT article volume. Countries with no AR6 projection show as grey (no data)."
+        )
+    except Exception:  # pragma: no cover - defensive import guard
+        climate_risk = (
+            "projected physical warming (IPCC AR6 SSP2-4.5 at 2050) scaled to 0-10. "
+            "NOT a vulnerability/GDP composite; NOT article volume."
+        )
+
+    # Article reliability level crosswalk — canonical thresholds.
+    try:
+        from shared.credibility_thresholds import HIGH, MEDIUM
+        rel_levels = f"HIGH ≥ {HIGH}, MEDIUM {MEDIUM}–{HIGH - 1}, LOW < {MEDIUM}"
+    except Exception:  # pragma: no cover
+        rel_levels = "HIGH ≥ 80, MEDIUM 50–79, LOW < 50"
+
+    lines = [
+        "MAP LAYERS — documented basis of each (state ONLY these):",
+        f"- Climate Risk: {climate_risk}",
+        "- Temperature Anomaly: current temperature vs the same month last year (Open-Meteo). "
+        "Not a 30-year climatological baseline.",
+        "- Warming Outlook: CMIP6 multi-model median warming under SSP2-4.5 at the chosen "
+        "horizon (IPCC AR6 Interactive Atlas).",
+        "- Article Density: count of indexed climate articles per country. A coverage metric, "
+        "not risk and not quality.",
+        "- Source Diversity: count of DISTINCT sources covering a country (by source name). "
+        "Not a quality score.",
+        "- News Events: 21-day rolling article volume + disputed-claim ratio, time-decayed. "
+        "Not a live breaking-news feed.",
+        "- NDC Targets: Climate Watch UNFCCC NDC registry + Climate Action Tracker rating where "
+        "available. The reduction % is a heterogeneous ambition proxy, not directly comparable.",
+        "- Adaptation Gap: inverted ND-GAIN country index (a proxy). Not actual finance-flow data.",
+        "- Corporate Density: companies with climate disclosures by registered HQ "
+        "(CDP / SBTi / Net Zero Tracker).",
+        "- Biomes & Climate: Köppen-Geiger climate classification (Beck et al. 2018).",
+        "",
+        "SCORES & RATINGS — documented basis of each (state ONLY these):",
+        f"- Article reliability score (0-100): composite of source credibility (~50%), verified-"
+        f"claim support, and content relevance. Levels: {rel_levels}. Zero verified claims cannot "
+        f"exceed MEDIUM.",
+        "- Source ratings / credibility tiers: platform RELIABILITY tiers — T1 (Scimago Q1 journal "
+        "or IFCN-verified fact-checker), T2 (mainstream press with a corrections policy or Q2 "
+        "journal), T3 (research NGO / intergovernmental body), unknown, retracted. These are "
+        "reliability tiers, NOT political lean and NOT sentiment.",
+        "- Green Transition / sustainability score (0-100): weighted sum of normalized country "
+        "indicators (weights of missing indicators redistribute); the confidence band widens with "
+        "fewer indicators.",
+        "- Calibrated confidence (0-1): optional Platt-scaled recalibration, applied only when a "
+        "stable fit exists.",
+    ]
+
+    _METHODOLOGY_DIGEST_CACHE = "\n".join(lines)
+    return _METHODOLOGY_DIGEST_CACHE
+
+
+# ML-07 eval/guard: factors that must NEVER be attributed to the map's Climate
+# Risk layer (it is purely SSP2-4.5 projected 2050 warming). Used by the
+# regression test in tests/unit/api/test_chat_methodology_digest.py.
+_CLIMATE_RISK_CONFAB_TERMS = (
+    "vulnerability",
+    "sensitivity",
+    "adaptive capacity",
+    "adaptive-capacity",
+    "gdp",
+    "disaster record",
+    "socioeconomic",
+)
+_CONFAB_NEGATIONS = ("not ", "n't", "never", "no longer", "rather than", "instead of")
+
+
+def flag_climate_risk_confabulation(answer: str) -> List[str]:
+    """Return forbidden factors an answer wrongly attributes to Climate Risk.
+
+    The map's Climate Risk layer is purely IPCC AR6 SSP2-4.5 projected 2050
+    warming. An *explanation* of it that invokes vulnerability / sensitivity /
+    adaptive-capacity / GDP / disaster records is a confabulation (ML-07).
+
+    Heuristic guard for evals/regression tests — it only inspects text that is
+    actually describing climate risk, and it skips a term when the sentence
+    asserting it carries a negation ("it is NOT a vulnerability/GDP composite")
+    so the model correctly *disclaiming* those factors is not itself flagged.
+    """
+    if not answer:
+        return []
+    low = answer.lower()
+    if "climate risk" not in low and "climate-risk" not in low:
+        return []
+    hits: List[str] = []
+    for term in _CLIMATE_RISK_CONFAB_TERMS:
+        idx = low.find(term)
+        if idx == -1:
+            continue
+        # Bound the sentence/clause around the first occurrence.
+        start = max(low.rfind(".", 0, idx), low.rfind("\n", 0, idx)) + 1
+        ends = [e for e in (low.find(".", idx), low.find("\n", idx)) if e != -1]
+        end = (min(ends) + 1) if ends else len(low)
+        sentence = low[start:end]
+        if any(neg in sentence for neg in _CONFAB_NEGATIONS):
+            continue
+        hits.append(term)
+    return hits
 
 
 async def _generate_answer(
@@ -1198,10 +1353,20 @@ async def _generate_answer(
             if snapshot_bits else ""
         )
 
+        # ML-07: always-current per-layer/per-score methodology digest, injected
+        # into the VOLATILE user block (keeps the cached system prefix frozen).
+        methodology_section = (
+            "\nMETHODOLOGY DIGEST (authoritative — when explaining how any score, "
+            "rating, tier, or map layer is derived, state ONLY the basis below and "
+            "never invent contributing factors):\n"
+            f"{_methodology_digest()}\n"
+        )
+
         user_prompt = (
             f"{snapshot}"
             f"{view_section}"
             f"{cynefin_section}"
+            f"{methodology_section}"
             "RELEVANT ARTICLES FROM DATABASE:\n"
             f"{compact_text(context, CHAT_CONTEXT_TOKEN_BUDGET)}\n"
             f"{history_text}\n"
@@ -1210,6 +1375,7 @@ async def _generate_answer(
             "- If the user asks about articles/news: answer using the article data above, cite sources by name and credibility.\n"
             "- If the user asks about platform features: explain clearly with step-by-step guidance.\n"
             "- If the user asks for analysis help: explain what the scores mean and how to interpret them.\n"
+            "- When explaining how a score/rating/tier/map layer is computed, use ONLY the METHODOLOGY DIGEST above; if it is not documented there, say so and offer the open_methodology_section action — do NOT invent factors.\n"
             "- If the user asks to compare countries: use any country data from articles above.\n"
             "- If no relevant articles are found, acknowledge this and suggest using Deep Search or adjusting filters.\n"
             "- Format using markdown with headers, bullet points, and bold for key terms."
