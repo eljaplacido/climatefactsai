@@ -69,6 +69,10 @@ export interface Article {
   content_relevance_score?: number;
   reliability_score?: number;
   overall_credibility: "HIGH" | "MEDIUM" | "LOW";
+  // ML-09: how the credibility label was decided. 'verification_backed' when
+  // fact-check verdicts drove it, 'extraction_heuristic' when it fell back to
+  // the text-length/claim-count signal (i.e. nothing was actually verified).
+  score_basis?: "verification_backed" | "extraction_heuristic" | string | null;
   created_at: string;
   country_code?: string;
   claims_by_category?: Record<string, number>;

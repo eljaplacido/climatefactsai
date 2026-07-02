@@ -128,6 +128,50 @@ class TestDeepSearchEndpoint:
         assert data["methodology"]["weather_used"] is False
         assert data["methodology"]["synthesis_model"] == "anthropic"
 
+    def test_response_body_includes_grounding_payload(self, client, monkeypatch):
+        """ML-11: the explainability payload (sentence_grounding +
+        confidence_envelope + structured_synthesis) must survive the
+        DeepSearchResponse response_model and appear in the HTTP BODY — the
+        frontend's SentenceGroundedAnswer / evidence gauge render nothing when
+        FastAPI silently drops them (the pre-fix bug)."""
+        payload = _make_search_payload()
+        payload["sentence_grounding"] = [
+            {"text": "Solar capacity grew.", "level": "HIGH", "reason": "internal-corpus"},
+            {"text": "Costs may fall further.", "level": "LOW", "reason": "no-source"},
+        ]
+        payload["confidence_envelope"] = {"confidence": "low", "reason": "thin_evidence"}
+        payload["structured_synthesis"] = {
+            "summary": "Africa is scaling renewables.",
+            "key_findings": ["Kenya tripled solar"],
+            "agreement_areas": ["Growth is real"],
+            "disagreement_areas": [],
+            "evidence_strength": "moderate",
+            "limitations": ["Sparse storage data"],
+            "confidence_score": 0.42,
+        }
+        _patch_deep_search(monkeypatch, search_return=payload)
+
+        resp = client.post(
+            "/api/deep-search/",
+            json={"query": "renewable energy in Africa", "limit": 5},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+
+        # Assert the actual HTTP payload keys — not just the service dict.
+        assert "sentence_grounding" in data
+        assert data["sentence_grounding"] is not None
+        assert len(data["sentence_grounding"]) == 2
+        assert data["sentence_grounding"][0]["level"] == "HIGH"
+
+        assert "confidence_envelope" in data
+        assert data["confidence_envelope"]["confidence"] == "low"
+        assert data["confidence_envelope"]["reason"] == "thin_evidence"
+
+        assert "structured_synthesis" in data
+        assert data["structured_synthesis"]["key_findings"] == ["Kenya tripled solar"]
+        assert data["structured_synthesis"]["confidence_score"] == 0.42
+
     def test_methodology_embedding_model_none_when_no_openai_key(
         self, client, monkeypatch
     ):

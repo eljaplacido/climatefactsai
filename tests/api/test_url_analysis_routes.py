@@ -1019,6 +1019,132 @@ class TestBackgroundProcessing:
         assert "multi_llm_verification" not in raw_meta
 
     @pytest.mark.asyncio
+    async def test_persists_evidence_with_source_urls_per_verdict(self, monkeypatch):
+        """ML-10: a completed analysis persists the adjudicator's evidence
+        (source_url + retrieval_method), evidence_chain, and decomposed_confidence
+        into fact_checks, and aggregates the top evidence into the `evidence`
+        column — so every verdict drills down to its sources instead of the old
+        bare evidence_count. Also pins score_basis='verification_backed'."""
+        from api import url_analysis_routes
+        from app.domains.intelligence import services as intel_services
+
+        monkeypatch.delenv("CLILENS_MULTI_LLM_VERIFY", raising=False)
+        monkeypatch.setenv("CLILENS_URL_VERIFY", "1")
+
+        async def _fake_fetch(url):
+            return {
+                "title": "Temps report",
+                "text": "Global temperatures rose. " * 100,
+                "source_name": "example.com",
+                "source_domain": "example.com",
+                "language_code": "en",
+                "published_date": None,
+            }
+        monkeypatch.setattr(url_analysis_routes, "fetch_url_content", _fake_fetch)
+
+        class _Claim:
+            def __init__(self):
+                self.claim_text = "Global temperatures rose 1.1C since preindustrial times"
+                self.claim_type = "factual"
+                self.importance_score = 0.9
+                self.claim_context = "ctx"
+
+        async def _fake_claims(self_arg, *args, **kwargs):
+            return [_Claim()]
+        monkeypatch.setattr(intel_services.ClaimExtractor, "decompose_claims", _fake_claims)
+
+        class _FakeRetriever:
+            def __init__(self, *a, **k):
+                pass
+
+            async def fetch_evidence(self, claim):
+                from app.domains.intelligence.schemas import Evidence
+                return [Evidence(
+                    source="NOAA",
+                    source_url="https://noaa.gov/temperature-record",
+                    source_reliability="high",
+                    content_excerpt="NOAA records a 1.1C rise since preindustrial.",
+                    relevance_score=0.9,
+                    supports_claim=True,
+                    retrieval_method="noaa",
+                )]
+
+        class _FakeAdjudicator:
+            def __init__(self, *a, **k):
+                pass
+
+            async def adjudicate(self, claim, evidence):
+                from app.domains.intelligence.schemas import (
+                    Verdict, EvidenceChainLink, DecomposedConfidence,
+                )
+                return Verdict(
+                    verdict="verified",
+                    confidence_score=0.82,
+                    justification="Corroborated by the NOAA global temperature record.",
+                    evidence_summary="NOAA agrees with the claim.",
+                    decomposed_confidence=DecomposedConfidence(),
+                    evidence_chain=[EvidenceChainLink(
+                        step_number=1,
+                        description="NOAA temperature record",
+                        source="NOAA",
+                        source_url="https://noaa.gov/temperature-record",
+                        retrieval_method="noaa",
+                        confidence=0.9,
+                        supports_claim=True,
+                    )],
+                    model_used="test-model",
+                )
+
+        monkeypatch.setattr(intel_services, "EvidenceRetriever", _FakeRetriever)
+        monkeypatch.setattr(intel_services, "VerdictAdjudicator", _FakeAdjudicator)
+
+        class _RecorderDB:
+            def __init__(self):
+                self.completed = None
+
+            def execute_update(self, query, params=None):
+                q = " ".join((query or "").split()).lower()
+                if "set status = 'completed'" in q:
+                    self.completed = params or {}
+                return None
+
+            def execute_query(self, query, params=None):
+                return []
+
+            def execute_scalar(self, query, params=None):
+                return 0
+
+        recorder = _RecorderDB()
+        monkeypatch.setattr(url_analysis_routes, "get_postgres", lambda: recorder)
+
+        await url_analysis_routes.process_url_analysis_sync(
+            analysis_id="aid-evidence",
+            url="https://example.com/temps",
+            user_id="00000000-0000-0000-0000-000000000000",
+        )
+
+        assert recorder.completed is not None, "Expected a completed UPDATE"
+        import json as _json
+
+        fcs = _json.loads(recorder.completed["fact_checks"])
+        assert fcs, "fact_checks must be non-empty"
+        first = fcs[0]
+        assert first["verdict"] == "verified"
+        # Evidence with source URLs per verdict (was previously discarded).
+        assert first["evidence"], "per-verdict evidence must be persisted"
+        assert first["evidence"][0]["source_url"] == "https://noaa.gov/temperature-record"
+        assert first["evidence_chain"][0]["source_url"] == "https://noaa.gov/temperature-record"
+        assert first["evidence_chain"][0]["retrieval_method"] == "noaa"
+        assert first["decomposed_confidence"] is not None
+
+        # Aggregated evidence column is populated + source-linked.
+        agg = _json.loads(recorder.completed["evidence"])
+        assert any(e.get("source_url") == "https://noaa.gov/temperature-record" for e in agg)
+
+        # A supporting verdict => verification-backed basis (not the heuristic).
+        assert recorder.completed["score_basis"] == "verification_backed"
+
+    @pytest.mark.asyncio
     async def test_completed_update_uses_cast_jsonb_not_pg_style(self, monkeypatch):
         """Regression: SQLAlchemy text queries must avoid ':param::jsonb' syntax."""
         from api import url_analysis_routes

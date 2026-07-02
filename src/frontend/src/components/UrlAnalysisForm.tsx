@@ -502,6 +502,27 @@ export default function UrlAnalysisForm() {
                     />
                   </div>
 
+                  {/* ML-09 — make the credibility label self-explaining. When the
+                      score came from the extraction heuristic (nothing verified),
+                      say so plainly rather than letting a HIGH-looking gauge imply
+                      the claims held up against evidence. */}
+                  {article.score_basis && (
+                    <div className="mb-3">
+                      {article.score_basis === 'verification_backed' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          Verification-backed score
+                        </span>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-amber-50 text-amber-800 border border-amber-200"
+                          title="Score derived from text length and claim density — no claim reached a supporting verdict against external evidence."
+                        >
+                          Unverified — extraction heuristic (no claims verified)
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   {/* Phase 0 day 3 (2026-05-23) — EU AI Act Art. 50 disclosure
                       for AI-produced URL credibility verdicts. */}
                   <div className="mb-3">

@@ -622,6 +622,10 @@ class URLAnalysisArticle(BaseModel):
     overall_credibility: Optional[str] = None
     # Maps from the flat `reliability_score` column.
     source_credibility_score: Optional[int] = None
+    # ML-09: 'verification_backed' when fact-check verdicts drove the credibility
+    # label, else 'extraction_heuristic' (text-length/claim-count fallback). The
+    # UrlAnalysisForm badge renders this so the score is self-explaining.
+    score_basis: Optional[str] = None
     claim_count: int = 0
     verified_claim_count: int = 0
     excerpt: Optional[str] = None
@@ -647,6 +651,10 @@ class URLAnalysisDetail(BaseModel):
     # Analysis results
     reliability_score: Optional[int] = None
     overall_credibility: Optional[str] = None
+    # ML-09: how the credibility label was decided — 'verification_backed'
+    # (fact-check verdicts drove it) or 'extraction_heuristic' (text-length/
+    # claim-count fallback). Surfaced in the analysis-detail UI.
+    score_basis: Optional[str] = None
     # Phase 5 wave 5 (2026-05-16): the platform applies the most-recent
     # Platt-scaled calibration to `reliability_score` when a fit exists
     # in `calibration_fits`. Returns None when no fit is available yet —
@@ -656,6 +664,10 @@ class URLAnalysisDetail(BaseModel):
     # Claims (as JSON array)
     extracted_claims: List[dict] = Field(default_factory=list)
     fact_checks: List[dict] = Field(default_factory=list)
+    # ML-10: aggregated top evidence (each item carries source_url +
+    # retrieval_method) so the detail view can drill every verdict to its
+    # sources. Empty for legacy rows / verification-disabled analyses.
+    evidence: List[dict] = Field(default_factory=list)
 
     # Metadata
     created_at: datetime
@@ -1499,6 +1511,86 @@ def _verdicts_to_claim_counts(fact_checks: list[dict]) -> tuple[int, int, int]:
     return verified, false, misleading
 
 
+# Verdicts that count as a claim actually being SUPPORTED/verified by evidence.
+# A HIGH/MEDIUM credibility badge is only honest when at least one claim reaches
+# one of these (ML-09). "disputed"/"unverified" do NOT support the source.
+_SUPPORTING_VERDICTS = {
+    "verified", "partially_true", "partially_verified",
+    "true", "supported", "accurate", "mostly_true", "correct",
+}
+
+
+def _dump_model(obj):
+    """Best-effort JSON-safe dict/list from a pydantic v2 model (or passthrough).
+
+    Uses ``mode="json"`` so datetime fields serialise to ISO strings — otherwise
+    ``json.dumps`` on the enriched fact_checks payload would raise on the
+    Evidence.retrieved_at / Verdict.verified_at datetimes.
+    """
+    if obj is None:
+        return None
+    if hasattr(obj, "model_dump"):
+        try:
+            return obj.model_dump(mode="json")
+        except Exception:
+            try:
+                return obj.model_dump()
+            except Exception:
+                return None
+    if isinstance(obj, dict):
+        return obj
+    return None
+
+
+def _finalize_credibility(
+    *,
+    fact_checks: list[dict],
+    reliability_score: int,
+    overall_credibility: str,
+    verification_backed: bool,
+) -> tuple[int, str, str]:
+    """Apply the ML-09 honesty floor + derive ``score_basis``.
+
+    Returns ``(reliability_score, overall_credibility, score_basis)``.
+
+    The Step-7 extraction heuristic (text length + claim density) can emit
+    HIGH/MEDIUM even when NOTHING was verified — a 1500-char blog with 5
+    confident claims and zero supporting verdicts would read HIGH. That is
+    dishonest: a credibility badge must be backed by at least one
+    supporting/verified verdict. When none exists (all unverified/disputed,
+    zero fact-checks, or zero claims) the label is FLOORED to UNVERIFIED so the
+    text-length heuristic cannot overstate confidence.
+
+    ``score_basis`` is ``"verification_backed"`` only when real fact-check
+    verdicts drove the score (the ReliabilityScorer rescore ran on non-empty
+    fact_checks); otherwise ``"extraction_heuristic"`` — surfaced in the API +
+    UI so the label is self-explaining.
+    """
+    fact_checks = fact_checks or []
+    has_support = any(
+        str(fc.get("verdict") or fc.get("verification_status") or "").strip().lower()
+        in _SUPPORTING_VERDICTS
+        for fc in fact_checks
+    )
+    score_basis = (
+        "verification_backed"
+        if (verification_backed and fact_checks)
+        else "extraction_heuristic"
+    )
+
+    if not has_support and str(overall_credibility).upper() in ("HIGH", "MEDIUM"):
+        # No claim reached a supporting/verified verdict → the heuristic HIGH/
+        # MEDIUM is unearned. Floor to UNVERIFIED (a valid credibility level per
+        # the url_analyses CHECK constraint) and cap the numeric score.
+        overall_credibility = "UNVERIFIED"
+        try:
+            reliability_score = min(int(reliability_score), 25)
+        except (TypeError, ValueError):
+            reliability_score = 25
+
+    return int(reliability_score), overall_credibility, score_basis
+
+
 async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
     """
     Synchronous processing of URL analysis (NO KAFKA).
@@ -1681,7 +1773,16 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
         # (5 completed rows had jsonb_array_length=0 across all of them).
         # Capped to top 5 claims by importance so a 30-claim article
         # doesn't blow the latency budget. Opt-out: CLILENS_URL_VERIFY=0.
+        # ML-10 (2026-07-02): the adjudicator builds an evidence_chain (each link
+        # carries source_url + retrieval_method) + a DecomposedConfidence + the
+        # raw retrieved Evidence — all of which used to be DROPPED (only a bare
+        # evidence_count survived), so the live GET returned evidence:[] and no
+        # verdict could be drilled down to its sources. We now PERSIST them into
+        # the fact_checks JSONB (per verdict) + aggregate the top evidence into
+        # the `evidence` column so every verdict is auditable to its sources.
         fact_checks_payload: list[dict] = []
+        evidence_payload: list[dict] = []
+        verification_backed_score = False
         if os.getenv("CLILENS_URL_VERIFY", "1") != "0" and claims:
             try:
                 from app.domains.intelligence.services import (
@@ -1698,8 +1799,28 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
                     try:
                         evidence = await retriever.fetch_evidence(c)
                         verdict = await adjudicator.adjudicate(c, evidence)
+
+                        # Serialise the adjudicator's evidence chain (source_url +
+                        # retrieval_method per link) and the decomposed confidence.
+                        chain = [
+                            _dump_model(link)
+                            for link in (getattr(verdict, "evidence_chain", None) or [])
+                        ]
+                        chain = [c for c in chain if c]
+                        dc = _dump_model(getattr(verdict, "decomposed_confidence", None))
+
+                        # Top evidence for THIS claim (highest relevance first),
+                        # keeping the source URL so the UI can link out.
+                        ev_sorted = sorted(
+                            (evidence or []),
+                            key=lambda e: -(getattr(e, "relevance_score", 0) or 0),
+                        )[:3]
+                        claim_evidence = [_dump_model(e) for e in ev_sorted]
+                        claim_evidence = [e for e in claim_evidence if e]
+
+                        claim_text_val = getattr(c, "claim_text", "")
                         fact_checks_payload.append({
-                            "claim_text": getattr(c, "claim_text", ""),
+                            "claim_text": claim_text_val,
                             "claim_type": str(getattr(c, "claim_type", "")),
                             "verdict": getattr(verdict, "verdict", "unverified"),
                             "confidence_score": float(
@@ -1709,7 +1830,17 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
                                 getattr(verdict, "justification", "") or ""
                             )[:500],
                             "evidence_count": len(evidence) if evidence else 0,
+                            # ML-10: the auditable payload, per verdict.
+                            "evidence": claim_evidence,
+                            "evidence_chain": chain,
+                            "decomposed_confidence": dc,
                         })
+
+                        # Aggregate the top evidence (tagged with its claim) into
+                        # the `evidence` column so the detail view has a flat,
+                        # source-linked evidence list across all verdicts.
+                        for e in claim_evidence:
+                            evidence_payload.append({"claim_text": claim_text_val, **e})
                     except Exception as _claim_exc:
                         logger.warning(
                             f"Per-claim verification failed for {analysis_id}: "
@@ -1773,6 +1904,7 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
                 )
                 reliability_score = int(v_score)
                 overall_credibility = str(v_level)
+                verification_backed_score = True
                 logger.info(
                     f"URL analysis {analysis_id}: verification-backed score="
                     f"{reliability_score} level={overall_credibility} "
@@ -1785,32 +1917,88 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
                     f"extraction heuristic: {type(_score_exc).__name__}: {_score_exc}"
                 )
 
+        # Step 7.7 (ML-09, 2026-07-02): honesty floor + score_basis. A HIGH/
+        # MEDIUM credibility badge derived from the text-length heuristic is
+        # dishonest when NO claim reached a supporting/verified verdict — floor
+        # such cases to UNVERIFIED, and stamp score_basis so the label explains
+        # itself ('verification_backed' vs 'extraction_heuristic').
+        reliability_score, overall_credibility, score_basis = _finalize_credibility(
+            fact_checks=fact_checks_payload,
+            reliability_score=reliability_score,
+            overall_credibility=overall_credibility,
+            verification_backed=verification_backed_score,
+        )
+        logger.info(
+            f"URL analysis {analysis_id}: final credibility={overall_credibility} "
+            f"score={reliability_score} basis={score_basis}"
+        )
+
         # Step 8: Update with results
         processing_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
         fact_checks_json_str = json.dumps(fact_checks_payload)
+        evidence_json_str = json.dumps(evidence_payload)
 
-        db.execute_update(
-            """
-            UPDATE url_analyses
-            SET status = 'completed',
-                extracted_claims = CAST(:claims AS jsonb),
-                fact_checks = CAST(:fact_checks AS jsonb),
-                reliability_score = :reliability,
-                overall_credibility = :credibility,
-                completed_at = NOW(),
-                processing_time_ms = :time_ms,
-                updated_at = NOW()
-            WHERE analysis_id = :analysis_id
-            """,
-            {
-                "claims": claims_json_str,
-                "fact_checks": fact_checks_json_str,
-                "reliability": reliability_score,
-                "credibility": overall_credibility,
-                "time_ms": processing_time_ms,
-                "analysis_id": analysis_id
-            }
-        )
+        _completed_params = {
+            "claims": claims_json_str,
+            "fact_checks": fact_checks_json_str,
+            "evidence": evidence_json_str,
+            "reliability": reliability_score,
+            "credibility": overall_credibility,
+            "score_basis": score_basis,
+            "time_ms": processing_time_ms,
+            "analysis_id": analysis_id,
+        }
+        try:
+            # Modern path (migration 076): persist score_basis + the aggregated
+            # evidence so the detail view can drill each verdict to its sources.
+            db.execute_update(
+                """
+                UPDATE url_analyses
+                SET status = 'completed',
+                    extracted_claims = CAST(:claims AS jsonb),
+                    fact_checks = CAST(:fact_checks AS jsonb),
+                    evidence = CAST(:evidence AS jsonb),
+                    reliability_score = :reliability,
+                    overall_credibility = :credibility,
+                    score_basis = :score_basis,
+                    completed_at = NOW(),
+                    processing_time_ms = :time_ms,
+                    updated_at = NOW()
+                WHERE analysis_id = :analysis_id
+                """,
+                _completed_params,
+            )
+        except Exception as _upd_exc:
+            # Legacy cluster without the score_basis/evidence columns — keep the
+            # analysis completing (fact_checks JSONB already carries the per-
+            # verdict evidence). Loud enough to notice, safe enough to ship.
+            logger.warning(
+                f"URL analysis {analysis_id}: score_basis/evidence columns "
+                f"unavailable ({type(_upd_exc).__name__}: {_upd_exc}); falling "
+                "back to legacy completed UPDATE."
+            )
+            db.execute_update(
+                """
+                UPDATE url_analyses
+                SET status = 'completed',
+                    extracted_claims = CAST(:claims AS jsonb),
+                    fact_checks = CAST(:fact_checks AS jsonb),
+                    reliability_score = :reliability,
+                    overall_credibility = :credibility,
+                    completed_at = NOW(),
+                    processing_time_ms = :time_ms,
+                    updated_at = NOW()
+                WHERE analysis_id = :analysis_id
+                """,
+                {
+                    "claims": claims_json_str,
+                    "fact_checks": fact_checks_json_str,
+                    "reliability": reliability_score,
+                    "credibility": overall_credibility,
+                    "time_ms": processing_time_ms,
+                    "analysis_id": analysis_id,
+                },
+            )
 
         logger.info(
             f"URL analysis {analysis_id} completed successfully: "
@@ -1964,14 +2152,28 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
                 ProvenanceRecord,
                 record_provenance,
             )
-            # Model name is the env-configured extraction LLM. When we register
-            # the claim-extraction prompt in the prompts.PROMPTS registry
-            # (future wave), prompt_name/version/fingerprint will also populate.
+            # Model name is the env-configured extraction LLM.
             _model_name = (
                 os.getenv("DEEPSEEK_MODEL")
                 or os.getenv("ANTHROPIC_MODEL")
                 or "unknown"
             )
+            # ML-10: record the extraction prompt fingerprint so a completed
+            # analysis is reproducible/auditable even after the prompt evolves.
+            # The URL flow extracts claims with the "claim_extraction" template
+            # (see Step 8.4 primary_prompt_name + services.ClaimExtractor).
+            _prompt_name = _prompt_version = _prompt_fingerprint = None
+            try:
+                from app.domains.intelligence.prompts import get_prompt
+                _extract_prompt = get_prompt("claim_extraction")
+                _prompt_name = _extract_prompt.name
+                _prompt_version = _extract_prompt.version
+                _prompt_fingerprint = _extract_prompt.fingerprint
+            except Exception as _pf_exc:
+                logger.debug(
+                    "claim_extraction prompt fingerprint lookup failed "
+                    f"(non-fatal) for {analysis_id}: {_pf_exc}"
+                )
             _raw_meta = {
                 "claim_count": claims_count,
                 "text_length": text_len,
@@ -1991,6 +2193,9 @@ async def process_url_analysis_sync(analysis_id: str, url: str, user_id: str):
                 extraction_method=EXTRACTION_URL_ANALYSIS,
                 url_analysis_id=str(analysis_id),
                 model_name=_model_name,
+                prompt_name=_prompt_name,
+                prompt_version=_prompt_version,
+                prompt_fingerprint=_prompt_fingerprint,
                 retrieval_strategy="user_submitted_url",
                 # Normalise reliability_score (0–100) to confidence (0–1) so it
                 # aggregates with other confidence signals across the platform.
@@ -2199,8 +2404,10 @@ async def get_analysis_result(
                 published_date,
                 reliability_score,
                 overall_credibility,
+                score_basis,
                 extracted_claims,
                 fact_checks,
+                evidence,
                 created_at,
                 processing_started_at,
                 completed_at,
@@ -2296,6 +2503,23 @@ async def get_analysis_result(
     elif fact_checks is None:
         fact_checks = []
 
+    # ML-10: aggregated top evidence (source_url + retrieval_method per item).
+    # `evidence` may arrive as a JSON string or a driver-parsed list/dict; a bare
+    # dict (legacy shape) is wrapped in a list so the response stays List[dict].
+    evidence = result.get("evidence")
+    if isinstance(evidence, str):
+        try:
+            evidence = json.loads(evidence)
+        except Exception:
+            evidence = []
+    if isinstance(evidence, dict):
+        evidence = [evidence]
+    elif not isinstance(evidence, list):
+        evidence = []
+
+    # ML-09: how the credibility label was decided.
+    score_basis = result.get("score_basis")
+
     # Phase 5 wave 5: apply the most-recent Platt-scaled calibration when
     # available. Returns None if no fit exists — callers fall back to raw.
     calibrated_reliability_score: Optional[float] = None
@@ -2354,6 +2578,7 @@ async def get_analysis_result(
             published_date=result.get("published_date"),
             overall_credibility=result.get("overall_credibility"),
             source_credibility_score=result.get("reliability_score"),
+            score_basis=score_basis,
             claim_count=len(extracted_claims),
             verified_claim_count=verified_claim_count,
             excerpt=excerpt,
@@ -2374,9 +2599,11 @@ async def get_analysis_result(
         published_date=result.get("published_date"),
         reliability_score=result.get("reliability_score"),
         overall_credibility=result.get("overall_credibility"),
+        score_basis=score_basis,
         calibrated_reliability_score=calibrated_reliability_score,
         extracted_claims=extracted_claims,
         fact_checks=fact_checks,
+        evidence=evidence,
         created_at=result["created_at"],
         processing_started_at=result.get("processing_started_at"),
         completed_at=result.get("completed_at"),

@@ -9,7 +9,7 @@ canonical ReliabilityScorer. These tests pin the honest behavior.
 
 from __future__ import annotations
 
-from api.url_analysis_routes import _verdicts_to_claim_counts
+from api.url_analysis_routes import _finalize_credibility, _verdicts_to_claim_counts
 from shared.reliability_scorer import ReliabilityScorer
 
 
@@ -72,3 +72,67 @@ class TestHonestScoring:
             misleading_claims=0,
         )
         assert score >= 70
+
+
+class TestCredibilityFloorAndScoreBasis:
+    """ML-09: a HIGH/MEDIUM badge must be verification-backed. When no claim
+    reaches a supporting/verified verdict (all-unverified, or zero fact-checks),
+    the text-length heuristic must be FLOORED to UNVERIFIED, and score_basis must
+    label whether verdicts or the heuristic drove the score."""
+
+    def test_all_unverified_factchecks_do_not_return_high(self):
+        # ReliabilityScorer ran on real (all-unverified) verdicts + a strong
+        # source, so verification_backed=True — but nothing was actually
+        # supported, so the badge must NOT read HIGH/MEDIUM.
+        fc = [{"verdict": "unverified"}, {"verdict": "unverified"}, {"verdict": "unverified"}]
+        score, level, basis = _finalize_credibility(
+            fact_checks=fc,
+            reliability_score=70,
+            overall_credibility="MEDIUM",
+            verification_backed=True,
+        )
+        assert level == "UNVERIFIED"
+        assert level != "HIGH"
+        assert score <= 25
+        assert basis == "verification_backed"
+
+    def test_zero_factchecks_heuristic_high_is_floored(self):
+        # No verification ran (empty fact_checks) but the text-length heuristic
+        # emitted HIGH/70 — this is the exact ML-09 bug. Floor + honest basis.
+        score, level, basis = _finalize_credibility(
+            fact_checks=[],
+            reliability_score=70,
+            overall_credibility="HIGH",
+            verification_backed=False,
+        )
+        assert level == "UNVERIFIED"
+        assert score <= 25
+        assert basis == "extraction_heuristic"
+
+    def test_verified_claim_keeps_high_and_is_verification_backed(self):
+        # At least one supporting verdict → the honest path still allows HIGH.
+        fc = [{"verdict": "verified"}, {"verdict": "verified"}]
+        score, level, basis = _finalize_credibility(
+            fact_checks=fc,
+            reliability_score=85,
+            overall_credibility="HIGH",
+            verification_backed=True,
+        )
+        assert level == "HIGH"
+        assert score == 85
+        assert basis == "verification_backed"
+
+    def test_disputed_low_is_not_refloored_to_unverified(self):
+        # Disputed claims are verification-backed and already read LOW — we must
+        # NOT overwrite that honest LOW with UNVERIFIED (the floor only touches
+        # inflated HIGH/MEDIUM labels).
+        fc = [{"verdict": "disputed"}, {"verdict": "disputed"}]
+        score, level, basis = _finalize_credibility(
+            fact_checks=fc,
+            reliability_score=30,
+            overall_credibility="LOW",
+            verification_backed=True,
+        )
+        assert level == "LOW"
+        assert score == 30
+        assert basis == "verification_backed"

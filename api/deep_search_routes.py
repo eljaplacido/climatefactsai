@@ -68,9 +68,45 @@ class WeatherContextResponse(BaseModel):
     data_points: List[WeatherDataPoint]
 
 
+# ML-11 (2026-07-02): the deep_search pipeline computes per-sentence grounding,
+# a confidence envelope, and a structured-synthesis block, but the old
+# DeepSearchResponse omitted them so FastAPI's response_model dropped them from
+# the wire — the frontend's SentenceGroundedAnswer / evidence gauge / confidence
+# envelope rendered nothing even when the pipeline worked. These three typed
+# models restore the explainability payload end-to-end. All fields are Optional
+# so happy-path (high-evidence) and low-evidence responses both validate.
+class SentenceGroundingItem(BaseModel):
+    text: str
+    level: str  # HIGH | MEDIUM | LOW | NONE
+    reason: Optional[str] = None
+
+
+class ConfidenceEnvelopeResponse(BaseModel):
+    confidence: str  # low | medium | high
+    reason: Optional[str] = None
+
+
+class StructuredSynthesisResponse(BaseModel):
+    summary: str = ""
+    key_findings: List[str] = Field(default_factory=list)
+    agreement_areas: List[str] = Field(default_factory=list)
+    disagreement_areas: List[str] = Field(default_factory=list)
+    evidence_strength: str = "unknown"
+    limitations: List[str] = Field(default_factory=list)
+    confidence_score: Optional[float] = None
+
+
 class DeepSearchResponse(BaseModel):
     query: str
     answer: str
+    # ML-11 — per-sentence grounding tags (present only when the low-evidence
+    # prompt ran), the confidence envelope, and the v2.0 structured-synthesis
+    # block (present when the high-evidence prompt returned parseable JSON).
+    # The frontend keys off these to render calibration pills, the "why
+    # low-confidence" banner, and the key-findings / evidence-gauge blocks.
+    sentence_grounding: Optional[List[SentenceGroundingItem]] = None
+    confidence_envelope: Optional[ConfidenceEnvelopeResponse] = None
+    structured_synthesis: Optional[StructuredSynthesisResponse] = None
     citations: List[CitationResponse]
     internal_articles_count: int
     external_sources_count: int

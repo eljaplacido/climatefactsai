@@ -17,15 +17,31 @@ export const dynamic = "force-dynamic";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 type ClaimLike = string | { text?: string; claim_text?: string; claim?: string; claim_type?: string };
+
+// ML-10 — each verdict now carries the evidence it was drilled from.
+interface EvidenceItem {
+  source?: string;
+  source_url?: string;
+  retrieval_method?: string;
+  content_excerpt?: string;
+  excerpt?: string;
+  relevance_score?: number;
+  supports_claim?: boolean | null;
+  claim_text?: string;
+}
+
 interface FactCheck {
   claim?: string;
   claim_text?: string;
   verdict?: string;
   verification_status?: string;
   confidence?: number;
+  confidence_score?: number;
   explanation?: string;
   reasoning?: string;
-  evidence?: string;
+  justification?: string;
+  evidence?: EvidenceItem[] | string;
+  evidence_chain?: EvidenceItem[];
   source?: string;
 }
 
@@ -37,12 +53,32 @@ interface Report {
   status: string;
   overall_credibility: string | null;
   reliability_score: number | null;
+  // ML-09 — 'verification_backed' vs 'extraction_heuristic'.
+  score_basis: string | null;
   claims: ClaimLike[];
   fact_checks: FactCheck[];
-  evidence: unknown[];
+  evidence: EvidenceItem[];
   processing_time_ms: number | null;
   created_at: string | null;
   completed_at: string | null;
+}
+
+// Pull the source links off a verdict (top evidence + evidence chain),
+// de-duped by URL, so each fact-check drills down to its sources (ML-10).
+function evidenceLinks(fc: FactCheck): EvidenceItem[] {
+  const items: EvidenceItem[] = [];
+  if (Array.isArray(fc.evidence)) items.push(...fc.evidence);
+  if (Array.isArray(fc.evidence_chain)) items.push(...fc.evidence_chain);
+  const seen = new Set<string>();
+  const out: EvidenceItem[] = [];
+  for (const it of items) {
+    const url = (it?.source_url || "").trim();
+    const key = url || (it?.source || "").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(it);
+  }
+  return out;
 }
 
 function claimText(c: ClaimLike): string {
@@ -170,6 +206,24 @@ export default function ResearchAnalysisReportPage() {
               Reliability <strong>{report.reliability_score}/100</strong>
             </span>
           )}
+          {report.score_basis && (
+            <span
+              className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
+                report.score_basis === "verification_backed"
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                  : "bg-amber-50 border-amber-200 text-amber-800"
+              }`}
+              title={
+                report.score_basis === "verification_backed"
+                  ? "Fact-check verdicts drove this credibility score."
+                  : "Score derived from text length and claim density — no claim reached a supporting verdict against external evidence."
+              }
+            >
+              {report.score_basis === "verification_backed"
+                ? "Verification-backed"
+                : "Unverified (heuristic)"}
+            </span>
+          )}
           <span className="text-xs text-gray-400">
             {claims.length} claim{claims.length === 1 ? "" : "s"} · {factChecks.length} fact-check{factChecks.length === 1 ? "" : "s"}
           </span>
@@ -191,7 +245,11 @@ export default function ResearchAnalysisReportPage() {
             {factChecks.map((fc, i) => {
               const verdict = fc.verdict || fc.verification_status || "unverified";
               const text = fc.claim || fc.claim_text || claims[i] || `Claim ${i + 1}`;
-              const why = fc.explanation || fc.reasoning;
+              // ML-10: the stored payload uses `justification` + `confidence_score`;
+              // keep the legacy field names as fallbacks so both shapes render.
+              const why = fc.explanation || fc.reasoning || fc.justification;
+              const conf = fc.confidence ?? fc.confidence_score;
+              const sources = evidenceLinks(fc);
               return (
                 <div key={i} className="rounded-lg border border-gray-200 bg-white p-3">
                   <div className="flex items-start gap-2">
@@ -200,11 +258,47 @@ export default function ResearchAnalysisReportPage() {
                       <p className="text-sm text-gray-900">{text}</p>
                       <div className="mt-1 flex items-center gap-2 text-xs">
                         <span className="font-medium text-gray-700">{verdict.replace(/_/g, " ")}</span>
-                        {fc.confidence != null && (
-                          <span className="text-gray-400">· {Math.round((fc.confidence > 1 ? fc.confidence : fc.confidence * 100))}% confidence</span>
+                        {conf != null && (
+                          <span className="text-gray-400">· {Math.round((conf > 1 ? conf : conf * 100))}% confidence</span>
                         )}
                       </div>
                       {why && <p className="text-xs text-gray-500 mt-1">{why}</p>}
+                      {/* ML-10 — drill each verdict down to its sources. */}
+                      {sources.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">
+                            Evidence sources
+                          </p>
+                          <ul className="space-y-1">
+                            {sources.map((ev, j) => {
+                              const label = ev.source || ev.source_url || "Source";
+                              const excerpt = ev.content_excerpt || ev.excerpt;
+                              return (
+                                <li key={j} className="text-xs text-gray-600">
+                                  {ev.source_url ? (
+                                    <a
+                                      href={ev.source_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-teal-700 hover:underline"
+                                    >
+                                      {label} <ExternalLink className="h-3 w-3" />
+                                    </a>
+                                  ) : (
+                                    <span className="text-gray-700">{label}</span>
+                                  )}
+                                  {ev.retrieval_method && (
+                                    <span className="text-gray-400"> · via {ev.retrieval_method}</span>
+                                  )}
+                                  {excerpt && (
+                                    <span className="block text-gray-500 mt-0.5 line-clamp-2">{excerpt}</span>
+                                  )}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
