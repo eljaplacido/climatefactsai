@@ -21,6 +21,81 @@ logger = get_logger(__name__)
 # neutral case, not a quality signal.
 _HIGH_QUALITY_TIERS = {"scientific", "research"}
 
+# Evidence-backed credibility tiers from `source_credibility_tiers` (mig 027 +
+# the 3-axis scores in mig 041). These carry a public `evidence_url`, so a
+# source classified T1/T2/T3 there is a genuine signal even when its
+# `source_profiles` row has never had an article analysed.
+_EVIDENCE_TIERS = {"t1", "t2", "t3"}
+
+# Tier-level default 3-axis scores (editorial, factcheck, transparency), copied
+# verbatim from migration 041. Used to fill an axis when a tier row carries no
+# explicit score — the feed-expansion migrations (033/054/058/060/066/068)
+# added tier rows AFTER 041 ran, so most have NULL axis scores even though the
+# T1/T2/T3 level itself is evidence-backed. Keep in lockstep with migration 075.
+_TIER_DEFAULT_AXIS_SCORES = {
+    "t1": (90, 90, 90),
+    "t2": (70, 75, 65),
+    "t3": (55, 50, 60),
+}
+
+
+def _axis_editorial_band(score: float) -> str:
+    """0-100 editorial_score -> editorial_standards label. Mirrors migration 075."""
+    if score >= 75:
+        return "rigorous"
+    if score >= 50:
+        return "moderate"
+    return "limited"
+
+
+def _axis_transparency_band(score: float) -> str:
+    """0-100 transparency_score -> transparency_level label. Mirrors migration 075."""
+    if score >= 75:
+        return "high"
+    if score >= 50:
+        return "moderate"
+    return "low"
+
+
+def _axis_factcheck_band(score: float) -> str:
+    """0-100 factcheck_score -> fact_check_record label. Mirrors migration 075."""
+    if score >= 85:
+        return "excellent"
+    if score >= 70:
+        return "good"
+    if score >= 50:
+        return "mixed"
+    return "poor"
+
+
+def _assessment_from_tier_scores(
+    tier: Optional[str],
+    editorial_score: Optional[float],
+    factcheck_score: Optional[float],
+    transparency_score: Optional[float],
+) -> Optional[dict]:
+    """Bridge an evidence-backed `source_credibility_tiers` row (tier + 3-axis
+    scores) to the three `source_profiles` string labels.
+
+    Fires for any evidence-backed tier (T1/T2/T3). Each axis uses the tier row's
+    explicit score when present, else the tier-level default (mig 041) — the
+    tier level is itself evidence-backed (public evidence_url), and most
+    feed-added tier rows have NULL axis scores. Returns None for non-evidence
+    tiers ('unknown'/'retracted'). Kept in lockstep with migration 075.
+    """
+    t = str(tier or "").strip().lower()
+    if t not in _EVIDENCE_TIERS:
+        return None
+    de, dfc, dtr = _TIER_DEFAULT_AXIS_SCORES[t]
+    ed = de if editorial_score is None else float(editorial_score)
+    fc = dfc if factcheck_score is None else float(factcheck_score)
+    tr = dtr if transparency_score is None else float(transparency_score)
+    return {
+        "editorial_standards": _axis_editorial_band(ed),
+        "fact_check_record": _axis_factcheck_band(fc),
+        "transparency_level": _axis_transparency_band(tr),
+    }
+
 
 def derive_source_assessment(
     *,
@@ -29,6 +104,10 @@ def derive_source_assessment(
     reliability_tier: Optional[str] = None,
     false_claim_rate: Optional[float] = None,
     total_articles_analyzed: Optional[int] = None,
+    tier: Optional[str] = None,
+    tier_editorial_score: Optional[float] = None,
+    tier_factcheck_score: Optional[float] = None,
+    tier_transparency_score: Optional[float] = None,
 ) -> Optional[dict]:
     """Derive the three string assessment fields from a source's numeric/tier
     signals.
@@ -39,6 +118,13 @@ def derive_source_assessment(
     numeric/tier signals (``credibility_score``, ``average_reliability_score``,
     ``reliability_tier``, ``false_claim_rate``) DO exist on the same row, so we
     map them to the three labels.
+
+    ML-12 (2026-07-02): when the profile itself carries no per-article signal
+    (the majority — Reuters, Carbon Brief, the Guardian etc. rendered
+    'unknown'), fall back to the evidence-backed ``source_credibility_tiers``
+    classification (``tier`` + the 3-axis ``editorial/factcheck/transparency``
+    scores, joined by domain/name). Those tiers hold T1/T2/T3 with a public
+    ``evidence_url``, so bridging them is honest — a real signal, not invented.
 
     These labels are a defensible restatement of the platform's OWN reliability
     tiering and historical article analysis — NOT an independent third-party
@@ -52,16 +138,21 @@ def derive_source_assessment(
       * fact_check_record   : excellent | good | mixed | poor | unknown
       * transparency_level  : high | moderate | low | unknown
     """
-    tier = (reliability_tier or "").strip().lower()
-    high_quality_tier = tier in _HIGH_QUALITY_TIERS
+    tier_bridge = _assessment_from_tier_scores(
+        tier, tier_editorial_score, tier_factcheck_score, tier_transparency_score
+    )
+
+    rel_tier = (reliability_tier or "").strip().lower()
+    high_quality_tier = rel_tier in _HIGH_QUALITY_TIERS
 
     fcr = float(false_claim_rate) if false_claim_rate is not None else 0.0
     n_articles = int(total_articles_analyzed) if total_articles_analyzed is not None else 0
 
-    # A profile only carries a genuine signal once it has been analysed, has a
-    # curated high-quality tier, or has a recorded false-claim rate. Without
-    # any of those, credibility_score is just the schema default (50) — keep
-    # everything 'unknown' (caller leaves the columns untouched).
+    # A profile only carries a genuine per-row signal once it has been analysed,
+    # has a curated high-quality tier, or has a recorded false-claim rate.
+    # Without any of those, credibility_score is just the schema default (50) —
+    # so fall back to the evidence-backed credibility tier (if any) rather than
+    # inventing a rating from the default score.
     has_signal = (
         n_articles > 0
         or average_reliability_score is not None
@@ -69,7 +160,7 @@ def derive_source_assessment(
         or fcr > 0
     )
     if not has_signal:
-        return None
+        return tier_bridge
 
     score = credibility_score if credibility_score is not None else average_reliability_score
     score = float(score) if score is not None else None
@@ -458,7 +549,8 @@ class SourceProfileService:
         try:
             tier_rows = self.db.execute_query(
                 "SELECT domain, source_name, prior_bonus, tier, "
-                "editorial_score, factcheck_score, transparency_score "
+                "editorial_score, factcheck_score, transparency_score, "
+                "evidence_url, classification "
                 "FROM source_credibility_tiers "
                 f"WHERE {' OR '.join(clauses)}",
                 params,
@@ -480,6 +572,10 @@ class SourceProfileService:
                 "editorial_score": tr.get("editorial_score"),
                 "factcheck_score": tr.get("factcheck_score"),
                 "transparency_score": tr.get("transparency_score"),
+                # ML-12: surface the public evidence link + classification so the
+                # Sources UI can render a "Why this tier?" link auditors can check.
+                "evidence_url": tr.get("evidence_url"),
+                "classification": tr.get("classification"),
             }
             d = self._norm_domain(tr.get("domain"))
             n = str(tr.get("source_name") or "").strip().lower()
@@ -664,14 +760,60 @@ class SourceProfileService:
         # Derive the editorial / fact-check / transparency string labels from
         # the freshly-updated numeric + tier signals so the Sources UI stops
         # showing "Not assessed" for every source (data-completeness Fix A).
-        self._apply_derived_assessment(domain)
+        self._apply_derived_assessment(domain, source_name)
 
         # Auto-sync to source_credibility table
         self._sync_to_credibility(source_name, domain, url)
 
         return self.get_profile_by_domain(domain) or {}
 
-    def _apply_derived_assessment(self, domain: str) -> None:
+    def _lookup_tier_scores(
+        self, domain: Optional[str], name: Optional[str]
+    ) -> Optional[dict]:
+        """Best-effort fetch of the evidence-backed `source_credibility_tiers`
+        row (tier + 3-axis scores) for a source, matched by domain OR name.
+
+        Mirrors `_attach_credibility_tiers`' join semantics (normalised domain,
+        else source_name) and returns the best (highest) tier when several
+        match. Fails soft to None when the table is absent (older clusters).
+        """
+        nd = self._norm_domain(domain)
+        nm = str(name or "").strip().lower()
+        clauses: list[str] = []
+        params: dict = {}
+        if nd:
+            clauses.append(
+                r"regexp_replace(lower(coalesce(domain, '')), '^www\.', '') = :nd"
+            )
+            params["nd"] = nd
+        if nm:
+            clauses.append("lower(source_name) = :nm")
+            params["nm"] = nm
+        if not clauses:
+            return None
+
+        try:
+            rows = self.db.execute_query(
+                "SELECT tier, editorial_score, factcheck_score, transparency_score "
+                "FROM source_credibility_tiers "
+                f"WHERE {' OR '.join(clauses)}",
+                params,
+            )
+        except Exception as exc:
+            logger.debug("tier-score lookup skipped (table missing / drift): %s", exc)
+            return None
+
+        best: Optional[dict] = None
+        best_rank = -1
+        for r in rows or []:
+            rank = self._tier_rank(r.get("tier"))
+            if rank > best_rank:
+                best, best_rank = r, rank
+        return best
+
+    def _apply_derived_assessment(
+        self, domain: str, source_name: Optional[str] = None
+    ) -> None:
         """Populate editorial_standards / fact_check_record / transparency_level
         from the row's numeric + tier signals (see ``derive_source_assessment``).
 
@@ -702,12 +844,19 @@ class SourceProfileService:
             return
 
         p = rows[0]
+        # ML-12: bridge the evidence-backed credibility tier when the profile
+        # has no per-article signal of its own.
+        tier_row = self._lookup_tier_scores(domain, source_name) or {}
         derived = derive_source_assessment(
             credibility_score=p.get("credibility_score"),
             average_reliability_score=p.get("average_reliability_score"),
             reliability_tier=p.get("reliability_tier"),
             false_claim_rate=p.get("false_claim_rate"),
             total_articles_analyzed=p.get("total_articles_analyzed"),
+            tier=tier_row.get("tier"),
+            tier_editorial_score=tier_row.get("editorial_score"),
+            tier_factcheck_score=tier_row.get("factcheck_score"),
+            tier_transparency_score=tier_row.get("transparency_score"),
         )
         if not derived:
             return

@@ -197,10 +197,10 @@ export const MAP_LAYERS: MapLayer[] = [
     dataEndpoint: "/api/map/layers/ndc-status",
     statKey: "cat_overall_rating",
     provenance: {
-      sourceName: "UNFCCC NDC Registry / Climate Action Tracker",
+      sourceName: "UNFCCC NDC Registry (via Climate Watch) / Climate Action Tracker",
       sourceUrl: "https://climateactiontracker.org/",
-      methodologyVersion: "v1.0",
-      note: "Based on synced CAT ratings and submitted NDC targets. Coverage is limited to ~36 CAT-rated and ~190 NDC-submitting countries.",
+      methodologyVersion: "cw_ndc_v1 + cat_2026",
+      note: "Status colour uses the CAT overall rating where available (~36 countries), else the submitted NDC ambition. NDC targets come from Climate Watch's structured UNFCCC registry (~190 countries). The reduction % is heterogeneous across countries (absolute vs emissions-intensity vs business-as-usual baselines) so it is an ambition proxy, not a directly comparable figure; the target year is the latest communicated NDC horizon.",
     },
     legend: [
       { color: "bg-emerald-600", text: "Net-zero" },

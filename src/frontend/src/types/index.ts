@@ -243,6 +243,11 @@ export interface SourceProfile {
   editorial_score?: number | null;
   factcheck_score?: number | null;
   transparency_score?: number | null;
+  // ML-12 (2026-07-02): public evidence link + classification from
+  // source_credibility_tiers (mig 027). Present when the tier join matches;
+  // powers the "Why this tier?" auditor link on SourceProfileCard.
+  evidence_url?: string | null;
+  classification?: string | null;
 }
 
 // --- URL Analysis ---

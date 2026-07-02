@@ -43,6 +43,10 @@ function SourceProfileCard({ profile, compact = false }: SourceProfileCardProps)
     (profile.editorial_standards && profile.editorial_standards !== "unknown") ||
     (profile.fact_check_record && profile.fact_check_record !== "unknown") ||
     (profile.transparency_level && profile.transparency_level !== "unknown");
+  // ML-12: an evidence-backed credibility tier (source_credibility_tiers) IS a
+  // signal — so suppress the "awaiting GX10 analysis" copy for tiered sources
+  // and surface the public evidence link instead.
+  const hasTier = Boolean(profile.tier);
 
   if (compact) {
     return (
@@ -80,21 +84,41 @@ function SourceProfileCard({ profile, compact = false }: SourceProfileCardProps)
           {/* Phase 0 day 2 (2026-05-23): tier badge from source_credibility_tiers
               (migration 027). Renders only when the profile has been tier-classified
               — sources without a tier match show only the band label so we don't
-              mislead users into thinking unknown sources have been vetted. */}
+              mislead users into thinking unknown sources have been vetted.
+              ML-12 (2026-07-02): add a public "Why this tier?" evidence link so
+              auditors can verify the classification. */}
           {profile.tier && (
-            <span
-              title={
-                profile.tier_prior_bonus != null
-                  ? `Tier ${profile.tier} · prior_bonus +${profile.tier_prior_bonus}`
-                  : `Tier ${profile.tier}`
-              }
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-wider bg-white/70 dark:bg-slate-800/70 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600"
-            >
-              {profile.tier}
-              {profile.tier_prior_bonus != null && (
-                <span className="text-slate-500 dark:text-slate-400">+{profile.tier_prior_bonus}</span>
+            <div className="inline-flex items-center gap-1.5 flex-shrink-0">
+              <span
+                title={
+                  profile.tier_prior_bonus != null
+                    ? `Tier ${profile.tier} · prior_bonus +${profile.tier_prior_bonus}`
+                    : `Tier ${profile.tier}`
+                }
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-wider bg-white/70 dark:bg-slate-800/70 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600"
+              >
+                {profile.tier}
+                {profile.tier_prior_bonus != null && (
+                  <span className="text-slate-500 dark:text-slate-400">+{profile.tier_prior_bonus}</span>
+                )}
+              </span>
+              {profile.evidence_url && (
+                <a
+                  href={profile.evidence_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={
+                    profile.classification
+                      ? `Classification: ${profile.classification}`
+                      : "Evidence for this tier classification"
+                  }
+                  className="inline-flex items-center gap-0.5 text-[10px] text-clilens-primary dark:text-teal-400 hover:underline"
+                >
+                  <ExternalLink className="h-2.5 w-2.5" />
+                  Why this tier?
+                </a>
               )}
-            </span>
+            </div>
           )}
         </div>
       </div>
@@ -201,8 +225,9 @@ function SourceProfileCard({ profile, compact = false }: SourceProfileCardProps)
           </div>
         )}
 
-        {/* GX10 pending-assessment notice — shown when any trust factor is unknown */}
-        {(profile.editorial_standards === "unknown" || profile.fact_check_record === "unknown" || profile.transparency_level === "unknown") && (
+        {/* GX10 pending-assessment notice — shown when any trust factor is unknown
+            AND the source has no evidence-backed tier (a tier IS an assessment). */}
+        {!hasTier && (profile.editorial_standards === "unknown" || profile.fact_check_record === "unknown" || profile.transparency_level === "unknown") && (
           <div className="flex items-start gap-2 pt-2 border-t border-gray-100 dark:border-slate-800">
             <Clock className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500 dark:text-slate-400 mt-0.5 flex-shrink-0" />
             <p className="text-[10px] text-gray-400 dark:text-slate-500 dark:text-slate-400 leading-relaxed">

@@ -141,9 +141,12 @@ COUNTRIES_TO_SCRAPE: Dict[str, str] = {
 # HTML parsing
 # ---------------------------------------------------------------------------
 
-# Multiple CSS / class hints we try in order — CAT periodically restructures
-# pages and a single brittle selector would mean a constant maintenance burden.
+# CSS / class hints we try in order. The FIRST — CAT's specific "overall"
+# ratings-matrix tile — is the authoritative overall-rating element; the rest
+# are legacy/robustness hints for older page structures. We match on class
+# SUBSTRING (CAT uses `ratings-matrix__overall ratings-matrix__overall--insufficient`).
 RATING_CSS_HINTS: Tuple[str, ...] = (
+    "ratings-matrix__overall",
     "rating-headline",
     "overall-rating",
     "country-rating",
@@ -151,51 +154,79 @@ RATING_CSS_HINTS: Tuple[str, ...] = (
     "rating-label",
 )
 
+# The specific selector whose match we trust as high-confidence.
+_HIGH_CONFIDENCE_HINT = "ratings-matrix__overall"
 
-def extract_rating_from_html(html: str) -> Optional[str]:
-    """Best-effort: extract the country's Overall rating text from a CAT page.
+# CAT renders the tile as the label "Overall rating" followed by the band text
+# ("Overall rating Insufficient"); strip the label so the band text remains.
+_OVERALL_LABEL_RE = re.compile(r"(?i)overall\s+rating")
 
-    Tries several CSS class hints and a structural fallback (look for one
-    of the band names anywhere in the page). Returns None on no match.
 
-    Conservative: when multiple band candidates appear, returns the FIRST
-    one that matches a known band, since CAT's headline rating is at the
-    top of the page.
+def _clean_overall_text(text: str) -> str:
+    """Remove the 'Overall rating' label + collapse whitespace, leaving the
+    band text (e.g. 'Overall rating  Insufficient' -> 'Insufficient')."""
+    if not text:
+        return ""
+    out = _OVERALL_LABEL_RE.sub(" ", text)
+    out = re.sub(r"\s+", " ", out).strip()
+    return out
+
+
+def extract_overall_rating(html: str) -> Optional[Tuple[str, str]]:
+    """Extract ``(rating_text, scrape_confidence)`` from a CAT country page.
+
+    ``scrape_confidence``:
+      * ``'high'``   — matched CAT's specific ``ratings-matrix__overall`` tile.
+      * ``'medium'`` — matched a legacy rating CSS hint.
+
+    Returns ``None`` when no rating tile is found — an HONEST no_data.
+
+    ML-13: we deliberately do NOT scan the whole page for a band name. The old
+    page-wide, longest-match-first fallback grabbed a band mentioned in prose or
+    in a neighbouring tile and mis-reported the country's rating (e.g. Australia
+    read as 'critically insufficient' when CAT rates it 'Insufficient'). A
+    missed tile MUST yield None, not a wrong band.
     """
     if not html:
         return None
 
-    # Try BeautifulSoup if available (already in requirements via url_analysis).
+    # A DOM parser is required to isolate the overall-rating tile. Without one,
+    # the only option is a page-wide band scan — exactly the guess ML-13 bans —
+    # so we return None instead. bs4 ships in requirements (url_analysis).
     try:
         from bs4 import BeautifulSoup
-
-        soup = BeautifulSoup(html, "lxml")
-
-        for css_hint in RATING_CSS_HINTS:
-            # Class-substring match — CAT uses class names like
-            # `rating-headline rating-headline--insufficient` so substring is
-            # what we want here, not exact-equals.
-            for el in soup.find_all(attrs={"class": re.compile(css_hint, re.I)}):
-                text = el.get_text(separator=" ", strip=True)
-                if text and rating_to_score(text) is not None:
-                    return text
-
-        # Structural fallback: scan the whole document for a known band.
-        body_text = soup.get_text(separator=" ", strip=True)
     except Exception:
-        # bs4 not available or parsing failed — fall back to regex on raw HTML.
-        body_text = re.sub(r"<[^>]+>", " ", html)
-        body_text = re.sub(r"\s+", " ", body_text)
+        return None
 
-    # Use case-insensitive substring search; longest match first so
-    # "1.5°c compatible" beats "compatible" alone.
-    normalized = body_text.lower()
-    candidates = sorted(RATING_BAND_SCORE.keys(), key=len, reverse=True)
-    for band in candidates:
-        if band in normalized:
-            return band
+    soup = None
+    for parser in ("lxml", "html.parser"):
+        try:
+            soup = BeautifulSoup(html, parser)
+            break
+        except Exception:
+            continue
+    if soup is None:
+        return None
+
+    for css_hint in RATING_CSS_HINTS:
+        # Class-substring match — CAT class names carry a band modifier suffix.
+        for el in soup.find_all(attrs={"class": re.compile(css_hint, re.I)}):
+            cleaned = _clean_overall_text(el.get_text(separator=" ", strip=True))
+            if cleaned and rating_to_score(cleaned) is not None:
+                confidence = "high" if css_hint == _HIGH_CONFIDENCE_HINT else "medium"
+                return cleaned, confidence
 
     return None
+
+
+def extract_rating_from_html(html: str) -> Optional[str]:
+    """Back-compat wrapper returning just the overall-rating band text (or None).
+
+    See ``extract_overall_rating`` for the confidence-aware variant used by the
+    adapter to persist a scrape-confidence flag.
+    """
+    result = extract_overall_rating(html)
+    return result[0] if result else None
 
 
 # ---------------------------------------------------------------------------
@@ -264,14 +295,15 @@ class ClimateActionTrackerAdapter(IndicatorAdapter):
                     )
                     continue
 
-                rating_text = extract_rating_from_html(html)
-                if not rating_text:
+                extracted = extract_overall_rating(html)
+                if not extracted:
                     _logger.debug(
-                        "Skipping %s (%s): no rating found in page",
+                        "Skipping %s (%s): no overall-rating tile found in page",
                         alpha2, slug,
                     )
                     continue
 
+                rating_text, scrape_confidence = extracted
                 score = rating_to_score(rating_text)
                 if score is None:
                     _logger.debug(
@@ -288,7 +320,11 @@ class ClimateActionTrackerAdapter(IndicatorAdapter):
                     source_url=url,
                     methodology_version="cat_2026",
                     raw_record={
+                        # Persist the raw band text + how confident the scrape is
+                        # so a 'medium' (legacy-selector) read is auditable and a
+                        # future CSS drift is visible in the data (ML-13).
                         "raw_rating": rating_text,
+                        "scrape_confidence": scrape_confidence,
                         "slug": slug,
                         "scraped_at": datetime.utcnow().isoformat(),
                     },

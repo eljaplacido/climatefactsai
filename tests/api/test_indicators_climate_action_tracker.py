@@ -129,20 +129,64 @@ class TestExtractRatingFromHtml:
         """
         assert extract_rating_from_html(html) == "Almost sufficient"
 
-    def test_structural_fallback_via_body_scan(self):
-        """Even when the CSS hints all miss, scanning the body text for a
-        known band still surfaces it."""
+    def test_ratings_matrix_overall_selector_strips_label(self):
+        """ML-13: CAT's authoritative overall tile renders 'Overall rating' +
+        the band; the extractor strips the label and returns the band with HIGH
+        confidence."""
+        from app.domains.content.indicators.climate_action_tracker import extract_overall_rating
+        html = """
+        <html><body>
+          <div class="ratings-matrix__overall ratings-matrix__overall--insufficient">
+            <span class="ratings-matrix__label">Overall rating</span>
+            <span>Insufficient</span>
+          </div>
+        </body></html>
+        """
+        result = extract_overall_rating(html)
+        assert result is not None
+        text, confidence = result
+        assert text == "Insufficient"
+        assert confidence == "high"
+
+    def test_body_scan_no_longer_matches_returns_none(self):
+        """ML-13: the page-wide longest-match-first body scan is DELETED. A band
+        mentioned only in prose (no rating tile) must yield None — honest
+        no_data — not a (possibly wrong) band."""
         from app.domains.content.indicators.climate_action_tracker import extract_rating_from_html
         html = """
         <html><body>
             <p>The country's policy is rated as Critically insufficient.</p>
         </body></html>
         """
-        # Lowercased match.
-        result = extract_rating_from_html(html)
-        assert result is not None
-        from app.domains.content.indicators.climate_action_tracker import rating_to_score
-        assert rating_to_score(result) == 10.0
+        assert extract_rating_from_html(html) is None
+
+    def test_prose_bands_do_not_override_the_overall_tile(self):
+        """ML-13 core regression: the overall tile says 'Insufficient' while the
+        surrounding prose mentions longer band names ('almost sufficient',
+        '1.5°C compatible'). The old longest-match-first scan grabbed the wrong
+        (longer) band; the extractor must return the tile's 'Insufficient'."""
+        from app.domains.content.indicators.climate_action_tracker import (
+            extract_overall_rating, rating_to_score,
+        )
+        html = """
+        <html><body>
+          <div class="ratings-matrix__overall ratings-matrix__overall--insufficient">
+            Overall rating Insufficient
+          </div>
+          <p>To be 1.5°C compatible a country must be almost sufficient or better.</p>
+        </body></html>
+        """
+        text, confidence = extract_overall_rating(html)
+        assert text == "Insufficient"
+        assert rating_to_score(text) == 50.0
+        assert confidence == "high"
+
+    def test_legacy_hint_is_medium_confidence(self):
+        from app.domains.content.indicators.climate_action_tracker import extract_overall_rating
+        html = '<div class="rating-headline">Almost sufficient</div>'
+        text, confidence = extract_overall_rating(html)
+        assert text == "Almost sufficient"
+        assert confidence == "medium"
 
     def test_returns_none_when_no_band_present(self):
         from app.domains.content.indicators.climate_action_tracker import extract_rating_from_html
@@ -152,6 +196,8 @@ class TestExtractRatingFromHtml:
     def test_handles_empty_html(self):
         from app.domains.content.indicators.climate_action_tracker import extract_rating_from_html
         assert extract_rating_from_html("") is None
+        from app.domains.content.indicators.climate_action_tracker import extract_overall_rating
+        assert extract_overall_rating("") is None
 
 
 # ---------------------------------------------------------------------------
@@ -183,9 +229,10 @@ class TestFetchRecordsHappyPath:
         assert by_country["DE"].indicator_id == "cat_overall_rating"
         assert by_country["DE"].methodology_version == "cat_2026"
         assert by_country["DE"].source_url.endswith("/germany/")
-        # Provenance keeps the raw rating text + slug.
+        # Provenance keeps the raw rating text + slug + a scrape-confidence flag.
         assert by_country["DE"].raw_record["raw_rating"] == "Almost sufficient"
         assert by_country["DE"].raw_record["slug"] == "germany"
+        assert by_country["DE"].raw_record["scrape_confidence"] == "medium"
 
         assert by_country["US"].value == 50.0
 

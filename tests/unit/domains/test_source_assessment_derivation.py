@@ -111,18 +111,144 @@ class TestDeriveSourceAssessment:
         assert out["transparency_level"] == "low"
 
 
-class _FakeDB:
-    """Captures the derived-assessment UPDATE for the apply-path test."""
+class TestTierBridge:
+    """ML-12: bridge evidence-backed source_credibility_tiers (tier + 3-axis
+    scores) to the three labels when the profile has no per-article signal."""
 
-    def __init__(self, profile_row, columns=("reliability_tier",)):
+    def test_t2_tier_bridges_when_no_other_signal(self):
+        # Reuters/Guardian pattern: default profile (no articles) but a T2 tier.
+        out = derive_source_assessment(
+            credibility_score=50,
+            reliability_tier="public",
+            total_articles_analyzed=0,
+            false_claim_rate=0.0,
+            tier="T2",
+            tier_editorial_score=70,
+            tier_factcheck_score=75,
+            tier_transparency_score=65,
+        )
+        assert out == {
+            "editorial_standards": "moderate",
+            "fact_check_record": "good",
+            "transparency_level": "moderate",
+        }
+
+    def test_t1_tier_bridges_to_top_labels(self):
+        out = derive_source_assessment(
+            credibility_score=50,
+            total_articles_analyzed=0,
+            tier="T1",
+            tier_editorial_score=90,
+            tier_factcheck_score=90,
+            tier_transparency_score=90,
+        )
+        assert out == {
+            "editorial_standards": "rigorous",
+            "fact_check_record": "excellent",
+            "transparency_level": "high",
+        }
+
+    def test_t3_tier_bridges_to_mid_labels(self):
+        out = derive_source_assessment(
+            total_articles_analyzed=0,
+            tier="T3",
+            tier_editorial_score=55,
+            tier_factcheck_score=50,
+            tier_transparency_score=60,
+        )
+        assert out == {
+            "editorial_standards": "moderate",
+            "fact_check_record": "mixed",
+            "transparency_level": "moderate",
+        }
+
+    def test_article_signal_takes_precedence_over_tier(self):
+        # A profile WITH its own analysed articles derives from that signal;
+        # the tier is a fallback only (finding: "when no other signal").
+        out = derive_source_assessment(
+            credibility_score=92,
+            total_articles_analyzed=30,
+            false_claim_rate=0.0,
+            tier="T3",
+            tier_editorial_score=55,
+            tier_factcheck_score=50,
+            tier_transparency_score=60,
+        )
+        assert out["editorial_standards"] == "rigorous"   # from the 92 score, not T3
+        assert out["fact_check_record"] == "excellent"
+
+    def test_non_evidence_tier_does_not_bridge(self):
+        # 'unknown'/'retracted' tiers are not evidence-backed -> no invented rating.
+        assert derive_source_assessment(
+            credibility_score=50,
+            total_articles_analyzed=0,
+            tier="unknown",
+            tier_editorial_score=30,
+            tier_factcheck_score=25,
+            tier_transparency_score=30,
+        ) is None
+
+    def test_tier_without_scores_bridges_via_tier_defaults(self):
+        # Feed-added tier rows carry no explicit axis scores, but the T2 LEVEL is
+        # evidence-backed -> bridge from the tier-level default (70/75/65).
+        out = derive_source_assessment(
+            credibility_score=50,
+            total_articles_analyzed=0,
+            tier="T2",
+            tier_editorial_score=None,
+            tier_factcheck_score=None,
+            tier_transparency_score=None,
+        )
+        assert out == {
+            "editorial_standards": "moderate",
+            "fact_check_record": "good",
+            "transparency_level": "moderate",
+        }
+
+    def test_t1_without_scores_bridges_via_tier_defaults(self):
+        out = derive_source_assessment(
+            total_articles_analyzed=0,
+            tier="T1",
+        )
+        assert out == {
+            "editorial_standards": "rigorous",
+            "fact_check_record": "excellent",
+            "transparency_level": "high",
+        }
+
+    def test_partial_scores_coalesce_with_tier_default(self):
+        # explicit editorial 40 (limited) but NULL factcheck/transparency -> T2
+        # defaults (good / moderate) fill the gaps.
+        out = derive_source_assessment(
+            total_articles_analyzed=0,
+            tier="T2",
+            tier_editorial_score=40,
+            tier_factcheck_score=None,
+            tier_transparency_score=None,
+        )
+        assert out["editorial_standards"] == "limited"
+        assert out["fact_check_record"] == "good"
+        assert out["transparency_level"] == "moderate"
+
+
+class _FakeDB:
+    """Captures the derived-assessment UPDATE for the apply-path test.
+
+    Optionally serves a source_credibility_tiers row for the tier-bridge path.
+    """
+
+    def __init__(self, profile_row, columns=("reliability_tier",), tier_row=None):
         self.profile_row = profile_row
         self.columns = columns
+        self.tier_row = tier_row
         self.updates = []
 
     def execute_query(self, query, params=None):
         n = " ".join(query.split()).lower()
         if "information_schema.columns" in n:
             return [{"column_name": c} for c in self.columns]
+        if "from source_credibility_tiers" in n:
+            return [self.tier_row] if self.tier_row else []
         if "from source_profiles" in n:
             return [self.profile_row]
         return []
@@ -181,3 +307,29 @@ class TestApplyDerivedAssessment:
         assert len(db.updates) == 1
         _, params = db.updates[0]
         assert params["editorial_standards"] == "moderate"
+
+    def test_apply_bridges_from_tier_when_no_article_signal(self):
+        # No-signal profile (Reuters-style) + a matching T2 tier row -> the
+        # apply path bridges the tier's 3-axis scores to the labels.
+        db = _FakeDB(
+            {
+                "credibility_score": 50,
+                "average_reliability_score": None,
+                "reliability_tier": "public",
+                "false_claim_rate": 0.0,
+                "total_articles_analyzed": 0,
+            },
+            tier_row={
+                "tier": "T2",
+                "editorial_score": 70,
+                "factcheck_score": 75,
+                "transparency_score": 65,
+            },
+        )
+        svc = SourceProfileService(db)
+        svc._apply_derived_assessment("reuters.com", "Reuters")
+        assert len(db.updates) == 1
+        _, params = db.updates[0]
+        assert params["editorial_standards"] == "moderate"
+        assert params["fact_check_record"] == "good"
+        assert params["transparency_level"] == "moderate"

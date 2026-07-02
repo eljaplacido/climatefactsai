@@ -140,6 +140,33 @@ class TestAttachCredibilityTiers:
         assert result[0]["tier"] == "Q1"
         assert result[1]["tier"] is None
 
+    def test_evidence_url_and_classification_exposed(self):
+        """ML-12: the join must surface the public evidence_url + classification
+        so the Sources UI can render a 'Why this tier?' auditor link."""
+        db = MagicMock()
+        db.execute_query.return_value = [
+            {
+                "domain": "reuters.com",
+                "source_name": "Reuters",
+                "tier": "T2",
+                "prior_bonus": 15,
+                "editorial_score": 92,
+                "factcheck_score": 88,
+                "transparency_score": 85,
+                "evidence_url": "https://www.reuters.com/policies/corrections/",
+                "classification": "wire_service_corrections",
+            },
+        ]
+        svc = _service_with_db(db)
+        rows = [{"source_name": "Reuters", "source_domain": "reuters.com"}]
+        result = svc._attach_credibility_tiers(rows)
+        assert result[0]["evidence_url"] == "https://www.reuters.com/policies/corrections/"
+        assert result[0]["classification"] == "wire_service_corrections"
+        # The SELECT must actually request the two new columns.
+        select_sql = " ".join(db.execute_query.call_args.args[0].split()).lower()
+        assert "evidence_url" in select_sql
+        assert "classification" in select_sql
+
     def test_domain_normalisation_strips_www_and_lowercases(self):
         """Profile rows commonly have 'www.Example.com' while the tier
         table is normalised to 'example.com'. The helper MUST match these."""
